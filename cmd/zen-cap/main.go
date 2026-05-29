@@ -12,8 +12,9 @@ import (
 	"syscall"
 	"time"
 
-	"golang.design/x/hotkey"
-	"golang.design/x/hotkey/mainthread"
+	"github.com/jezek/xgbutil"
+	"github.com/jezek/xgbutil/keybind"
+	"github.com/jezek/xgbutil/xevent"
 
 	"zen-cap/pkg/capture"
 	"zen-cap/pkg/display"
@@ -21,8 +22,7 @@ import (
 )
 
 func main() {
-	// The hotkey library requires mainthread runner initialization
-	mainthread.Init(runCLI)
+	runCLI()
 }
 
 func runCLI() {
@@ -50,6 +50,7 @@ func runCLI() {
 		printUsage()
 		os.Exit(1)
 	}
+	os.Exit(0)
 }
 
 func printUsage() {
@@ -258,35 +259,80 @@ func handleService() error {
 	fmt.Println("Hotkeys:")
 	fmt.Println("  Ctrl+Shift+S  -> Fullscreen Screenshot")
 	fmt.Println("  Ctrl+Shift+R  -> Toggle Fullscreen Recording")
+	fmt.Println("UNIX Signals:")
+	fmt.Println("  SIGUSR1       -> Fullscreen Screenshot")
+	fmt.Println("  SIGUSR2       -> Toggle Fullscreen Recording")
 	fmt.Println("Press Ctrl+C in terminal to exit service.")
 
-	// Register Screenshot Hotkey (Ctrl+Shift+S)
-	hkScreenshot := hotkey.New([]hotkey.Modifier{hotkey.ModCtrl, hotkey.ModShift}, hotkey.KeyS)
-	if err := hkScreenshot.Register(); err != nil {
-		return fmt.Errorf("failed to register screenshot hotkey: %w", err)
+	screenshotChan := make(chan struct{}, 1)
+	recordChan := make(chan struct{}, 1)
+
+	// Initialize X11 connection for global hotkeys
+	X, err := xgbutil.NewConn()
+	if err != nil {
+		return fmt.Errorf("failed to connect to X server: %w", err)
 	}
-	defer hkScreenshot.Unregister()
+	keybind.Initialize(X)
+
+	// Register Screenshot Hotkey (Ctrl+Shift+S)
+	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+		fmt.Println("Hotkey pressed: Triggering screenshot...")
+		select {
+		case screenshotChan <- struct{}{}:
+		default:
+		}
+	}).Connect(X, X.RootWin(), "Control-Shift-s", true)
 
 	// Register Recording Hotkey (Ctrl+Shift+R)
-	hkRecord := hotkey.New([]hotkey.Modifier{hotkey.ModCtrl, hotkey.ModShift}, hotkey.KeyR)
-	if err := hkRecord.Register(); err != nil {
-		return fmt.Errorf("failed to register recording hotkey: %w", err)
-	}
-	defer hkRecord.Unregister()
+	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+		fmt.Println("Hotkey pressed: Triggering recording toggle...")
+		select {
+		case recordChan <- struct{}{}:
+		default:
+		}
+	}).Connect(X, X.RootWin(), "Control-Shift-r", true)
 
 	var activeRec *recorder.Recorder
 	var recMu sync.Mutex
 
-	// Monitor OS signals for termination
-	exitChan := make(chan os.Signal, 1)
-	signal.Notify(exitChan, os.Interrupt, syscall.SIGTERM)
+	// Monitor OS signals for termination, screenshot, and recording
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM, syscall.SIGUSR1, syscall.SIGUSR2)
 
 	go func() {
-		for range hkScreenshot.Keydown() {
+		for sig := range sigChan {
+			switch sig {
+			case os.Interrupt, syscall.SIGTERM:
+				fmt.Println("\nShutting down service...")
+				recMu.Lock()
+				if activeRec != nil {
+					fmt.Println("Stopping active recording before exit...")
+					activeRec.Stop()
+				}
+				recMu.Unlock()
+				os.Exit(0)
+			case syscall.SIGUSR1:
+				fmt.Println("Received SIGUSR1: Triggering screenshot...")
+				select {
+				case screenshotChan <- struct{}{}:
+				default:
+				}
+			case syscall.SIGUSR2:
+				fmt.Println("Received SIGUSR2: Triggering recording toggle...")
+				select {
+				case recordChan <- struct{}{}:
+				default:
+				}
+			}
+		}
+	}()
+
+	go func() {
+		for range screenshotChan {
 			go func() {
 				timestamp := time.Now().Format("20060102_150405")
 				filename := fmt.Sprintf("screenshot_%s.png", timestamp)
-				fmt.Printf("[%s] Hotkey pressed: Capturing fullscreen to %s...\n", time.Now().Format("15:04:05"), filename)
+				fmt.Printf("[%s] Capturing fullscreen to %s...\n", time.Now().Format("15:04:05"), filename)
 
 				cfg := capture.CaptureConfig{
 					Display: ":0.0",
@@ -302,18 +348,18 @@ func handleService() error {
 					fmt.Printf("Error saving screenshot: %v\n", err)
 					return
 				}
-				fmt.Printf("Screenshot saved to %s\n", filename)
+				fmt.Printf("Screenshot saved successfully to %s\n", filename)
 			}()
 		}
 	}()
 
 	go func() {
-		for range hkRecord.Keydown() {
+		for range recordChan {
 			recMu.Lock()
 			if activeRec == nil {
 				timestamp := time.Now().Format("20060102_150405")
 				filename := fmt.Sprintf("recording_%s.mp4", timestamp)
-				fmt.Printf("[%s] Hotkey pressed: Starting fullscreen recording to %s...\n", time.Now().Format("15:04:05"), filename)
+				fmt.Printf("[%s] Starting fullscreen recording to %s...\n", time.Now().Format("15:04:05"), filename)
 
 				cfg := recorder.RecorderConfig{
 					Display:    ":0.0",
@@ -331,12 +377,14 @@ func handleService() error {
 				}
 				activeRec = rec
 			} else {
-				fmt.Printf("[%s] Hotkey pressed: Stopping recording...\n", time.Now().Format("15:04:05"))
+				fmt.Printf("[%s] Stopping recording...\n", time.Now().Format("15:04:05"))
 				rec := activeRec
 				activeRec = nil
 				go func() {
 					if err := rec.Stop(); err != nil {
 						fmt.Printf("Error stopping recorder: %v\n", err)
+					} else {
+						fmt.Printf("Recording saved successfully\n")
 					}
 				}()
 			}
@@ -344,17 +392,7 @@ func handleService() error {
 		}
 	}()
 
-	<-exitChan
-	fmt.Println("\nShutting down service...")
-
-	// Make sure we stop any active recording before exiting
-	recMu.Lock()
-	if activeRec != nil {
-		fmt.Println("Stopping active recording before exit...")
-		activeRec.Stop()
-	}
-	recMu.Unlock()
-
+	xevent.Main(X)
 	return nil
 }
 
