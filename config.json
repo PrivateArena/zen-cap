@@ -1,5 +1,5 @@
 {
-  "output_dir": "./zen-cap-outputs",
+  "output_dir": "/tmp/zen-cap",
   "hotkeys": {
     "screenshot": "Control-Shift-s",
     "record_toggle": "Control-Shift-r"
