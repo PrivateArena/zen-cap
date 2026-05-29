@@ -1,0 +1,3 @@
+#!/bin/sh
+
+PKG_CONFIG_PATH=/media/jang/home/Deve/zen-cap/ffmpeg8/lib/pkgconfig CGO_CFLAGS="-I/media/jang/home/Deve/zen-cap/ffmpeg8/include" CGO_LDFLAGS="-L/media/jang/home/Deve/zen-cap/ffmpeg8/lib -Wl,-rpath,/media/jang/home/Deve/zen-cap/ffmpeg8/lib" go build -o zen-cap ./cmd/zen-cap

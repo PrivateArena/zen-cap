@@ -1,4 +1,3 @@
-// [VERIFIED]
 package recorder
 
 import (
@@ -6,8 +5,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/asticode/go-astiav"
 	"zen-cap/pkg/av"
+
+	"github.com/asticode/go-astiav"
 )
 
 type RecorderConfig struct {
@@ -23,11 +23,11 @@ type RecorderConfig struct {
 }
 
 type Recorder struct {
-	cfg        RecorderConfig
-	stopChan   chan struct{}
-	doneChan   chan struct{}
-	recording  bool
-	mu         sync.Mutex
+	cfg       RecorderConfig
+	stopChan  chan struct{}
+	doneChan  chan struct{}
+	recording bool
+	mu        sync.Mutex
 }
 
 func NewRecorder(cfg RecorderConfig) *Recorder {
@@ -53,9 +53,7 @@ func (r *Recorder) Start() error {
 	r.stopChan = make(chan struct{})
 	r.doneChan = make(chan struct{})
 
-	// Start recording in the background
 	go r.run()
-
 	return nil
 }
 
@@ -67,7 +65,6 @@ func (r *Recorder) Stop() error {
 	}
 	r.mu.Unlock()
 
-	// Signal to stop and wait for completion
 	close(r.stopChan)
 	<-r.doneChan
 
@@ -87,7 +84,6 @@ func (r *Recorder) IsRecording() bool {
 func (r *Recorder) run() {
 	defer close(r.doneChan)
 
-	// 1. Open input capture device
 	devCfg := av.DeviceConfig{
 		Display:  r.cfg.Display,
 		X:        r.cfg.X,
@@ -108,7 +104,20 @@ func (r *Recorder) run() {
 	w := device.Width()
 	h := device.Height()
 
-	// 2. Open Video Encoder
+	// FIX: Prime the device with one real frame before creating the scaler so
+	// that device.PixelFormat() reflects the actual decoded frame format rather
+	// than the codec-context guess. This is the root cause of pink video.
+	firstFrame, err := device.ReadFrame()
+	if err != nil {
+		fmt.Printf("Recorder error: failed to read first frame: %v\n", err)
+		return
+	}
+
+	// Snapshot the real pixel format now that we have a decoded frame.
+	srcPixFmt := device.PixelFormat()
+	fmt.Printf("Capture pixel format: %v\n", srcPixFmt)
+
+	// Open Video Encoder
 	encoder, err := av.NewVideoEncoder(w, h, r.cfg.FPS, r.cfg.Bitrate)
 	if err != nil {
 		fmt.Printf("Recorder error: failed to initialize encoder: %v\n", err)
@@ -116,15 +125,15 @@ func (r *Recorder) run() {
 	}
 	defer encoder.Close()
 
-	// 3. Open Swscale Scaler (Source pixel format -> YUV420P)
-	scaler, err := av.NewScaler(w, h, device.PixelFormat(), w, h, astiav.PixelFormatYuv420P)
+	// Open Scaler with the now-accurate source pixel format
+	scaler, err := av.NewScaler(w, h, srcPixFmt, w, h, astiav.PixelFormatYuv420P)
 	if err != nil {
 		fmt.Printf("Recorder error: failed to initialize scaler: %v\n", err)
 		return
 	}
 	defer scaler.Close()
 
-	// 4. Open Output Muxer
+	// Open Output Muxer
 	muxer, err := av.NewMuxer(r.cfg.OutputPath, encoder.CodecContext())
 	if err != nil {
 		fmt.Printf("Recorder error: failed to initialize muxer: %v\n", err)
@@ -132,7 +141,7 @@ func (r *Recorder) run() {
 	}
 	defer muxer.Close()
 
-	// 5. Allocate YUV420P destination frame
+	// Allocate reusable YUV420P destination frame
 	yuvFrame := astiav.AllocFrame()
 	defer yuvFrame.Free()
 	yuvFrame.SetWidth(w)
@@ -143,51 +152,51 @@ func (r *Recorder) run() {
 		return
 	}
 
-	// Capture Loop
+	encodeFrame := func(srcFrame *astiav.Frame) error {
+		if err := scaler.Scale(srcFrame, yuvFrame); err != nil {
+			return fmt.Errorf("scale failed: %w", err)
+		}
+		return encoder.Encode(yuvFrame, func(pkt *astiav.Packet) error {
+			return muxer.WritePacket(pkt, encoder.CodecContext().TimeBase())
+		})
+	}
+
 	fmt.Printf("Recording started: %dx%d @ %d FPS -> %s\n", w, h, r.cfg.FPS, r.cfg.OutputPath)
+
+	// Process the already-read first frame before entering the loop.
+	if err := encodeFrame(firstFrame); err != nil {
+		fmt.Printf("Recorder error: encoding first frame failed: %v\n", err)
+		return
+	}
+
 	for {
 		select {
 		case <-r.stopChan:
-			// Gracefully stop
 			goto flush
 		default:
 		}
 
-		// Read raw frame from screen
 		srcFrame, err := device.ReadFrame()
 		if err != nil {
 			fmt.Printf("Recorder error: failed to read frame: %v\n", err)
 			break
 		}
 
-		// Scale/convert to YUV420P
-		if err := scaler.Scale(srcFrame, yuvFrame); err != nil {
-			fmt.Printf("Recorder error: failed to scale frame: %v\n", err)
-			break
-		}
-
-		// Set frame timestamps (use monotonic pts increment)
-		// Send frame to encoder and write output packets
-		err = encoder.Encode(yuvFrame, func(pkt *astiav.Packet) error {
-			return muxer.WritePacket(pkt, encoder.CodecContext().TimeBase())
-		})
-		if err != nil {
-			fmt.Printf("Recorder error: encoding failed: %v\n", err)
+		if err := encodeFrame(srcFrame); err != nil {
+			fmt.Printf("Recorder error: %v\n", err)
 			break
 		}
 	}
 
 flush:
-	// Flush the encoder
 	fmt.Println("Flushing encoder and finishing file...")
-	err = encoder.Encode(nil, func(pkt *astiav.Packet) error {
+	if err := encoder.Encode(nil, func(pkt *astiav.Packet) error {
 		return muxer.WritePacket(pkt, encoder.CodecContext().TimeBase())
-	})
-	if err != nil {
+	}); err != nil {
 		fmt.Printf("Recorder error: flushing encoder failed: %v\n", err)
 	}
 
-	// Wait briefly to make sure everything writes cleanly
+	// Give the muxer a moment to drain before Close() writes the trailer.
 	time.Sleep(100 * time.Millisecond)
 	fmt.Println("Recording finished.")
 }

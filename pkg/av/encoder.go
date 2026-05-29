@@ -1,4 +1,3 @@
-// [VERIFIED]
 package av
 
 import (
@@ -33,18 +32,25 @@ func NewVideoEncoder(w, h, fps int, bitrate int64) (*VideoEncoder, error) {
 	codecCtx.SetPixelFormat(astiav.PixelFormatYuv420P)
 	codecCtx.SetTimeBase(astiav.NewRational(1, fps))
 	codecCtx.SetFramerate(astiav.NewRational(fps, 1))
+	// 2-second GOP gives good seeking granularity without bloating the file.
 	codecCtx.SetGopSize(fps * 2)
 
 	if bitrate > 0 {
 		codecCtx.SetBitRate(bitrate)
 	}
 
-	// Set H.264 encoding options
+	// NOTE: GlobalHeader flag must be set BEFORE Open() so the encoder writes
+	// SPS/PPS into the extradata rather than inlining them into every keyframe.
+	// The muxer checks this flag separately and sets it again after the stream
+	// is created — that path is correct. Setting it here too is harmless for
+	// formats that don't require it and required for MP4/MOV.
+	codecCtx.SetFlags(codecCtx.Flags().Add(astiav.CodecContextFlagGlobalHeader))
+
 	options := astiav.NewDictionary()
 	defer options.Free()
-	options.Set("preset", "ultrafast", 0) // Low CPU usage for real-time capture
-	options.Set("crf", "23", 0)           // Good quality/size balance
-	options.Set("tune", "zerolatency", 0) // Essential for real-time capture
+	options.Set("preset", "ultrafast", 0)
+	options.Set("crf", "23", 0)
+	options.Set("tune", "zerolatency", 0)
 
 	if err := codecCtx.Open(codec, options); err != nil {
 		codecCtx.Free()
@@ -65,10 +71,9 @@ func NewVideoEncoder(w, h, fps int, bitrate int64) (*VideoEncoder, error) {
 	}, nil
 }
 
-// Encode encodes a frame. If frame is nil, it flushes the encoder.
+// Encode encodes a frame. Pass nil to flush the encoder.
 func (e *VideoEncoder) Encode(frame *astiav.Frame, callback func(*astiav.Packet) error) error {
 	if frame != nil {
-		// Set monotonic presentation timestamp
 		frame.SetPts(e.pts)
 		e.pts++
 	}

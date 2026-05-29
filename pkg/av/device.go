@@ -1,4 +1,3 @@
-// [VERIFIED]
 package av
 
 import (
@@ -25,6 +24,11 @@ type InputDevice struct {
 	packet    *astiav.Packet
 	frame     *astiav.Frame
 	streamIdx int
+	// pixFmt is the real pixel format of decoded frames, resolved after the
+	// first ReadFrame() call so we see the actual AVFrame.format rather than
+	// what the codec context reports before decoding starts.
+	pixFmt      astiav.PixelFormat
+	pixFmtKnown bool
 }
 
 func OpenDevice(cfg DeviceConfig) (*InputDevice, error) {
@@ -49,10 +53,11 @@ func OpenDevice(cfg DeviceConfig) (*InputDevice, error) {
 	if cfg.FPS > 0 {
 		options.Set("framerate", strconv.Itoa(cfg.FPS), 0)
 	}
+	// Draw cursor so the recording looks natural
+	options.Set("draw_mouse", "1", 0)
 
 	// Set window ID or offsets
 	if cfg.WindowID != 0 {
-		// xcbgrab/x11grab supports window_id
 		options.Set("window_id", fmt.Sprintf("0x%x", cfg.WindowID), 0)
 	} else {
 		if cfg.X >= 0 {
@@ -73,19 +78,16 @@ func OpenDevice(cfg DeviceConfig) (*InputDevice, error) {
 		display = ":0.0"
 	}
 
-	// Open input device
 	if err := formatCtx.OpenInput(display, inputFormat, options); err != nil {
 		formatCtx.Free()
 		return nil, fmt.Errorf("failed to open input device: %w", err)
 	}
 
-	// Retrieve stream info
 	if err := formatCtx.FindStreamInfo(nil); err != nil {
 		formatCtx.CloseInput()
 		return nil, fmt.Errorf("failed to find stream info: %w", err)
 	}
 
-	// Find video stream
 	var videoStream *astiav.Stream
 	streamIdx := -1
 	for idx, s := range formatCtx.Streams() {
@@ -101,7 +103,6 @@ func OpenDevice(cfg DeviceConfig) (*InputDevice, error) {
 		return nil, fmt.Errorf("no video stream found in input device")
 	}
 
-	// Find decoder
 	decoder := astiav.FindDecoder(videoStream.CodecParameters().CodecID())
 	if decoder == nil {
 		formatCtx.CloseInput()
@@ -187,10 +188,19 @@ func (d *InputDevice) ReadFrame() (*astiav.Frame, error) {
 		d.frame.Unref()
 		err = d.decCtx.ReceiveFrame(d.frame)
 		if err == nil {
+			// FIX: Latch the pixel format from the actual decoded frame on the
+			// first successful decode. xcbgrab/x11grab may report a different
+			// format in the codec context than what the frames actually carry
+			// (e.g. codec context says bgr0 but frame.Format() is bgra or vice
+			// versa). Using the frame's own format guarantees swscale gets the
+			// correct source descriptor and produces correct colours.
+			if !d.pixFmtKnown {
+				d.pixFmt = d.frame.PixelFormat()
+				d.pixFmtKnown = true
+			}
 			return d.frame, nil
 		}
 
-		// Handle EAGAIN or EOF - read more packets
 		if err == astiav.ErrEagain || err == astiav.ErrEof {
 			continue
 		}
@@ -207,6 +217,13 @@ func (d *InputDevice) Height() int {
 	return d.decCtx.Height()
 }
 
+// PixelFormat returns the pixel format of decoded frames. Call ReadFrame() at
+// least once before relying on this value; before the first frame is decoded
+// it falls back to what the codec context reports, which may be inaccurate for
+// raw-grab devices.
 func (d *InputDevice) PixelFormat() astiav.PixelFormat {
+	if d.pixFmtKnown {
+		return d.pixFmt
+	}
 	return d.decCtx.PixelFormat()
 }

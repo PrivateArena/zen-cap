@@ -1,4 +1,3 @@
-// [VERIFIED]
 package av
 
 import (
@@ -8,10 +7,10 @@ import (
 )
 
 type Muxer struct {
-	formatCtx *astiav.FormatContext
-	stream    *astiav.Stream
-	ioCtx     *astiav.IOContext
-	path      string
+	formatCtx     *astiav.FormatContext
+	stream        *astiav.Stream
+	ioCtx         *astiav.IOContext
+	path          string
 	headerWritten bool
 }
 
@@ -32,6 +31,7 @@ func NewMuxer(path string, encCtx *astiav.CodecContext) (*Muxer, error) {
 		return nil, fmt.Errorf("failed to create output stream")
 	}
 
+	// Copy codec parameters (includes the extradata written by GlobalHeader).
 	if err := stream.CodecParameters().FromCodecContext(encCtx); err != nil {
 		formatCtx.Free()
 		return nil, fmt.Errorf("failed to copy codec parameters to stream: %w", err)
@@ -39,10 +39,9 @@ func NewMuxer(path string, encCtx *astiav.CodecContext) (*Muxer, error) {
 
 	stream.SetTimeBase(encCtx.TimeBase())
 
-	// Check if global header is required by the output format
-	if formatCtx.OutputFormat().Flags().Has(astiav.IOFormatFlagGlobalheader) {
-		encCtx.SetFlags(encCtx.Flags().Add(astiav.CodecContextFlagGlobalHeader))
-	}
+	// NOTE: We intentionally do NOT set GlobalHeader on the encoder context
+	// here. The encoder already has it set before Open() in NewVideoEncoder().
+	// Setting it here (after Open) has no effect and was misleading dead code.
 
 	var ioCtx *astiav.IOContext
 	if !formatCtx.OutputFormat().Flags().Has(astiav.IOFormatFlagNofile) {
@@ -72,7 +71,6 @@ func NewMuxer(path string, encCtx *astiav.CodecContext) (*Muxer, error) {
 }
 
 func (m *Muxer) WritePacket(pkt *astiav.Packet, encTimeBase astiav.Rational) error {
-	// Rescale timestamps from encoder time base to stream time base
 	pkt.RescaleTs(encTimeBase, m.stream.TimeBase())
 	pkt.SetStreamIndex(m.stream.Index())
 
