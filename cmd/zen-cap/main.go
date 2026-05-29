@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"syscall"
@@ -17,6 +18,7 @@ import (
 	"github.com/jezek/xgbutil/xevent"
 
 	"zen-cap/pkg/capture"
+	"zen-cap/pkg/config"
 	"zen-cap/pkg/display"
 	"zen-cap/pkg/recorder"
 )
@@ -127,7 +129,21 @@ func handleScreenshot() error {
 		}
 	}
 
-	cfg := capture.CaptureConfig{
+	cfg, _, err := config.LoadConfig()
+	if err != nil {
+		cfg = config.DefaultConfig()
+	}
+
+	outputPath := *output
+	if !filepath.IsAbs(outputPath) {
+		outputPath = filepath.Join(cfg.OutputDir, outputPath)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
+		return fmt.Errorf("failed to create directory for output: %w", err)
+	}
+
+	capCfg := capture.CaptureConfig{
 		Display:  *disp,
 		X:        x,
 		Y:        y,
@@ -136,16 +152,16 @@ func handleScreenshot() error {
 		WindowID: windowID,
 	}
 
-	img, err := capture.CaptureScreen(cfg)
+	img, err := capture.CaptureScreen(capCfg)
 	if err != nil {
 		return err
 	}
 
-	if err := capture.SavePNG(img, *output); err != nil {
+	if err := capture.SavePNG(img, outputPath); err != nil {
 		return err
 	}
 
-	fmt.Printf("Screenshot saved successfully to %s\n", *output)
+	fmt.Printf("Screenshot saved successfully to %s\n", outputPath)
 	return nil
 }
 
@@ -211,6 +227,20 @@ func handleRecord() error {
 		}
 	}
 
+	cfg, _, err := config.LoadConfig()
+	if err != nil {
+		cfg = config.DefaultConfig()
+	}
+
+	outputPath := *output
+	if !filepath.IsAbs(outputPath) {
+		outputPath = filepath.Join(cfg.OutputDir, outputPath)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
+		return fmt.Errorf("failed to create directory for output: %w", err)
+	}
+
 	recCfg := recorder.RecorderConfig{
 		Display:    *disp,
 		X:          x,
@@ -218,7 +248,7 @@ func handleRecord() error {
 		Width:      w,
 		Height:     h,
 		FPS:        *fps,
-		OutputPath: *output,
+		OutputPath: outputPath,
 		Bitrate:    *bitrate,
 		WindowID:   windowID,
 	}
@@ -250,15 +280,30 @@ func handleRecord() error {
 		return fmt.Errorf("failed to stop recorder: %w", err)
 	}
 
-	fmt.Printf("Recording saved successfully to %s\n", *output)
+	fmt.Printf("Recording saved successfully to %s\n", outputPath)
 	return nil
 }
 
 func handleService() error {
+	cfg, cfgPath, err := config.LoadConfig()
+	if err != nil {
+		log.Printf("Warning: Failed to load config, using defaults: %v", err)
+		cfg = config.DefaultConfig()
+	} else if cfgPath != "" {
+		fmt.Printf("Loaded config from: %s\n", cfgPath)
+	}
+
+	// Ensure OutputDir exists
+	if err := os.MkdirAll(cfg.OutputDir, 0755); err != nil {
+		log.Printf("Warning: Failed to create output directory %q: %v", cfg.OutputDir, err)
+	} else {
+		fmt.Printf("Outputs will be saved to: %s\n", cfg.OutputDir)
+	}
+
 	fmt.Println("Zen-Cap hotkey service running in background...")
 	fmt.Println("Hotkeys:")
-	fmt.Println("  Ctrl+Shift+S  -> Fullscreen Screenshot")
-	fmt.Println("  Ctrl+Shift+R  -> Toggle Fullscreen Recording")
+	fmt.Printf("  %-14s -> Fullscreen Screenshot\n", cfg.Hotkeys.Screenshot)
+	fmt.Printf("  %-14s -> Toggle Fullscreen Recording\n", cfg.Hotkeys.RecordToggle)
 	fmt.Println("UNIX Signals:")
 	fmt.Println("  SIGUSR1       -> Fullscreen Screenshot")
 	fmt.Println("  SIGUSR2       -> Toggle Fullscreen Recording")
@@ -274,23 +319,23 @@ func handleService() error {
 	}
 	keybind.Initialize(X)
 
-	// Register Screenshot Hotkey (Ctrl+Shift+S)
+	// Register Screenshot Hotkey
 	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
 		fmt.Println("Hotkey pressed: Triggering screenshot...")
 		select {
 		case screenshotChan <- struct{}{}:
 		default:
 		}
-	}).Connect(X, X.RootWin(), "Control-Shift-s", true)
+	}).Connect(X, X.RootWin(), cfg.Hotkeys.Screenshot, true)
 
-	// Register Recording Hotkey (Ctrl+Shift+R)
+	// Register Recording Hotkey
 	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
 		fmt.Println("Hotkey pressed: Triggering recording toggle...")
 		select {
 		case recordChan <- struct{}{}:
 		default:
 		}
-	}).Connect(X, X.RootWin(), "Control-Shift-r", true)
+	}).Connect(X, X.RootWin(), cfg.Hotkeys.RecordToggle, true)
 
 	var activeRec *recorder.Recorder
 	var recMu sync.Mutex
@@ -331,15 +376,18 @@ func handleService() error {
 		for range screenshotChan {
 			go func() {
 				timestamp := time.Now().Format("20060102_150405")
-				filename := fmt.Sprintf("screenshot_%s.png", timestamp)
+				filename := filepath.Join(cfg.OutputDir, fmt.Sprintf("screenshot_%s.png", timestamp))
 				fmt.Printf("[%s] Capturing fullscreen to %s...\n", time.Now().Format("15:04:05"), filename)
 
-				cfg := capture.CaptureConfig{
+				// Ensure folder exists (e.g. if deleted mid-run)
+				_ = os.MkdirAll(cfg.OutputDir, 0755)
+
+				capCfg := capture.CaptureConfig{
 					Display: ":0.0",
 					X:       -1,
 					Y:       -1,
 				}
-				img, err := capture.CaptureScreen(cfg)
+				img, err := capture.CaptureScreen(capCfg)
 				if err != nil {
 					fmt.Printf("Error capturing screenshot: %v\n", err)
 					return
@@ -358,10 +406,13 @@ func handleService() error {
 			recMu.Lock()
 			if activeRec == nil {
 				timestamp := time.Now().Format("20060102_150405")
-				filename := fmt.Sprintf("recording_%s.mp4", timestamp)
+				filename := filepath.Join(cfg.OutputDir, fmt.Sprintf("recording_%s.mp4", timestamp))
 				fmt.Printf("[%s] Starting fullscreen recording to %s...\n", time.Now().Format("15:04:05"), filename)
 
-				cfg := recorder.RecorderConfig{
+				// Ensure folder exists (e.g. if deleted mid-run)
+				_ = os.MkdirAll(cfg.OutputDir, 0755)
+
+				recCfg := recorder.RecorderConfig{
 					Display:    ":0.0",
 					X:          -1,
 					Y:          -1,
@@ -369,7 +420,7 @@ func handleService() error {
 					OutputPath: filename,
 					Bitrate:    4000000,
 				}
-				rec := recorder.NewRecorder(cfg)
+				rec := recorder.NewRecorder(recCfg)
 				if err := rec.Start(); err != nil {
 					fmt.Printf("Error starting recorder: %v\n", err)
 					recMu.Unlock()

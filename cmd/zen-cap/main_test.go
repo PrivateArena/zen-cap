@@ -66,6 +66,18 @@ func TestServiceSignals(t *testing.T) {
 	}
 
 	// 2. Start the service subprocess in the temp directory
+	// Write a local config.json in the temp directory to ensure outputs are saved there
+	configContent := fmt.Sprintf(`{
+  "output_dir": %q,
+  "hotkeys": {
+    "screenshot": "Control-Shift-s",
+    "record_toggle": "Control-Shift-r"
+  }
+}`, tmpDir)
+	if err := os.WriteFile(filepath.Join(tmpDir, "config.json"), []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write config.json in temp dir: %v", err)
+	}
+
 	cmdService := exec.Command(binPath, "service")
 	cmdService.Dir = tmpDir
 	cmdService.Env = os.Environ()
