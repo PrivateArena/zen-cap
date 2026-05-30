@@ -12,17 +12,36 @@ import (
 )
 
 type CaptureConfig struct {
-	Display  string
-	X        int
-	Y        int
-	Width    int
-	Height   int
-	WindowID uint32
+	Display     string
+	X           int
+	Y           int
+	Width       int
+	Height      int
+	WindowID    uint32
+	Interactive bool
 }
 
 // CaptureScreen opens the display capture device, grabs one frame,
 // converts it to RGBA, and returns it as a Go image.Image.
 func CaptureScreen(cfg CaptureConfig) (image.Image, error) {
+	if cfg.Interactive {
+		// First capture the entire screen
+		fullCfg := cfg
+		fullCfg.Interactive = false
+		fullCfg.X = -1
+		fullCfg.Y = -1
+		fullCfg.Width = 0
+		fullCfg.Height = 0
+		fullCfg.WindowID = 0
+
+		fullImg, err := CaptureScreen(fullCfg)
+		if err != nil {
+			return nil, fmt.Errorf("failed to capture base screen for interactive selection: %w", err)
+		}
+
+		return InteractiveSelectRegion(fullImg)
+	}
+
 	devCfg := av.DeviceConfig{
 		Display:  cfg.Display,
 		X:        cfg.X,

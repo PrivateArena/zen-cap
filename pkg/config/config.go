@@ -15,8 +15,9 @@ type Config struct {
 }
 
 type HotkeysConfig struct {
-	Screenshot   string `json:"screenshot"`
-	RecordToggle string `json:"record_toggle"`
+	Screenshot       string `json:"screenshot"`
+	RegionScreenshot string `json:"region_screenshot"`
+	RecordToggle     string `json:"record_toggle"`
 }
 
 // getBinaryDir returns the directory of the running executable.
@@ -48,8 +49,9 @@ func DefaultConfig() *Config {
 	return &Config{
 		OutputDir: defaultOutputDir,
 		Hotkeys: HotkeysConfig{
-			Screenshot:   "Control-Shift-s",
-			RecordToggle: "Control-Shift-r",
+			Screenshot:       "Control-Shift-s",
+			RegionScreenshot: "Control-Shift-a",
+			RecordToggle:     "Control-Shift-r",
 		},
 	}
 }
@@ -59,8 +61,9 @@ func DefaultPortableConfig(binDir string) *Config {
 	return &Config{
 		OutputDir: filepath.Join(binDir, "zen-cap-outputs"),
 		Hotkeys: HotkeysConfig{
-			Screenshot:   "Control-Shift-s",
-			RecordToggle: "Control-Shift-r",
+			Screenshot:       "Control-Shift-s",
+			RegionScreenshot: "Control-Shift-a",
+			RecordToggle:     "Control-Shift-r",
 		},
 	}
 }
@@ -158,6 +161,9 @@ func readConfig(path string, binDir string, isPortable bool) (*Config, error) {
 	}
 	if cfg.Hotkeys.Screenshot == "" {
 		cfg.Hotkeys.Screenshot = defaults.Hotkeys.Screenshot
+	}
+	if cfg.Hotkeys.RegionScreenshot == "" {
+		cfg.Hotkeys.RegionScreenshot = defaults.Hotkeys.RegionScreenshot
 	}
 	if cfg.Hotkeys.RecordToggle == "" {
 		cfg.Hotkeys.RecordToggle = defaults.Hotkeys.RecordToggle

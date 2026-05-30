@@ -68,7 +68,7 @@ func printUsage() {
 func handleScreenshot() error {
 	fs := flag.NewFlagSet("screenshot", flag.ExitOnError)
 	output := fs.String("o", "screenshot.png", "Output file path")
-	region := fs.String("r", "", "Region geometry (X,Y,W,H e.g. 100,200,800,600)")
+	region := fs.String("r", "", "Region geometry (X,Y,W,H e.g. 100,200,800,600 or 'interactive')")
 	window := fs.String("w", "", "Target window: 'active', 'list', or specific window ID (e.g. 0x40000a)")
 	screen := fs.String("s", "", "Target screen index: 'list' or screen index (e.g. 0, 1)")
 	disp := fs.String("d", ":0.0", "X11 display")
@@ -79,6 +79,7 @@ func handleScreenshot() error {
 
 	x, y, w, h := -1, -1, 0, 0
 	var windowID uint32
+	interactive := false
 
 	// List screens
 	if *screen == "list" {
@@ -122,10 +123,14 @@ func handleScreenshot() error {
 		h = scr.Geometry.Height
 		fmt.Printf("Targeting screen %d: %s (%dx%d at %d,%d)\n", idx, scr.Name, w, h, x, y)
 	} else if *region != "" {
-		// Handle custom region selection
-		_, err := fmt.Sscanf(*region, "%d,%d,%d,%d", &x, &y, &w, &h)
-		if err != nil {
-			return fmt.Errorf("invalid region format, must be X,Y,W,H: %w", err)
+		if *region == "interactive" {
+			interactive = true
+		} else {
+			// Handle custom region selection
+			_, err := fmt.Sscanf(*region, "%d,%d,%d,%d", &x, &y, &w, &h)
+			if err != nil {
+				return fmt.Errorf("invalid region format, must be X,Y,W,H or 'interactive': %w", err)
+			}
 		}
 	}
 
@@ -144,12 +149,13 @@ func handleScreenshot() error {
 	}
 
 	capCfg := capture.CaptureConfig{
-		Display:  *disp,
-		X:        x,
-		Y:        y,
-		Width:    w,
-		Height:   h,
-		WindowID: windowID,
+		Display:     *disp,
+		X:           x,
+		Y:           y,
+		Width:       w,
+		Height:      h,
+		WindowID:    windowID,
+		Interactive: interactive,
 	}
 
 	img, err := capture.CaptureScreen(capCfg)
@@ -303,13 +309,17 @@ func handleService() error {
 	fmt.Println("Zen-Cap hotkey service running in background...")
 	fmt.Println("Hotkeys:")
 	fmt.Printf("  %-14s -> Fullscreen Screenshot\n", cfg.Hotkeys.Screenshot)
+	fmt.Printf("  %-14s -> Interactive Region Screenshot\n", cfg.Hotkeys.RegionScreenshot)
 	fmt.Printf("  %-14s -> Toggle Fullscreen Recording\n", cfg.Hotkeys.RecordToggle)
 	fmt.Println("UNIX Signals:")
 	fmt.Println("  SIGUSR1       -> Fullscreen Screenshot")
 	fmt.Println("  SIGUSR2       -> Toggle Fullscreen Recording")
+	fmt.Println("Safety Net:")
+	fmt.Println("  Ctrl+Shift+X  -> Instantly kill zen-cap service (emergency fallback)")
 	fmt.Println("Press Ctrl+C in terminal to exit service.")
 
 	screenshotChan := make(chan struct{}, 1)
+	regionScreenshotChan := make(chan struct{}, 1)
 	recordChan := make(chan struct{}, 1)
 
 	// Initialize X11 connection for global hotkeys
@@ -328,6 +338,15 @@ func handleService() error {
 		}
 	}).Connect(X, X.RootWin(), cfg.Hotkeys.Screenshot, true)
 
+	// Register Region Screenshot Hotkey
+	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+		fmt.Println("Hotkey pressed: Triggering interactive region screenshot...")
+		select {
+		case regionScreenshotChan <- struct{}{}:
+		default:
+		}
+	}).Connect(X, X.RootWin(), cfg.Hotkeys.RegionScreenshot, true)
+
 	// Register Recording Hotkey
 	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
 		fmt.Println("Hotkey pressed: Triggering recording toggle...")
@@ -336,6 +355,14 @@ func handleService() error {
 		default:
 		}
 	}).Connect(X, X.RootWin(), cfg.Hotkeys.RecordToggle, true)
+
+	// Register Global Safety Kill Hotkey (Ctrl+Shift+X) - emergency exit
+	safetyKillHandler := func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+		fmt.Println("CRITICAL: Global safety kill hotkey pressed! Terminating zen-cap service immediately.")
+		os.Exit(1)
+	}
+	keybind.KeyPressFun(safetyKillHandler).Connect(X, X.RootWin(), "Control-Shift-x", true)
+	keybind.KeyPressFun(safetyKillHandler).Connect(X, X.RootWin(), "Control-Shift-X", true)
 
 	var activeRec *recorder.Recorder
 	var recMu sync.Mutex
@@ -397,6 +424,36 @@ func handleService() error {
 					return
 				}
 				fmt.Printf("Screenshot saved successfully to %s\n", filename)
+			}()
+		}
+	}()
+
+	go func() {
+		for range regionScreenshotChan {
+			go func() {
+				timestamp := time.Now().Format("20060102_150405")
+				filename := filepath.Join(cfg.OutputDir, fmt.Sprintf("screenshot_region_%s.png", timestamp))
+				fmt.Printf("[%s] Launching interactive region screenshot to %s...\n", time.Now().Format("15:04:05"), filename)
+
+				// Ensure folder exists
+				_ = os.MkdirAll(cfg.OutputDir, 0755)
+
+				capCfg := capture.CaptureConfig{
+					Display:     ":0.0",
+					X:           -1,
+					Y:           -1,
+					Interactive: true,
+				}
+				img, err := capture.CaptureScreen(capCfg)
+				if err != nil {
+					fmt.Printf("Error capturing region screenshot: %v\n", err)
+					return
+				}
+				if err := capture.SavePNG(img, filename); err != nil {
+					fmt.Printf("Error saving region screenshot: %v\n", err)
+					return
+				}
+				fmt.Printf("Region screenshot saved successfully to %s\n", filename)
 			}()
 		}
 	}()
