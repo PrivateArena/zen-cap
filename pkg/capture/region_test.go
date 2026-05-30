@@ -534,15 +534,15 @@ func TestInteractiveSelectRegionAndAbort(t *testing.T) {
 
 		keybind.Initialize(clientXu)
 
-		// 2. Simulate typing "1" then "Enter" / "Return"
-		kcs := keybind.StrToKeycodes(clientXu, "1")
+		// 2. Simulate typing "a" then "Enter" / "Return"
+		kcs := keybind.StrToKeycodes(clientXu, "a")
 		if len(kcs) == 0 {
-			t.Fatal("could not locate keycode for '1'")
+			t.Fatal("could not locate keycode for 'a'")
 		}
-		oneKeycode := kcs[0]
+		aKeycode := kcs[0]
 
 		pressKey := xproto.KeyPressEvent{
-			Detail:     xproto.Keycode(oneKeycode),
+			Detail:     xproto.Keycode(aKeycode),
 			Time:       xproto.TimeCurrentTime,
 			Root:       screen.Root,
 			Event:      xproto.Window(winID),
@@ -642,7 +642,7 @@ func TestInteractiveSelectRegionAndAbort(t *testing.T) {
 			if !foundPink {
 				t.Error("expected to find neon-pink text color inside crop, but found none")
 			} else {
-				t.Log("Successfully verified double right-click text input and typing flow!")
+				t.Log("Successfully verified double right-click alphabetical text input and typing flow!")
 			}
 		case <-time.After(3 * time.Second):
 			t.Fatal("timed out waiting for result")
