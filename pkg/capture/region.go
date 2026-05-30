@@ -7,6 +7,8 @@ import (
 	"image/draw"
 	"log"
 	"math"
+	"strings"
+	"time"
 
 	"github.com/jezek/xgb/xproto"
 	"github.com/jezek/xgbutil"
@@ -16,6 +18,49 @@ import (
 
 // TestHookWindowID is a global hook used by automated tests to locate the selection window.
 var TestHookWindowID uint32
+
+// Character bitmaps for custom 3x5 pixel font
+var charBitmaps = map[rune][5]byte{
+	'0': {0x7, 0x5, 0x5, 0x5, 0x7}, // 111, 101, 101, 101, 111
+	'1': {0x2, 0x6, 0x2, 0x2, 0x7},
+	'2': {0x7, 0x1, 0x7, 0x4, 0x7},
+	'3': {0x7, 0x1, 0x7, 0x1, 0x7},
+	'4': {0x5, 0x5, 0x7, 0x1, 0x1},
+	'5': {0x7, 0x4, 0x7, 0x1, 0x7},
+	'6': {0x7, 0x4, 0x7, 0x5, 0x7},
+	'7': {0x7, 0x1, 0x2, 0x4, 0x4},
+	'8': {0x7, 0x5, 0x7, 0x5, 0x7},
+	'9': {0x7, 0x5, 0x7, 0x1, 0x7},
+	' ': {0x0, 0x0, 0x0, 0x0, 0x0},
+	',': {0x0, 0x0, 0x0, 0x2, 0x4},
+	'X': {0x5, 0x5, 0x2, 0x5, 0x5},
+	'#': {0x5, 0x7, 0x5, 0x7, 0x5},
+}
+
+// drawChar draws a single character in our 3x5 font
+func drawChar(img draw.Image, char rune, x, y int, col color.Color) {
+	bitmap, ok := charBitmaps[char]
+	if !ok {
+		bitmap = charBitmaps[' ']
+	}
+	for row := 0; row < 5; row++ {
+		val := bitmap[row]
+		for colIdx := 0; colIdx < 3; colIdx++ {
+			if (val >> (2 - colIdx)) & 1 == 1 {
+				img.Set(x+colIdx, y+row, col)
+			}
+		}
+	}
+}
+
+// drawString draws a string in our 3x5 font (centered at y, starts at x)
+func drawString(img draw.Image, s string, x, y int, col color.Color) {
+	currX := x
+	for _, char := range strings.ToUpper(s) {
+		drawChar(img, char, currX, y, col)
+		currX += 4 // 3 pixels width + 1 pixel spacing
+	}
+}
 
 // InteractiveSelectRegion captures the fullscreen, displays it in an override-redirect
 // window, lets the user drag-and-drop to select a region, and returns the cropped image bounds.
@@ -282,6 +327,18 @@ func InteractiveSelectRegion(fullImg image.Image) (image.Image, error) {
 		doodling    = false
 		lastDoodleX = 0
 		lastDoodleY = 0
+		annoTool    = "doodle" // "doodle", "rect", "circle"
+
+		// Text input variables
+		textInputActive    = false
+		textInputX         = 0
+		textInputY         = 0
+		textInputBuffer    = ""
+		lastRightClickTime time.Time
+
+		// Font scale and undo history variables
+		fontScale = 2 // Premium larger default text size
+		history   = []*image.RGBA{copyImage(rgbaImg)}
 	)
 
 	// Redraw function using double buffering
@@ -336,6 +393,109 @@ func InteractiveSelectRegion(fullImg image.Image) (image.Image, error) {
 			xproto.PolyFillRectangle(xu.Conn(), xproto.Drawable(bufPixmapID), overlayGCID, []xproto.Rectangle{rect})
 		}
 
+		// Draw preview of active shape drawing
+		if doodling && (annoTool == "rect" || annoTool == "circle") {
+			x1 := int(math.Min(float64(lastDoodleX), float64(currX)))
+			y1 := int(math.Min(float64(lastDoodleY), float64(currY)))
+			w := int(math.Abs(float64(currX - lastDoodleX)))
+			h := int(math.Abs(float64(currY - lastDoodleY)))
+
+			if w > 0 && h > 0 {
+				if annoTool == "rect" {
+					rect := xproto.Rectangle{X: int16(x1), Y: int16(y1), Width: uint16(w), Height: uint16(h)}
+					xproto.PolyRectangle(xu.Conn(), xproto.Drawable(bufPixmapID), pinkGCID, []xproto.Rectangle{rect})
+				} else if annoTool == "circle" {
+					dx := currX - lastDoodleX
+					dy := currY - lastDoodleY
+					r := int(math.Sqrt(float64(dx*dx + dy*dy)))
+					if r > 0 {
+						arc := xproto.Arc{
+							X:      int16(lastDoodleX - r),
+							Y:      int16(lastDoodleY - r),
+							Width:  uint16(r * 2),
+							Height: uint16(r * 2),
+							Angle1: 0,
+							Angle2: 360 * 64,
+						}
+						xproto.PolyArc(xu.Conn(), xproto.Drawable(bufPixmapID), pinkGCID, []xproto.Arc{arc})
+					}
+				}
+			}
+		}
+
+		// Draw real-time blinking text input box with scale adjustment
+		if textInputActive {
+			cursor := "_"
+			if time.Now().UnixNano()/500000000%2 == 0 {
+				cursor = " "
+			}
+			textToShow := textInputBuffer + cursor
+			textW := len(textToShow)*4*fontScale + 6
+			textH := 9 * fontScale
+			textImg := image.NewRGBA(image.Rect(0, 0, textW, textH))
+			pinkColorRGBA := color.RGBA{R: 255, G: 0, B: 127, A: 255}
+
+			for dy := 0; dy < textH; dy++ {
+				for dx := 0; dx < textW; dx++ {
+					textImg.Set(dx, dy, color.Black)
+				}
+			}
+			drawStringScaled(textImg, textToShow, 3, 2, pinkColorRGBA, fontScale)
+
+			textBGRA := imageToBGRA(textImg)
+			xproto.PutImage(
+				xu.Conn(),
+				xproto.ImageFormatZPixmap,
+				xproto.Drawable(bufPixmapID),
+				gcID,
+				uint16(textW),
+				uint16(textH),
+				int16(textInputX),
+				int16(textInputY),
+				0,
+				screen.RootDepth,
+				textBGRA,
+			)
+		}
+
+		// Draw circular magnifier loupe floating above/below cursor
+		lx := currX + 20
+		ly := currY - 140
+		if ly < 10 {
+			ly = currY + 20 // Flip below cursor
+		}
+		if lx+120 > screenWidth {
+			lx = currX - 140 // Flip to left of cursor
+		}
+		if lx < 10 {
+			lx = 10
+		}
+		if ly+120 > screenHeight {
+			ly = screenHeight - 130
+		}
+		if ly < 10 {
+			ly = 10
+		}
+
+		// Generate circular magnifier loupe image
+		magImg := getMagnifierImage(rgbaImg, currX, currY, lx, ly, screenWidth, screenHeight, dragStart, startX, startY)
+		magBGRA := imageToBGRA(magImg)
+
+		// Upload magnifier to the buffer pixmap
+		xproto.PutImage(
+			xu.Conn(),
+			xproto.ImageFormatZPixmap,
+			xproto.Drawable(bufPixmapID),
+			gcID,
+			120, // width
+			120, // height
+			int16(lx),
+			int16(ly),
+			0, // leftPad
+			screen.RootDepth,
+			magBGRA,
+		)
+
 		// Copy complete buffer pixmap to the fullscreen window
 		xproto.CopyArea(
 			xu.Conn(),
@@ -351,7 +511,7 @@ func InteractiveSelectRegion(fullImg image.Image) (image.Image, error) {
 	// Register event handlers
 	xevent.ButtonPressFun(func(X *xgbutil.XUtil, ev xevent.ButtonPressEvent) {
 		if ev.Detail == 1 { // Left Mouse Button -> Crop Selection
-			if !doodling {
+			if !doodling && !textInputActive {
 				dragStart = true
 				startX = int(ev.EventX)
 				startY = int(ev.EventY)
@@ -360,10 +520,34 @@ func InteractiveSelectRegion(fullImg image.Image) (image.Image, error) {
 				redraw()
 			}
 		} else if ev.Detail == 3 { // Right Mouse Button -> Annotate/Doodle
-			if !dragStart {
+			if !dragStart && !textInputActive {
+				now := time.Now()
+				if now.Sub(lastRightClickTime) < 300*time.Millisecond {
+					// Double Right Click -> Text input mode!
+					textInputActive = true
+					textInputX = int(ev.EventX)
+					textInputY = int(ev.EventY)
+					textInputBuffer = ""
+					redraw()
+					return
+				}
+				lastRightClickTime = now
+
+				// Normal right-click annotation setup
 				doodling = true
 				lastDoodleX = int(ev.EventX)
 				lastDoodleY = int(ev.EventY)
+				currX = lastDoodleX
+				currY = lastDoodleY
+
+				// Select shape tool based on modifiers
+				if ev.State&xproto.ModMaskShift != 0 {
+					annoTool = "rect"
+				} else if ev.State&xproto.ModMaskControl != 0 {
+					annoTool = "circle"
+				} else {
+					annoTool = "doodle"
+				}
 			}
 		}
 	}).Connect(xu, winID)
@@ -377,36 +561,84 @@ func InteractiveSelectRegion(fullImg image.Image) (image.Image, error) {
 			xevent.Quit(xu)
 		} else if ev.Detail == 3 && doodling { // Right Mouse Button release
 			doodling = false
+			cx := int(ev.EventX)
+			cy := int(ev.EventY)
+			pinkColorRGBA := color.RGBA{R: 255, G: 0, B: 127, A: 255}
+
+			if annoTool == "rect" {
+				x1 := int(math.Min(float64(lastDoodleX), float64(cx)))
+				y1 := int(math.Min(float64(lastDoodleY), float64(cy)))
+				w := int(math.Abs(float64(cx - lastDoodleX)))
+				h := int(math.Abs(float64(cy - lastDoodleY)))
+				if w > 0 && h > 0 {
+					// 1. Burn into Go image permanently
+					drawRect(rgbaImg, lastDoodleX, lastDoodleY, cx, cy, pinkColorRGBA, int(brushThickness))
+					// 2. Burn into X11 background pixmap
+					rect := xproto.Rectangle{X: int16(x1), Y: int16(y1), Width: uint16(w), Height: uint16(h)}
+					xproto.PolyRectangle(xu.Conn(), xproto.Drawable(bgPixmapID), pinkGCID, []xproto.Rectangle{rect})
+				}
+			} else if annoTool == "circle" {
+				dx := cx - lastDoodleX
+				dy := cy - lastDoodleY
+				r := int(math.Sqrt(float64(dx*dx + dy*dy)))
+				if r > 0 {
+					// 1. Burn into Go image permanently
+					drawCircle(rgbaImg, lastDoodleX, lastDoodleY, r, pinkColorRGBA, int(brushThickness))
+					// 2. Burn into X11 background pixmap
+					arc := xproto.Arc{
+						X:      int16(lastDoodleX - r),
+						Y:      int16(lastDoodleY - r),
+						Width:  uint16(r * 2),
+						Height: uint16(r * 2),
+						Angle1: 0,
+						Angle2: 360 * 64,
+					}
+					xproto.PolyArc(xu.Conn(), xproto.Drawable(bgPixmapID), pinkGCID, []xproto.Arc{arc})
+				}
+			}
+
+			// Push state to history after completing doodle, rectangle, or circle annotation!
+			history = append(history, copyImage(rgbaImg))
+			redraw()
 		}
 	}).Connect(xu, winID)
 
 	xevent.MotionNotifyFun(func(X *xgbutil.XUtil, ev xevent.MotionNotifyEvent) {
+		currX = int(ev.EventX)
+		currY = int(ev.EventY)
+
 		if dragStart {
-			currX = int(ev.EventX)
-			currY = int(ev.EventY)
 			redraw()
 		} else if doodling {
 			cx := int(ev.EventX)
 			cy := int(ev.EventY)
 
-			// 1. Draw line in background pixmap using X11 Neon Pink GC
-			xproto.PolyLine(
-				xu.Conn(),
-				xproto.CoordModeOrigin,
-				xproto.Drawable(bgPixmapID),
-				pinkGCID,
-				[]xproto.Point{
-					{X: int16(lastDoodleX), Y: int16(lastDoodleY)},
-					{X: int16(cx), Y: int16(cy)},
-				},
-			)
+			if annoTool == "doodle" {
+				// 1. Draw line in background pixmap using X11 Neon Pink GC
+				xproto.PolyLine(
+					xu.Conn(),
+					xproto.CoordModeOrigin,
+					xproto.Drawable(bgPixmapID),
+					pinkGCID,
+					[]xproto.Point{
+						{X: int16(lastDoodleX), Y: int16(lastDoodleY)},
+						{X: int16(cx), Y: int16(cy)},
+					},
+				)
 
-			// 2. Draw line on Go Image to burn the annotation into the final capture
-			pinkColorRGBA := color.RGBA{R: 255, G: 0, B: 127, A: 255}
-			drawLine(rgbaImg, lastDoodleX, lastDoodleY, cx, cy, pinkColorRGBA, int(brushThickness))
+				// 2. Draw line on Go Image to burn the annotation into the final capture
+				pinkColorRGBA := color.RGBA{R: 255, G: 0, B: 127, A: 255}
+				drawLine(rgbaImg, lastDoodleX, lastDoodleY, cx, cy, pinkColorRGBA, int(brushThickness))
 
-			lastDoodleX = cx
-			lastDoodleY = cy
+				lastDoodleX = cx
+				lastDoodleY = cy
+				redraw()
+			} else {
+				// Shape tools (rect / circle): just update preview coordinates
+				redraw()
+			}
+		} else {
+			// Just moving: redraw to update magnifier position
 			redraw()
 		}
 	}).Connect(xu, winID)
@@ -415,20 +647,111 @@ func InteractiveSelectRegion(fullImg image.Image) (image.Image, error) {
 		redraw()
 	}).Connect(xu, winID)
 
-	// Safe keys handling (Escape, q, Q, Ctrl+Shift+X)
-	abortHandler := func(X *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+	// Safe keys handling (Escape, q, Q, Ctrl+Shift+X) and text input capturing
+	xevent.KeyPressFun(func(X *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+		mods := ev.State
+		keycode := ev.Detail
+		keyStr := keybind.LookupString(xu, mods, keycode)
+
+		if textInputActive {
+			// Check for Enter / Return
+			if keyStr == "\r" || keyStr == "\n" || keyStr == "Return" || keyStr == "Enter" {
+				// Commit text!
+				if len(textInputBuffer) > 0 {
+					pinkColorRGBA := color.RGBA{R: 255, G: 0, B: 127, A: 255}
+					// Burn into Go image permanently with fontScale
+					drawHUDTextScaled(rgbaImg, textInputBuffer, textInputX, textInputY, pinkColorRGBA, color.Black, fontScale)
+					// Push to history before uploading!
+					history = append(history, copyImage(rgbaImg))
+					// Redraw background pixmap to include the committed text
+					bgra := imageToBGRA(rgbaImg)
+					uploadImageChunked(xu, xproto.Drawable(bgPixmapID), gcID, screen.RootDepth, screenWidth, screenHeight, bgra)
+				}
+				textInputActive = false
+				textInputBuffer = ""
+				redraw()
+				return
+			}
+
+			// Check for Escape (Cancel typing)
+			if keyStr == "Escape" {
+				textInputActive = false
+				textInputBuffer = ""
+				redraw()
+				return
+			}
+
+			// Check for Backspace
+			if keyStr == "BackSpace" || keycode == 22 {
+				if len(textInputBuffer) > 0 {
+					textInputBuffer = textInputBuffer[:len(textInputBuffer)-1]
+					redraw()
+				}
+				return
+			}
+
+			// Capture printable characters
+			if len(keyStr) == 1 && keyStr[0] >= 32 && keyStr[0] <= 126 {
+				textInputBuffer += keyStr
+				redraw()
+			}
+			return
+		}
+
+		// --- Normal Mode keys ---
+
+		// Undo: Ctrl+Z
+		if (keyStr == "z" || keyStr == "Z") && (mods&xproto.ModMaskControl != 0) {
+			if len(history) > 1 {
+				history = history[:len(history)-1]
+				rgbaImg = copyImage(history[len(history)-1])
+				// Sync to background X11 pixmap
+				bgra := imageToBGRA(rgbaImg)
+				uploadImageChunked(xu, xproto.Drawable(bgPixmapID), gcID, screen.RootDepth, screenWidth, screenHeight, bgra)
+				redraw()
+			}
+			return
+		}
+
+		// Adjust brush thickness and font scale: Ctrl+Plus or Ctrl+Minus
+		if (keyStr == "equal" || keyStr == "plus" || keyStr == "+") && (mods&xproto.ModMaskControl != 0) {
+			fontScale++
+			brushThickness += 2
+			// Update X11 GC line width
+			xproto.ChangeGC(xu.Conn(), pinkGCID, xproto.GcLineWidth, []uint32{brushThickness})
+			redraw()
+			return
+		}
+		if (keyStr == "minus" || keyStr == "hyphen" || keyStr == "-") && (mods&xproto.ModMaskControl != 0) {
+			if fontScale > 1 {
+				fontScale--
+			}
+			if brushThickness > 2 {
+				brushThickness -= 2
+			}
+			// Update X11 GC line width
+			xproto.ChangeGC(xu.Conn(), pinkGCID, xproto.GcLineWidth, []uint32{brushThickness})
+			redraw()
+			return
+		}
+
+		// Normal mode keys (Escape, q, Ctrl+Shift+X)
+		if keyStr == "Escape" || keyStr == "q" || keyStr == "Q" {
+			aborted = true
+			xevent.Quit(xu)
+		}
+	}).Connect(xu, winID)
+
+	// Extra safety abort binding specifically for Ctrl+Shift+X
+	keybind.KeyPressFun(func(X *xgbutil.XUtil, ev xevent.KeyPressEvent) {
 		aborted = true
 		xevent.Quit(xu)
-	}
+	}).Connect(xu, winID, "Control-Shift-x", true)
 
-	// Bind Escape key
-	keybind.KeyPressFun(abortHandler).Connect(xu, winID, "Escape", true)
-	// Bind Q key
-	keybind.KeyPressFun(abortHandler).Connect(xu, winID, "q", true)
-	keybind.KeyPressFun(abortHandler).Connect(xu, winID, "Q", true)
-	// Bind Ctrl+Shift+X key
-	keybind.KeyPressFun(abortHandler).Connect(xu, winID, "Control-Shift-x", true)
-	keybind.KeyPressFun(abortHandler).Connect(xu, winID, "Control-Shift-X", true)
+	keybind.KeyPressFun(func(X *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+		aborted = true
+		xevent.Quit(xu)
+	}).Connect(xu, winID, "Control-Shift-X", true)
 
 	// Run X11 event loop until Quit is called
 	xevent.Main(xu)
@@ -573,4 +896,152 @@ func abs(x int) int {
 		return -x
 	}
 	return x
+}
+
+// getMagnifierImage generates a 120x120 circle magnifier image with a neon-cyan bezel, neon-pink crosshairs,
+// and coordinates or current crop dimensions rendered in a custom 3x5 font at the bottom.
+func getMagnifierImage(rgbaImg *image.RGBA, mx, my, lx, ly, screenWidth, screenHeight int, dragging bool, startX, startY int) *image.RGBA {
+	mag := image.NewRGBA(image.Rect(0, 0, 120, 120))
+	pinkColor := color.RGBA{R: 255, G: 0, B: 127, A: 255}
+	cyanColor := color.RGBA{R: 0, G: 240, B: 255, A: 255}
+
+	for dy := 0; dy < 120; dy++ {
+		for dx := 0; dx < 120; dx++ {
+			rx := dx - 60
+			ry := dy - 60
+			distSq := rx*rx + ry*ry
+
+			var col color.Color
+			if distSq > 60*60 {
+				// Outside the circular magnifier glass: draw background screen pixel
+				sx := lx + dx
+				sy := ly + dy
+				if sx >= 0 && sx < screenWidth && sy >= 0 && sy < screenHeight {
+					col = rgbaImg.At(sx, sy)
+				} else {
+					col = color.Black
+				}
+			} else if distSq >= 58*58 && distSq <= 60*60 {
+				// Outer bezel: Neon cyan
+				col = cyanColor
+			} else {
+				// Inside the circular magnifier glass: 4x nearest-neighbor magnification
+				// Map dx, dy [0..120] to source offsets [-15..15]
+				sx := mx - 15 + dx/4
+				sy := my - 15 + dy/4
+				if sx >= 0 && sx < screenWidth && sy >= 0 && sy < screenHeight {
+					col = rgbaImg.At(sx, sy)
+				} else {
+					col = color.Black
+				}
+
+				// Draw circular central crosshairs (Neon pink, length 10px in 4 directions)
+				if (rx == 0 && ry >= -10 && ry <= 10) || (ry == 0 && rx >= -10 && rx <= 10) {
+					col = pinkColor
+				}
+			}
+			mag.Set(dx, dy, col)
+		}
+	}
+
+	// Determine info string to display in the bottom HUD bar
+	var infoStr string
+	if dragging {
+		w := int(math.Abs(float64(mx - startX)))
+		h := int(math.Abs(float64(my - startY)))
+		infoStr = fmt.Sprintf("%dX%d", w, h)
+	} else {
+		infoStr = fmt.Sprintf("%d,%d", mx, my)
+	}
+
+	// Render HUD background bar inside the bottom of the magnifier (transparent black)
+	hudWidth := len(infoStr)*4 + 6
+	hudStartX := (120 - hudWidth) / 2
+	for ty := 95; ty < 103; ty++ {
+		for tx := hudStartX; tx < hudStartX+hudWidth; tx++ {
+			rx := tx - 60
+			ry := ty - 60
+			if rx*rx+ry*ry < 56*56 {
+				mag.Set(tx, ty, color.RGBA{R: 0, G: 0, B: 0, A: 220})
+			}
+		}
+	}
+
+	// Draw custom 3x5 pixel font coordinates/dims centered
+	drawString(mag, infoStr, hudStartX+3, 97, color.White)
+
+	return mag
+}
+
+// drawRect draws a rectangle with thickness on a draw.Image
+func drawRect(img draw.Image, x0, y0, x1, y1 int, col color.Color, thickness int) {
+	// Draw the 4 edges using drawLine
+	drawLine(img, x0, y0, x1, y0, col, thickness)
+	drawLine(img, x1, y0, x1, y1, col, thickness)
+	drawLine(img, x1, y1, x0, y1, col, thickness)
+	drawLine(img, x0, y1, x0, y0, col, thickness)
+}
+
+// drawCircle draws a circle with thickness on a draw.Image
+func drawCircle(img draw.Image, cx, cy, r int, col color.Color, thickness int) {
+	for y := cy - r - thickness; y <= cy + r + thickness; y++ {
+		for x := cx - r - thickness; x <= cx + r + thickness; x++ {
+			dx := x - cx
+			dy := y - cy
+			dist := math.Sqrt(float64(dx*dx + dy*dy))
+			if math.Abs(dist-float64(r)) <= float64(thickness)/2.0 {
+				img.Set(x, y, col)
+			}
+		}
+	}
+}
+
+// drawHUDTextScaled draws a string scaled onto a draw.Image inside a solid background rectangle
+func drawHUDTextScaled(img draw.Image, text string, x, y int, fg, bg color.Color, scale int) {
+	w := len(text)*4*scale + 6
+	h := 9 * scale
+	for dy := 0; dy < h; dy++ {
+		for dx := 0; dx < w; dx++ {
+			img.Set(x+dx, y+dy, bg)
+		}
+	}
+	drawStringScaled(img, text, x+3, y+2, fg, scale)
+}
+
+// drawCharScaled draws a single character scaled by a factor
+func drawCharScaled(img draw.Image, char rune, x, y int, col color.Color, scale int) {
+	bitmap, ok := charBitmaps[char]
+	if !ok {
+		bitmap = charBitmaps[' ']
+	}
+	for row := 0; row < 5; row++ {
+		val := bitmap[row]
+		for colIdx := 0; colIdx < 3; colIdx++ {
+			if (val >> (2 - colIdx)) & 1 == 1 {
+				// Draw a scale x scale block
+				for sy := 0; sy < scale; sy++ {
+					for sx := 0; sx < scale; sx++ {
+						img.Set(x+colIdx*scale+sx, y+row*scale+sy, col)
+					}
+				}
+			}
+		}
+	}
+}
+
+// drawStringScaled draws a string scaled by a factor
+func drawStringScaled(img draw.Image, s string, x, y int, col color.Color, scale int) {
+	currX := x
+	for _, char := range strings.ToUpper(s) {
+		drawCharScaled(img, char, currX, y, col, scale)
+		currX += 4 * scale // 3 pixels width + 1 pixel spacing * scale
+	}
+}
+
+// copyImage creates a deep copy of an *image.RGBA
+func copyImage(src *image.RGBA) *image.RGBA {
+	bounds := src.Bounds()
+	dst := image.NewRGBA(bounds)
+	copy(dst.Pix, src.Pix)
+	return dst
 }
