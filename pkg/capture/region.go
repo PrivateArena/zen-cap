@@ -7,7 +7,6 @@ import (
 	"image/draw"
 	"log"
 	"math"
-	"strings"
 	"time"
 
 	"github.com/jezek/xgb/xproto"
@@ -19,108 +18,51 @@ import (
 // TestHookWindowID is a global hook used by automated tests to locate the selection window.
 var TestHookWindowID uint32
 
-// Character bitmaps for custom 3x5 pixel font (used by magnifier HUD)
-var charBitmaps = map[rune][5]byte{
-	'0': {0x7, 0x5, 0x5, 0x5, 0x7}, // 111, 101, 101, 101, 111
-	'1': {0x2, 0x6, 0x2, 0x2, 0x7},
-	'2': {0x7, 0x1, 0x7, 0x4, 0x7},
-	'3': {0x7, 0x1, 0x7, 0x1, 0x7},
-	'4': {0x5, 0x5, 0x7, 0x1, 0x1},
-	'5': {0x7, 0x4, 0x7, 0x1, 0x7},
-	'6': {0x7, 0x4, 0x7, 0x5, 0x7},
-	'7': {0x7, 0x1, 0x2, 0x4, 0x4},
-	'8': {0x7, 0x5, 0x7, 0x5, 0x7},
-	'9': {0x7, 0x5, 0x7, 0x1, 0x7},
-	' ': {0x0, 0x0, 0x0, 0x0, 0x0},
-	',': {0x0, 0x0, 0x0, 0x2, 0x4},
-	'X': {0x5, 0x5, 0x2, 0x5, 0x5},
-	'#': {0x5, 0x7, 0x5, 0x7, 0x5},
+type regionState struct {
+	xu                 *xgbutil.XUtil
+	winID              xproto.Window
+	gcID               xproto.Gcontext
+	bgPixmapID         xproto.Pixmap
+	bufPixmapID        xproto.Pixmap
+	cyanGCID           xproto.Gcontext
+	pinkGCID           xproto.Gcontext
+	overlayGCID        xproto.Gcontext
+	screenWidth        int
+	screenHeight       int
+	screen             *xproto.ScreenInfo
+	rgbaImg            *image.RGBA
+	dragStart          bool
+	startX             int
+	startY             int
+	currX              int
+	currY              int
+	selected           bool
+	aborted            bool
+	doodling           bool
+	lastDoodleX        int
+	lastDoodleY        int
+	annoTool           string
+	textInputActive    bool
+	textInputX         int
+	textInputY         int
+	textInputBuffer    string
+	lastRightClickTime time.Time
+	fontScale          int
+	brushThickness     uint32
+	history            []*image.RGBA
+	clipboardAction    string // "image", "path", "ocr", "translate"
 }
 
-// Complete 5x7 pixel font bitmap table (used by annotation text inputs)
-// 7 bytes per character, each byte represents a row of 5 bits.
-var font5x7 = map[rune][7]byte{
-	' ': {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
-	'A': {0x0e, 0x11, 0x11, 0x1f, 0x11, 0x11, 0x11}, // 01110, 10001, 10001, 11111, 10001, 10001, 10001
-	'B': {0x1e, 0x11, 0x11, 0x1e, 0x11, 0x11, 0x1e},
-	'C': {0x0e, 0x11, 0x10, 0x10, 0x10, 0x11, 0x0e},
-	'D': {0x1c, 0x12, 0x11, 0x11, 0x11, 0x12, 0x1c},
-	'E': {0x1f, 0x10, 0x10, 0x1f, 0x10, 0x10, 0x1f},
-	'F': {0x1f, 0x10, 0x10, 0x1f, 0x10, 0x10, 0x10},
-	'G': {0x0e, 0x11, 0x10, 0x17, 0x11, 0x11, 0x0f},
-	'H': {0x11, 0x11, 0x11, 0x1f, 0x11, 0x11, 0x11},
-	'I': {0x0e, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0e},
-	'J': {0x1f, 0x02, 0x02, 0x02, 0x02, 0x12, 0x0c},
-	'K': {0x11, 0x12, 0x14, 0x18, 0x14, 0x12, 0x11},
-	'L': {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x1f},
-	'M': {0x11, 0x1b, 0x15, 0x11, 0x11, 0x11, 0x11},
-	'N': {0x11, 0x11, 0x19, 0x15, 0x13, 0x11, 0x11},
-	'O': {0x0e, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0e},
-	'P': {0x1e, 0x11, 0x11, 0x1e, 0x10, 0x10, 0x10},
-	'Q': {0x0e, 0x11, 0x11, 0x11, 0x15, 0x12, 0x0d},
-	'R': {0x1e, 0x11, 0x11, 0x1e, 0x14, 0x12, 0x11},
-	'S': {0x0f, 0x10, 0x10, 0x0e, 0x01, 0x01, 0x1e},
-	'T': {0x1f, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04},
-	'U': {0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0e},
-	'V': {0x11, 0x11, 0x11, 0x11, 0x11, 0x0a, 0x04},
-	'W': {0x11, 0x11, 0x11, 0x15, 0x15, 0x1b, 0x11},
-	'X': {0x11, 0x11, 0x0a, 0x04, 0x0a, 0x11, 0x11},
-	'Y': {0x11, 0x11, 0x0a, 0x04, 0x04, 0x04, 0x04},
-	'Z': {0x1f, 0x02, 0x04, 0x08, 0x10, 0x10, 0x1f},
-	'0': {0x0e, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0e},
-	'1': {0x04, 0x0c, 0x04, 0x04, 0x04, 0x04, 0x0e},
-	'2': {0x0e, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1f},
-	'3': {0x1f, 0x02, 0x04, 0x02, 0x01, 0x11, 0x0e},
-	'4': {0x02, 0x06, 0x0a, 0x12, 0x1f, 0x02, 0x02},
-	'5': {0x1f, 0x10, 0x1e, 0x01, 0x01, 0x11, 0x0e},
-	'6': {0x06, 0x08, 0x10, 0x1e, 0x11, 0x11, 0x0e},
-	'7': {0x1f, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08},
-	'8': {0x0e, 0x11, 0x11, 0x0e, 0x11, 0x11, 0x0e},
-	'9': {0x0e, 0x11, 0x11, 0x0f, 0x01, 0x01, 0x0e},
-	'.': {0x00, 0x00, 0x00, 0x00, 0x00, 0x0c, 0x0c},
-	',': {0x00, 0x00, 0x00, 0x00, 0x00, 0x0c, 0x04},
-	':': {0x00, 0x0c, 0x0c, 0x00, 0x0c, 0x0c, 0x00},
-	';': {0x00, 0x0c, 0x0c, 0x00, 0x0c, 0x04, 0x00},
-	'!': {0x04, 0x04, 0x04, 0x04, 0x00, 0x04, 0x00},
-	'?': {0x0e, 0x11, 0x01, 0x02, 0x04, 0x00, 0x04},
-	'-': {0x00, 0x00, 0x00, 0x1f, 0x00, 0x00, 0x00},
-	'+': {0x00, 0x04, 0x04, 0x1f, 0x04, 0x04, 0x00},
-	'=': {0x00, 0x00, 0x1f, 0x00, 0x1f, 0x00, 0x00},
-	'/': {0x01, 0x02, 0x04, 0x08, 0x10, 0x10, 0x10},
-	'_': {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1f},
-	'(': {0x02, 0x04, 0x08, 0x08, 0x08, 0x04, 0x02},
-	')': {0x08, 0x04, 0x02, 0x02, 0x02, 0x04, 0x08},
+// InteractiveSelectRegion is a backward-compatible wrapper around InteractiveSelectRegionExt.
+func InteractiveSelectRegion(fullImg image.Image) (image.Image, error) {
+	return InteractiveSelectRegionExt(fullImg, nil)
 }
 
-// drawChar draws a single character in our 3x5 font
-func drawChar(img draw.Image, char rune, x, y int, col color.Color) {
-	bitmap, ok := charBitmaps[char]
-	if !ok {
-		bitmap = charBitmaps[' ']
-	}
-	for row := 0; row < 5; row++ {
-		val := bitmap[row]
-		for colIdx := 0; colIdx < 3; colIdx++ {
-			if (val >> (2 - colIdx)) & 1 == 1 {
-				img.Set(x+colIdx, y+row, col)
-			}
-		}
-	}
-}
-
-// drawString draws a string in our 3x5 font (centered at y, starts at x)
-func drawString(img draw.Image, s string, x, y int, col color.Color) {
-	currX := x
-	for _, char := range strings.ToUpper(s) {
-		drawChar(img, char, currX, y, col)
-		currX += 4 // 3 pixels width + 1 pixel spacing
-	}
-}
-
-// InteractiveSelectRegion captures the fullscreen, displays it in an override-redirect
+// InteractiveSelectRegionExt captures the fullscreen, displays it in an override-redirect
 // window, lets the user drag-and-drop to select a region, and returns the cropped image bounds.
 // It also allows the user to draw annotations/doodles using the Right Mouse Button before selecting.
-func InteractiveSelectRegion(fullImg image.Image) (image.Image, error) {
+// It populates outClipboardAction if a dynamic shortcut was pressed.
+func InteractiveSelectRegionExt(fullImg image.Image, outClipboardAction *string) (image.Image, error) {
 	// Connect to X server
 	xu, err := xgbutil.NewConn()
 	if err != nil {
@@ -368,445 +310,48 @@ func InteractiveSelectRegion(fullImg image.Image) (image.Image, error) {
 	// Initialize keybinds for Escape, Q, and Ctrl+Shift+X abort keys
 	keybind.Initialize(xu)
 
-	// State variables
-	var (
-		dragStart = false
-		startX    = 0
-		startY    = 0
-		currX     = 0
-		currY     = 0
-		selected  = false
-		aborted   = false
-
-		// Doodle variables
-		doodling    = false
-		lastDoodleX = 0
-		lastDoodleY = 0
-		annoTool    = "doodle" // "doodle", "rect", "circle"
-
-		// Text input variables
-		textInputActive    = false
-		textInputX         = 0
-		textInputY         = 0
-		textInputBuffer    = ""
-		lastRightClickTime time.Time
-
-		// Font scale and undo history variables
-		fontScale = 4 // Premium large, ultra-visible default font scale!
-		history   = []*image.RGBA{copyImage(rgbaImg)}
-	)
-
-	// Redraw function using double buffering
-	redraw := func() {
-		// Copy base screenshot (with doodles drawn directly to it) from bgPixmap to buffer pixmap
-		xproto.CopyArea(
-			xu.Conn(),
-			xproto.Drawable(bgPixmapID),
-			xproto.Drawable(bufPixmapID),
-			gcID,
-			0, 0, // srcX, srcY
-			0, 0, // dstX, dstY
-			uint16(screenWidth), uint16(screenHeight),
-		)
-
-		if dragStart {
-			x1 := int(math.Min(float64(startX), float64(currX)))
-			y1 := int(math.Min(float64(startY), float64(currY)))
-			w := int(math.Abs(float64(currX - startX)))
-			h := int(math.Abs(float64(currY - startY)))
-
-			// Draw 50% gray overlay on the four outer areas surrounding the selection
-			if y1 > 0 {
-				// Top band
-				rect := xproto.Rectangle{X: 0, Y: 0, Width: uint16(screenWidth), Height: uint16(y1)}
-				xproto.PolyFillRectangle(xu.Conn(), xproto.Drawable(bufPixmapID), overlayGCID, []xproto.Rectangle{rect})
-			}
-			if y1+h < screenHeight {
-				// Bottom band
-				rect := xproto.Rectangle{X: 0, Y: int16(y1 + h), Width: uint16(screenWidth), Height: uint16(screenHeight - (y1 + h))}
-				xproto.PolyFillRectangle(xu.Conn(), xproto.Drawable(bufPixmapID), overlayGCID, []xproto.Rectangle{rect})
-			}
-			if x1 > 0 && h > 0 {
-				// Left band
-				rect := xproto.Rectangle{X: 0, Y: int16(y1), Width: uint16(x1), Height: uint16(h)}
-				xproto.PolyFillRectangle(xu.Conn(), xproto.Drawable(bufPixmapID), overlayGCID, []xproto.Rectangle{rect})
-			}
-			if x1+w < screenWidth && h > 0 {
-				// Right band
-				rect := xproto.Rectangle{X: int16(x1 + w), Y: int16(y1), Width: uint16(screenWidth - (x1 + w)), Height: uint16(h)}
-				xproto.PolyFillRectangle(xu.Conn(), xproto.Drawable(bufPixmapID), overlayGCID, []xproto.Rectangle{rect})
-			}
-
-			// Draw neon-cyan selection border rectangle
-			if w > 0 && h > 0 {
-				rect := xproto.Rectangle{X: int16(x1), Y: int16(y1), Width: uint16(w), Height: uint16(h)}
-				xproto.PolyRectangle(xu.Conn(), xproto.Drawable(bufPixmapID), cyanGCID, []xproto.Rectangle{rect})
-			}
-		} else {
-			// No active crop drag: dark overlay over entire screen
-			rect := xproto.Rectangle{X: 0, Y: 0, Width: uint16(screenWidth), Height: uint16(screenHeight)}
-			xproto.PolyFillRectangle(xu.Conn(), xproto.Drawable(bufPixmapID), overlayGCID, []xproto.Rectangle{rect})
-		}
-
-		// Draw preview of active shape drawing
-		if doodling && (annoTool == "rect" || annoTool == "circle") {
-			x1 := int(math.Min(float64(lastDoodleX), float64(currX)))
-			y1 := int(math.Min(float64(lastDoodleY), float64(currY)))
-			w := int(math.Abs(float64(currX - lastDoodleX)))
-			h := int(math.Abs(float64(currY - lastDoodleY)))
-
-			if w > 0 && h > 0 {
-				if annoTool == "rect" {
-					rect := xproto.Rectangle{X: int16(x1), Y: int16(y1), Width: uint16(w), Height: uint16(h)}
-					xproto.PolyRectangle(xu.Conn(), xproto.Drawable(bufPixmapID), pinkGCID, []xproto.Rectangle{rect})
-				} else if annoTool == "circle" {
-					dx := currX - lastDoodleX
-					dy := currY - lastDoodleY
-					r := int(math.Sqrt(float64(dx*dx + dy*dy)))
-					if r > 0 {
-						arc := xproto.Arc{
-							X:      int16(lastDoodleX - r),
-							Y:      int16(lastDoodleY - r),
-							Width:  uint16(r * 2),
-							Height: uint16(r * 2),
-							Angle1: 0,
-							Angle2: 360 * 64,
-						}
-						xproto.PolyArc(xu.Conn(), xproto.Drawable(bufPixmapID), pinkGCID, []xproto.Arc{arc})
-					}
-				}
-			}
-		}
-
-		// Draw real-time blinking text input box with scale adjustment
-		if textInputActive {
-			cursor := "_"
-			if time.Now().UnixNano()/500000000%2 == 0 {
-				cursor = " "
-			}
-			textToShow := textInputBuffer + cursor
-			textW := len(textToShow)*6*fontScale + 6
-			textH := 7*fontScale + 4
-			textImg := image.NewRGBA(image.Rect(0, 0, textW, textH))
-			pinkColorRGBA := color.RGBA{R: 255, G: 0, B: 127, A: 255}
-
-			for dy := 0; dy < textH; dy++ {
-				for dx := 0; dx < textW; dx++ {
-					textImg.Set(dx, dy, color.Black)
-				}
-			}
-			drawStringScaled(textImg, textToShow, 3, 2, pinkColorRGBA, fontScale)
-
-			textBGRA := imageToBGRA(textImg)
-			xproto.PutImage(
-				xu.Conn(),
-				xproto.ImageFormatZPixmap,
-				xproto.Drawable(bufPixmapID),
-				gcID,
-				uint16(textW),
-				uint16(textH),
-				int16(textInputX),
-				int16(textInputY),
-				0,
-				screen.RootDepth,
-				textBGRA,
-			)
-		}
-
-		// Draw circular magnifier loupe floating above/below cursor
-		lx := currX + 20
-		ly := currY - 140
-		if ly < 10 {
-			ly = currY + 20 // Flip below cursor
-		}
-		if lx+120 > screenWidth {
-			lx = currX - 140 // Flip to left of cursor
-		}
-		if lx < 10 {
-			lx = 10
-		}
-		if ly+120 > screenHeight {
-			ly = screenHeight - 130
-		}
-		if ly < 10 {
-			ly = 10
-		}
-
-		// Generate circular magnifier loupe image
-		magImg := getMagnifierImage(rgbaImg, currX, currY, lx, ly, screenWidth, screenHeight, dragStart, startX, startY)
-		magBGRA := imageToBGRA(magImg)
-
-		// Upload magnifier to the buffer pixmap
-		xproto.PutImage(
-			xu.Conn(),
-			xproto.ImageFormatZPixmap,
-			xproto.Drawable(bufPixmapID),
-			gcID,
-			120, // width
-			120, // height
-			int16(lx),
-			int16(ly),
-			0, // leftPad
-			screen.RootDepth,
-			magBGRA,
-		)
-
-		// Copy complete buffer pixmap to the fullscreen window
-		xproto.CopyArea(
-			xu.Conn(),
-			xproto.Drawable(bufPixmapID),
-			xproto.Drawable(winID),
-			gcID,
-			0, 0,
-			0, 0,
-			uint16(screenWidth), uint16(screenHeight),
-		)
+	// Instantiate state
+	state := &regionState{
+		xu:             xu,
+		winID:          winID,
+		gcID:           gcID,
+		bgPixmapID:     bgPixmapID,
+		bufPixmapID:    bufPixmapID,
+		cyanGCID:       cyanGCID,
+		pinkGCID:       pinkGCID,
+		overlayGCID:    overlayGCID,
+		screenWidth:    screenWidth,
+		screenHeight:   screenHeight,
+		screen:         screen,
+		rgbaImg:        rgbaImg,
+		annoTool:       "doodle",
+		fontScale:      4,
+		brushThickness: brushThickness,
+		history:        []*image.RGBA{copyImage(rgbaImg)},
 	}
 
 	// Register event handlers
-	xevent.ButtonPressFun(func(X *xgbutil.XUtil, ev xevent.ButtonPressEvent) {
-		if ev.Detail == 1 { // Left Mouse Button -> Crop Selection
-			if !doodling && !textInputActive {
-				dragStart = true
-				startX = int(ev.EventX)
-				startY = int(ev.EventY)
-				currX = startX
-				currY = startY
-				redraw()
-			}
-		} else if ev.Detail == 3 { // Right Mouse Button -> Annotate/Doodle
-			if !dragStart && !textInputActive {
-				now := time.Now()
-				if now.Sub(lastRightClickTime) < 300*time.Millisecond {
-					// Double Right Click -> Text input mode!
-					textInputActive = true
-					textInputX = int(ev.EventX)
-					textInputY = int(ev.EventY)
-					textInputBuffer = ""
-					redraw()
-					return
-				}
-				lastRightClickTime = now
-
-				// Normal right-click annotation setup
-				doodling = true
-				lastDoodleX = int(ev.EventX)
-				lastDoodleY = int(ev.EventY)
-				currX = lastDoodleX
-				currY = lastDoodleY
-
-				// Select shape tool based on modifiers
-				if ev.State&xproto.ModMaskShift != 0 {
-					annoTool = "rect"
-				} else if ev.State&xproto.ModMaskControl != 0 {
-					annoTool = "circle"
-				} else {
-					annoTool = "doodle"
-				}
-			}
-		}
-	}).Connect(xu, winID)
-
-	xevent.ButtonReleaseFun(func(X *xgbutil.XUtil, ev xevent.ButtonReleaseEvent) {
-		if ev.Detail == 1 && dragStart { // Left Mouse Button release
-			dragStart = false
-			currX = int(ev.EventX)
-			currY = int(ev.EventY)
-			selected = true
-			xevent.Quit(xu)
-		} else if ev.Detail == 3 && doodling { // Right Mouse Button release
-			doodling = false
-			cx := int(ev.EventX)
-			cy := int(ev.EventY)
-			pinkColorRGBA := color.RGBA{R: 255, G: 0, B: 127, A: 255}
-
-			if annoTool == "rect" {
-				x1 := int(math.Min(float64(lastDoodleX), float64(cx)))
-				y1 := int(math.Min(float64(lastDoodleY), float64(cy)))
-				w := int(math.Abs(float64(cx - lastDoodleX)))
-				h := int(math.Abs(float64(cy - lastDoodleY)))
-				if w > 0 && h > 0 {
-					// 1. Burn into Go image permanently
-					drawRect(rgbaImg, lastDoodleX, lastDoodleY, cx, cy, pinkColorRGBA, int(brushThickness))
-					// 2. Burn into X11 background pixmap
-					rect := xproto.Rectangle{X: int16(x1), Y: int16(y1), Width: uint16(w), Height: uint16(h)}
-					xproto.PolyRectangle(xu.Conn(), xproto.Drawable(bgPixmapID), pinkGCID, []xproto.Rectangle{rect})
-				}
-			} else if annoTool == "circle" {
-				dx := cx - lastDoodleX
-				dy := cy - lastDoodleY
-				r := int(math.Sqrt(float64(dx*dx + dy*dy)))
-				if r > 0 {
-					// 1. Burn into Go image permanently
-					drawCircle(rgbaImg, lastDoodleX, lastDoodleY, r, pinkColorRGBA, int(brushThickness))
-					// 2. Burn into X11 background pixmap
-					arc := xproto.Arc{
-						X:      int16(lastDoodleX - r),
-						Y:      int16(lastDoodleY - r),
-						Width:  uint16(r * 2),
-						Height: uint16(r * 2),
-						Angle1: 0,
-						Angle2: 360 * 64,
-					}
-					xproto.PolyArc(xu.Conn(), xproto.Drawable(bgPixmapID), pinkGCID, []xproto.Arc{arc})
-				}
-			}
-
-			// Push state to history after completing doodle, rectangle, or circle annotation!
-			history = append(history, copyImage(rgbaImg))
-			redraw()
-		}
-	}).Connect(xu, winID)
-
-	xevent.MotionNotifyFun(func(X *xgbutil.XUtil, ev xevent.MotionNotifyEvent) {
-		currX = int(ev.EventX)
-		currY = int(ev.EventY)
-
-		if dragStart {
-			redraw()
-		} else if doodling {
-			cx := int(ev.EventX)
-			cy := int(ev.EventY)
-
-			if annoTool == "doodle" {
-				// 1. Draw line in background pixmap using X11 Neon Pink GC
-				xproto.PolyLine(
-					xu.Conn(),
-					xproto.CoordModeOrigin,
-					xproto.Drawable(bgPixmapID),
-					pinkGCID,
-					[]xproto.Point{
-						{X: int16(lastDoodleX), Y: int16(lastDoodleY)},
-						{X: int16(cx), Y: int16(cy)},
-					},
-				)
-
-				// 2. Draw line on Go Image to burn the annotation into the final capture
-				pinkColorRGBA := color.RGBA{R: 255, G: 0, B: 127, A: 255}
-				drawLine(rgbaImg, lastDoodleX, lastDoodleY, cx, cy, pinkColorRGBA, int(brushThickness))
-
-				lastDoodleX = cx
-				lastDoodleY = cy
-				redraw()
-			} else {
-				// Shape tools (rect / circle): just update preview coordinates
-				redraw()
-			}
-		} else {
-			// Just moving: redraw to update magnifier position
-			redraw()
-		}
-	}).Connect(xu, winID)
-
+	xevent.ButtonPressFun(state.handleButtonPress).Connect(xu, winID)
+	xevent.ButtonReleaseFun(state.handleButtonRelease).Connect(xu, winID)
+	xevent.MotionNotifyFun(state.handleMotionNotify).Connect(xu, winID)
 	xevent.ExposeFun(func(X *xgbutil.XUtil, ev xevent.ExposeEvent) {
-		redraw()
+		state.redraw()
 	}).Connect(xu, winID)
-
-	// Safe keys handling (Escape, q, Q, Ctrl+Shift+X) and text input capturing
-	xevent.KeyPressFun(func(X *xgbutil.XUtil, ev xevent.KeyPressEvent) {
-		mods := ev.State
-		keycode := ev.Detail
-		keyStr := keybind.LookupString(xu, mods, keycode)
-
-		if textInputActive {
-			// Check for Enter / Return
-			if keyStr == "\r" || keyStr == "\n" || keyStr == "Return" || keyStr == "Enter" {
-				// Commit text!
-				if len(textInputBuffer) > 0 {
-					pinkColorRGBA := color.RGBA{R: 255, G: 0, B: 127, A: 255}
-					// Burn into Go image permanently with fontScale
-					drawHUDTextScaled(rgbaImg, textInputBuffer, textInputX, textInputY, pinkColorRGBA, color.Black, fontScale)
-					// Push to history before uploading!
-					history = append(history, copyImage(rgbaImg))
-					// Redraw background pixmap to include the committed text
-					bgra := imageToBGRA(rgbaImg)
-					uploadImageChunked(xu, xproto.Drawable(bgPixmapID), gcID, screen.RootDepth, screenWidth, screenHeight, bgra)
-				}
-				textInputActive = false
-				textInputBuffer = ""
-				redraw()
-				return
-			}
-
-			// Check for Escape (Cancel typing)
-			if keyStr == "Escape" {
-				textInputActive = false
-				textInputBuffer = ""
-				redraw()
-				return
-			}
-
-			// Check for Backspace
-			if keyStr == "BackSpace" || keycode == 22 {
-				if len(textInputBuffer) > 0 {
-					textInputBuffer = textInputBuffer[:len(textInputBuffer)-1]
-					redraw()
-				}
-				return
-			}
-
-			// Capture printable characters
-			if len(keyStr) == 1 && keyStr[0] >= 32 && keyStr[0] <= 126 {
-				textInputBuffer += keyStr
-				redraw()
-			}
-			return
-		}
-
-		// --- Normal Mode keys ---
-
-		// Undo: Ctrl+Z
-		if (keyStr == "z" || keyStr == "Z") && (mods&xproto.ModMaskControl != 0) {
-			if len(history) > 1 {
-				history = history[:len(history)-1]
-				rgbaImg = copyImage(history[len(history)-1])
-				// Sync to background X11 pixmap
-				bgra := imageToBGRA(rgbaImg)
-				uploadImageChunked(xu, xproto.Drawable(bgPixmapID), gcID, screen.RootDepth, screenWidth, screenHeight, bgra)
-				redraw()
-			}
-			return
-		}
-
-		// Adjust brush thickness and font scale: Ctrl+Plus or Ctrl+Minus
-		if (keyStr == "equal" || keyStr == "plus" || keyStr == "+") && (mods&xproto.ModMaskControl != 0) {
-			fontScale++
-			brushThickness += 2
-			// Update X11 GC line width
-			xproto.ChangeGC(xu.Conn(), pinkGCID, xproto.GcLineWidth, []uint32{brushThickness})
-			redraw()
-			return
-		}
-		if (keyStr == "minus" || keyStr == "hyphen" || keyStr == "-") && (mods&xproto.ModMaskControl != 0) {
-			if fontScale > 1 {
-				fontScale--
-			}
-			if brushThickness > 2 {
-				brushThickness -= 2
-			}
-			// Update X11 GC line width
-			xproto.ChangeGC(xu.Conn(), pinkGCID, xproto.GcLineWidth, []uint32{brushThickness})
-			redraw()
-			return
-		}
-
-		// Normal mode keys (Escape, q, Ctrl+Shift+X)
-		if keyStr == "Escape" || keyStr == "q" || keyStr == "Q" {
-			aborted = true
-			xevent.Quit(xu)
-		}
-	}).Connect(xu, winID)
+	xevent.KeyPressFun(state.handleKeyPress).Connect(xu, winID)
 
 	// Extra safety abort binding specifically for Ctrl+Shift+X
 	keybind.KeyPressFun(func(X *xgbutil.XUtil, ev xevent.KeyPressEvent) {
-		aborted = true
+		state.aborted = true
 		xevent.Quit(xu)
 	}).Connect(xu, winID, "Control-Shift-x", true)
 
 	keybind.KeyPressFun(func(X *xgbutil.XUtil, ev xevent.KeyPressEvent) {
-		aborted = true
+		state.aborted = true
 		xevent.Quit(xu)
 	}).Connect(xu, winID, "Control-Shift-X", true)
+
+	// Initial redraw
+	state.redraw()
 
 	// Run X11 event loop until Quit is called
 	xevent.Main(xu)
@@ -815,19 +360,19 @@ func InteractiveSelectRegion(fullImg image.Image) (image.Image, error) {
 	windowNeedsDestroy = false
 	xproto.DestroyWindow(xu.Conn(), winID)
 
-	if aborted {
+	if state.aborted {
 		return nil, fmt.Errorf("region capture aborted by user safety key")
 	}
 
-	if !selected {
+	if !state.selected {
 		return nil, fmt.Errorf("no region was selected")
 	}
 
 	// Calculate final selection coordinates
-	x1 := int(math.Min(float64(startX), float64(currX)))
-	y1 := int(math.Min(float64(startY), float64(currY)))
-	w := int(math.Abs(float64(currX - startX)))
-	h := int(math.Abs(float64(currY - startY)))
+	x1 := int(math.Min(float64(state.startX), float64(state.currX)))
+	y1 := int(math.Min(float64(state.startY), float64(state.currY)))
+	w := int(math.Abs(float64(state.currX - state.startX)))
+	h := int(math.Abs(float64(state.currY - state.startY)))
 
 	// If region is too small (e.g. less than 5x5 pixels), assume it was an accidental click and abort
 	if w < 5 || h < 5 {
@@ -835,274 +380,428 @@ func InteractiveSelectRegion(fullImg image.Image) (image.Image, error) {
 	}
 
 	// Crop the annotated fullscreen screenshot image
-	cropped := rgbaImg.SubImage(image.Rect(x1, y1, x1+w, y1+h))
+	cropped := state.rgbaImg.SubImage(image.Rect(x1, y1, x1+w, y1+h))
+	if outClipboardAction != nil {
+		*outClipboardAction = state.clipboardAction
+	}
 	return cropped, nil
 }
 
-// Convert image.Image to BGRA bytes for X11
-func imageToBGRA(img image.Image) []byte {
-	bounds := img.Bounds()
-	w, h := bounds.Dx(), bounds.Dy()
-	data := make([]byte, w*h*4)
-	idx := 0
-	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			r, g, b, a := img.At(x, y).RGBA()
-			// Go's RGBA() returns alpha-premultiplied values in [0, 65535]
-			data[idx] = byte(b >> 8)
-			data[idx+1] = byte(g >> 8)
-			data[idx+2] = byte(r >> 8)
-			data[idx+3] = byte(a >> 8)
-			idx += 4
+// Redraw function using double buffering
+func (s *regionState) redraw() {
+	// Copy base screenshot (with doodles drawn directly to it) from bgPixmap to buffer pixmap
+	xproto.CopyArea(
+		s.xu.Conn(),
+		xproto.Drawable(s.bgPixmapID),
+		xproto.Drawable(s.bufPixmapID),
+		s.gcID,
+		0, 0, // srcX, srcY
+		0, 0, // dstX, dstY
+		uint16(s.screenWidth), uint16(s.screenHeight),
+	)
+
+	if s.dragStart {
+		x1 := int(math.Min(float64(s.startX), float64(s.currX)))
+		y1 := int(math.Min(float64(s.startY), float64(s.currY)))
+		w := int(math.Abs(float64(s.currX - s.startX)))
+		h := int(math.Abs(float64(s.currY - s.startY)))
+
+		// Draw 50% gray overlay on the four outer areas surrounding the selection
+		if y1 > 0 {
+			// Top band
+			rect := xproto.Rectangle{X: 0, Y: 0, Width: uint16(s.screenWidth), Height: uint16(y1)}
+			xproto.PolyFillRectangle(s.xu.Conn(), xproto.Drawable(s.bufPixmapID), s.overlayGCID, []xproto.Rectangle{rect})
 		}
-	}
-	return data
-}
-
-// Upload image data in chunks to prevent X11 packet size limits
-func uploadImageChunked(xu *xgbutil.XUtil, drawable xproto.Drawable, gc xproto.Gcontext, depth byte, w, h int, bgraData []byte) error {
-	rowBytes := w * 4
-
-	// Determine safe chunkRows based on X connection's MaximumRequestLength (which is in 4-byte units)
-	maxReq := 0
-	setup := xproto.Setup(xu.Conn())
-	if setup != nil {
-		maxReq = int(setup.MaximumRequestLength) * 4
-	}
-	if maxReq <= 0 {
-		maxReq = 65536 * 4 // Core X11 fallback (256KB)
-	}
-	// Subtract 1024 bytes buffer for X11 packet headers (PutImage is a few dozen bytes)
-	maxDataBytes := maxReq - 1024
-	chunkRows := maxDataBytes / rowBytes
-	if chunkRows < 1 {
-		chunkRows = 1
-	}
-
-	for y := 0; y < h; y += chunkRows {
-		rows := chunkRows
-		if y+rows > h {
-			rows = h - y
+		if y1+h < s.screenHeight {
+			// Bottom band
+			rect := xproto.Rectangle{X: 0, Y: int16(y1 + h), Width: uint16(s.screenWidth), Height: uint16(s.screenHeight - (y1 + h))}
+			xproto.PolyFillRectangle(s.xu.Conn(), xproto.Drawable(s.bufPixmapID), s.overlayGCID, []xproto.Rectangle{rect})
 		}
-		offset := y * rowBytes
-		length := rows * rowBytes
-
-		err := xproto.PutImageChecked(
-			xu.Conn(),
-			xproto.ImageFormatZPixmap,
-			drawable,
-			gc,
-			uint16(w),
-			uint16(rows),
-			0,         // dstX
-			int16(y),  // dstY
-			0,         // leftPad
-			depth,
-			bgraData[offset:offset+length],
-		).Check()
-		if err != nil {
-			return fmt.Errorf("PutImage failed at row %d (chunk size %d rows): %w", y, rows, err)
+		if x1 > 0 && h > 0 {
+			// Left band
+			rect := xproto.Rectangle{X: 0, Y: int16(y1), Width: uint16(x1), Height: uint16(h)}
+			xproto.PolyFillRectangle(s.xu.Conn(), xproto.Drawable(s.bufPixmapID), s.overlayGCID, []xproto.Rectangle{rect})
 		}
-	}
-	return nil
-}
-
-// drawLine draws a thick line on a Go draw.Image using Bresenham's line algorithm with brush thickness.
-func drawLine(img draw.Image, x0, y0, x1, y1 int, col color.Color, thickness int) {
-	dx := abs(x1 - x0)
-	dy := abs(y1 - y0)
-	sx, sy := 1, 1
-	if x0 > x1 {
-		sx = -1
-	}
-	if y0 > y1 {
-		sy = -1
-	}
-	err := dx - dy
-
-	for {
-		// Draw brush of specified thickness
-		for ty := -thickness / 2; ty <= thickness/2; ty++ {
-			for tx := -thickness / 2; tx <= thickness/2; tx++ {
-				// Circle brush constraint
-				if tx*tx+ty*ty <= (thickness*thickness)/4 {
-					img.Set(x0+tx, y0+ty, col)
-				}
-			}
+		if x1+w < s.screenWidth && h > 0 {
+			// Right band
+			rect := xproto.Rectangle{X: int16(x1 + w), Y: int16(y1), Width: uint16(s.screenWidth - (x1 + w)), Height: uint16(h)}
+			xproto.PolyFillRectangle(s.xu.Conn(), xproto.Drawable(s.bufPixmapID), s.overlayGCID, []xproto.Rectangle{rect})
 		}
 
-		if x0 == x1 && y0 == y1 {
-			break
+		// Draw neon-cyan selection border rectangle
+		if w > 0 && h > 0 {
+			rect := xproto.Rectangle{X: int16(x1), Y: int16(y1), Width: uint16(w), Height: uint16(h)}
+			xproto.PolyRectangle(s.xu.Conn(), xproto.Drawable(s.bufPixmapID), s.cyanGCID, []xproto.Rectangle{rect})
 		}
-		e2 := 2 * err
-		if e2 > -dy {
-			err -= dy
-			x0 += sx
-		}
-		if e2 < dx {
-			err += dx
-			y0 += sy
-		}
-	}
-}
-
-func abs(x int) int {
-	if x < 0 {
-		return -x
-	}
-	return x
-}
-
-// getMagnifierImage generates a 120x120 circle magnifier image with a neon-cyan bezel, neon-pink crosshairs,
-// and coordinates or current crop dimensions rendered in a custom 3x5 font at the bottom.
-func getMagnifierImage(rgbaImg *image.RGBA, mx, my, lx, ly, screenWidth, screenHeight int, dragging bool, startX, startY int) *image.RGBA {
-	mag := image.NewRGBA(image.Rect(0, 0, 120, 120))
-	pinkColor := color.RGBA{R: 255, G: 0, B: 127, A: 255}
-	cyanColor := color.RGBA{R: 0, G: 240, B: 255, A: 255}
-
-	for dy := 0; dy < 120; dy++ {
-		for dx := 0; dx < 120; dx++ {
-			rx := dx - 60
-			ry := dy - 60
-			distSq := rx*rx + ry*ry
-
-			var col color.Color
-			if distSq > 60*60 {
-				// Outside the circular magnifier glass: draw background screen pixel
-				sx := lx + dx
-				sy := ly + dy
-				if sx >= 0 && sx < screenWidth && sy >= 0 && sy < screenHeight {
-					col = rgbaImg.At(sx, sy)
-				} else {
-					col = color.Black
-				}
-			} else if distSq >= 58*58 && distSq <= 60*60 {
-				// Outer bezel: Neon cyan
-				col = cyanColor
-			} else {
-				// Inside the circular magnifier glass: 4x nearest-neighbor magnification
-				// Map dx, dy [0..120] to source offsets [-15..15]
-				sx := mx - 15 + dx/4
-				sy := my - 15 + dy/4
-				if sx >= 0 && sx < screenWidth && sy >= 0 && sy < screenHeight {
-					col = rgbaImg.At(sx, sy)
-				} else {
-					col = color.Black
-				}
-
-				// Draw circular central crosshairs (Neon pink, length 10px in 4 directions)
-				if (rx == 0 && ry >= -10 && ry <= 10) || (ry == 0 && rx >= -10 && rx <= 10) {
-					col = pinkColor
-				}
-			}
-			mag.Set(dx, dy, col)
-		}
-	}
-
-	// Determine info string to display in the bottom HUD bar
-	var infoStr string
-	if dragging {
-		w := int(math.Abs(float64(mx - startX)))
-		h := int(math.Abs(float64(my - startY)))
-		infoStr = fmt.Sprintf("%dX%d", w, h)
 	} else {
-		infoStr = fmt.Sprintf("%d,%d", mx, my)
+		// No active crop drag: dark overlay over entire screen
+		rect := xproto.Rectangle{X: 0, Y: 0, Width: uint16(s.screenWidth), Height: uint16(s.screenHeight)}
+		xproto.PolyFillRectangle(s.xu.Conn(), xproto.Drawable(s.bufPixmapID), s.overlayGCID, []xproto.Rectangle{rect})
 	}
 
-	// Render HUD background bar inside the bottom of the magnifier (transparent black)
-	hudWidth := len(infoStr)*4 + 6
-	hudStartX := (120 - hudWidth) / 2
-	for ty := 95; ty < 103; ty++ {
-		for tx := hudStartX; tx < hudStartX+hudWidth; tx++ {
-			rx := tx - 60
-			ry := ty - 60
-			if rx*rx+ry*ry < 56*56 {
-				mag.Set(tx, ty, color.RGBA{R: 0, G: 0, B: 0, A: 220})
-			}
-		}
-	}
+	// Draw preview of active shape drawing
+	if s.doodling && (s.annoTool == "rect" || s.annoTool == "circle") {
+		x1 := int(math.Min(float64(s.lastDoodleX), float64(s.currX)))
+		y1 := int(math.Min(float64(s.lastDoodleY), float64(s.currY)))
+		w := int(math.Abs(float64(s.currX - s.lastDoodleX)))
+		h := int(math.Abs(float64(s.currY - s.lastDoodleY)))
 
-	// Draw custom 3x5 pixel font coordinates/dims centered
-	drawString(mag, infoStr, hudStartX+3, 97, color.White)
-
-	return mag
-}
-
-// drawRect draws a rectangle with thickness on a draw.Image
-func drawRect(img draw.Image, x0, y0, x1, y1 int, col color.Color, thickness int) {
-	// Draw the 4 edges using drawLine
-	drawLine(img, x0, y0, x1, y0, col, thickness)
-	drawLine(img, x1, y0, x1, y1, col, thickness)
-	drawLine(img, x1, y1, x0, y1, col, thickness)
-	drawLine(img, x0, y1, x0, y0, col, thickness)
-}
-
-// drawCircle draws a circle with thickness on a draw.Image
-func drawCircle(img draw.Image, cx, cy, r int, col color.Color, thickness int) {
-	for y := cy - r - thickness; y <= cy + r + thickness; y++ {
-		for x := cx - r - thickness; x <= cx + r + thickness; x++ {
-			dx := x - cx
-			dy := y - cy
-			dist := math.Sqrt(float64(dx*dx + dy*dy))
-			if math.Abs(dist-float64(r)) <= float64(thickness)/2.0 {
-				img.Set(x, y, col)
-			}
-		}
-	}
-}
-
-// drawHUDTextScaled draws a string scaled onto a draw.Image inside a solid background rectangle
-func drawHUDTextScaled(img draw.Image, text string, x, y int, fg, bg color.Color, scale int) {
-	w := len(text)*6*scale + 6
-	h := 7*scale + 4
-	for dy := 0; dy < h; dy++ {
-		for dx := 0; dx < w; dx++ {
-			img.Set(x+dx, y+dy, bg)
-		}
-	}
-	drawStringScaled(img, text, x+3, y+2, fg, scale)
-}
-
-// drawCharScaled draws a single character scaled by a factor using the full 5x7 font table
-func drawCharScaled(img draw.Image, char rune, x, y int, col color.Color, scale int) {
-	// Convert lowercase to uppercase
-	if char >= 'a' && char <= 'z' {
-		char = char - 'a' + 'A'
-	}
-	bitmap, ok := font5x7[char]
-	if !ok {
-		// Fallback to space
-		bitmap = font5x7[' ']
-	}
-	for row := 0; row < 7; row++ {
-		val := bitmap[row]
-		for colIdx := 0; colIdx < 5; colIdx++ {
-			// Extract 5 bits from MSB (4th bit down to 0th bit)
-			if (val >> (4 - colIdx))&1 == 1 {
-				// Draw a scale x scale block
-				for sy := 0; sy < scale; sy++ {
-					for sx := 0; sx < scale; sx++ {
-						img.Set(x+colIdx*scale+sx, y+row*scale+sy, col)
+		if w > 0 && h > 0 {
+			if s.annoTool == "rect" {
+				rect := xproto.Rectangle{X: int16(x1), Y: int16(y1), Width: uint16(w), Height: uint16(h)}
+				xproto.PolyRectangle(s.xu.Conn(), xproto.Drawable(s.bufPixmapID), s.pinkGCID, []xproto.Rectangle{rect})
+			} else if s.annoTool == "circle" {
+				dx := s.currX - s.lastDoodleX
+				dy := s.currY - s.lastDoodleY
+				r := int(math.Sqrt(float64(dx*dx + dy*dy)))
+				if r > 0 {
+					arc := xproto.Arc{
+						X:      int16(s.lastDoodleX - r),
+						Y:      int16(s.lastDoodleY - r),
+						Width:  uint16(r * 2),
+						Height: uint16(r * 2),
+						Angle1: 0,
+						Angle2: 360 * 64,
 					}
+					xproto.PolyArc(s.xu.Conn(), xproto.Drawable(s.bufPixmapID), s.pinkGCID, []xproto.Arc{arc})
 				}
 			}
 		}
 	}
+
+	// Draw real-time blinking text input box with scale adjustment
+	if s.textInputActive {
+		cursor := "_"
+		if time.Now().UnixNano()/500000000%2 == 0 {
+			cursor = " "
+		}
+		textToShow := s.textInputBuffer + cursor
+		textW := len(textToShow)*6*s.fontScale + 6
+		textH := 7*s.fontScale + 4
+		textImg := image.NewRGBA(image.Rect(0, 0, textW, textH))
+		pinkColorRGBA := color.RGBA{R: 255, G: 0, B: 127, A: 255}
+
+		for dy := 0; dy < textH; dy++ {
+			for dx := 0; dx < textW; dx++ {
+				textImg.Set(dx, dy, color.Black)
+			}
+		}
+		drawStringScaled(textImg, textToShow, 3, 2, pinkColorRGBA, s.fontScale)
+
+		textBGRA := imageToBGRA(textImg)
+		xproto.PutImage(
+			s.xu.Conn(),
+			xproto.ImageFormatZPixmap,
+			xproto.Drawable(s.bufPixmapID),
+			s.gcID,
+			uint16(textW),
+			uint16(textH),
+			int16(s.textInputX),
+			int16(s.textInputY),
+			0,
+			s.screen.RootDepth,
+			textBGRA,
+		)
+	}
+
+	// Draw circular magnifier loupe floating above/below cursor
+	lx := s.currX + 20
+	ly := s.currY - 140
+	if ly < 10 {
+		ly = s.currY + 20 // Flip below cursor
+	}
+	if lx+120 > s.screenWidth {
+		lx = s.currX - 140 // Flip to left of cursor
+	}
+	if lx < 10 {
+		lx = 10
+	}
+	if ly+120 > s.screenHeight {
+		ly = s.screenHeight - 130
+	}
+	if ly < 10 {
+		ly = 10
+	}
+
+	// Generate circular magnifier loupe image
+	magImg := getMagnifierImage(s.rgbaImg, s.currX, s.currY, lx, ly, s.screenWidth, s.screenHeight, s.dragStart, s.startX, s.startY)
+	magBGRA := imageToBGRA(magImg)
+
+	// Upload magnifier to the buffer pixmap
+	xproto.PutImage(
+		s.xu.Conn(),
+		xproto.ImageFormatZPixmap,
+		xproto.Drawable(s.bufPixmapID),
+		s.gcID,
+		120, // width
+		120, // height
+		int16(lx),
+		int16(ly),
+		0, // leftPad
+		s.screen.RootDepth,
+		magBGRA,
+	)
+
+	// Copy complete buffer pixmap to the fullscreen window
+	xproto.CopyArea(
+		s.xu.Conn(),
+		xproto.Drawable(s.bufPixmapID),
+		xproto.Drawable(s.winID),
+		s.gcID,
+		0, 0,
+		0, 0,
+		uint16(s.screenWidth), uint16(s.screenHeight),
+	)
 }
 
-// drawStringScaled draws a string scaled by a factor using the full 5x7 font table
-func drawStringScaled(img draw.Image, s string, x, y int, col color.Color, scale int) {
-	currX := x
-	for _, char := range s {
-		drawCharScaled(img, char, currX, y, col, scale)
-		currX += 6 * scale // 5 pixels width + 1 pixel spacing * scale
+func (s *regionState) handleButtonPress(X *xgbutil.XUtil, ev xevent.ButtonPressEvent) {
+	if ev.Detail == 1 { // Left Mouse Button -> Crop Selection
+		if !s.doodling && !s.textInputActive {
+			s.dragStart = true
+			s.startX = int(ev.EventX)
+			s.startY = int(ev.EventY)
+			s.currX = s.startX
+			s.currY = s.startY
+			s.redraw()
+		}
+	} else if ev.Detail == 3 { // Right Mouse Button -> Annotate/Doodle
+		if !s.dragStart && !s.textInputActive {
+			now := time.Now()
+			if now.Sub(s.lastRightClickTime) < 300*time.Millisecond {
+				// Double Right Click -> Text input mode!
+				s.textInputActive = true
+				s.textInputX = int(ev.EventX)
+				s.textInputY = int(ev.EventY)
+				s.textInputBuffer = ""
+				s.redraw()
+				return
+			}
+			s.lastRightClickTime = now
+
+			// Normal right-click annotation setup
+			s.doodling = true
+			s.lastDoodleX = int(ev.EventX)
+			s.lastDoodleY = int(ev.EventY)
+			s.currX = s.lastDoodleX
+			s.currY = s.lastDoodleY
+
+			// Select shape tool based on modifiers
+			if ev.State&xproto.ModMaskShift != 0 {
+				s.annoTool = "rect"
+			} else if ev.State&xproto.ModMaskControl != 0 {
+				s.annoTool = "circle"
+			} else {
+				s.annoTool = "doodle"
+			}
+		}
 	}
 }
 
-// copyImage creates a deep copy of an *image.RGBA
-func copyImage(src *image.RGBA) *image.RGBA {
-	bounds := src.Bounds()
-	dst := image.NewRGBA(bounds)
-	copy(dst.Pix, src.Pix)
-	return dst
+func (s *regionState) handleButtonRelease(X *xgbutil.XUtil, ev xevent.ButtonReleaseEvent) {
+	if ev.Detail == 1 && s.dragStart { // Left Mouse Button release
+		s.dragStart = false
+		s.currX = int(ev.EventX)
+		s.currY = int(ev.EventY)
+		s.selected = true
+		xevent.Quit(s.xu)
+	} else if ev.Detail == 3 && s.doodling { // Right Mouse Button release
+		s.doodling = false
+		cx := int(ev.EventX)
+		cy := int(ev.EventY)
+		pinkColorRGBA := color.RGBA{R: 255, G: 0, B: 127, A: 255}
+
+		if s.annoTool == "rect" {
+			x1 := int(math.Min(float64(s.lastDoodleX), float64(cx)))
+			y1 := int(math.Min(float64(s.lastDoodleY), float64(cy)))
+			w := int(math.Abs(float64(cx - s.lastDoodleX)))
+			h := int(math.Abs(float64(cy - s.lastDoodleY)))
+			if w > 0 && h > 0 {
+				// 1. Burn into Go image permanently
+				drawRect(s.rgbaImg, s.lastDoodleX, s.lastDoodleY, cx, cy, pinkColorRGBA, int(s.brushThickness))
+				// 2. Burn into X11 background pixmap
+				rect := xproto.Rectangle{X: int16(x1), Y: int16(y1), Width: uint16(w), Height: uint16(h)}
+				xproto.PolyRectangle(s.xu.Conn(), xproto.Drawable(s.bgPixmapID), s.pinkGCID, []xproto.Rectangle{rect})
+			}
+		} else if s.annoTool == "circle" {
+			dx := cx - s.lastDoodleX
+			dy := cy - s.lastDoodleY
+			r := int(math.Sqrt(float64(dx*dx + dy*dy)))
+			if r > 0 {
+				// 1. Burn into Go image permanently
+				drawCircle(s.rgbaImg, s.lastDoodleX, s.lastDoodleY, r, pinkColorRGBA, int(s.brushThickness))
+				// 2. Burn into X11 background pixmap
+				arc := xproto.Arc{
+					X:      int16(s.lastDoodleX - r),
+					Y:      int16(s.lastDoodleY - r),
+					Width:  uint16(r * 2),
+					Height: uint16(r * 2),
+					Angle1: 0,
+					Angle2: 360 * 64,
+				}
+				xproto.PolyArc(s.xu.Conn(), xproto.Drawable(s.bgPixmapID), s.pinkGCID, []xproto.Arc{arc})
+			}
+		}
+
+		// Push state to history after completing doodle, rectangle, or circle annotation!
+		s.history = append(s.history, copyImage(s.rgbaImg))
+		s.redraw()
+	}
+}
+
+func (s *regionState) handleMotionNotify(X *xgbutil.XUtil, ev xevent.MotionNotifyEvent) {
+	s.currX = int(ev.EventX)
+	s.currY = int(ev.EventY)
+
+	if s.dragStart {
+		s.redraw()
+	} else if s.doodling {
+		cx := int(ev.EventX)
+		cy := int(ev.EventY)
+
+		if s.annoTool == "doodle" {
+			// 1. Draw line in background pixmap using X11 Neon Pink GC
+			xproto.PolyLine(
+				s.xu.Conn(),
+				xproto.CoordModeOrigin,
+				xproto.Drawable(s.bgPixmapID),
+				s.pinkGCID,
+				[]xproto.Point{
+					{X: int16(s.lastDoodleX), Y: int16(s.lastDoodleY)},
+					{X: int16(cx), Y: int16(cy)},
+				},
+			)
+
+			// 2. Draw line on Go Image to burn the annotation into the final capture
+			pinkColorRGBA := color.RGBA{R: 255, G: 0, B: 127, A: 255}
+			drawLine(s.rgbaImg, s.lastDoodleX, s.lastDoodleY, cx, cy, pinkColorRGBA, int(s.brushThickness))
+
+			s.lastDoodleX = cx
+			s.lastDoodleY = cy
+			s.redraw()
+		} else {
+			// Shape tools (rect / circle): just update preview coordinates
+			s.redraw()
+		}
+	} else {
+		// Just moving: redraw to update magnifier position
+		s.redraw()
+	}
+}
+
+func (s *regionState) handleKeyPress(X *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+	mods := ev.State
+	keycode := ev.Detail
+	keyStr := keybind.LookupString(s.xu, mods, keycode)
+
+	if s.textInputActive {
+		// Check for Enter / Return
+		if keyStr == "\r" || keyStr == "\n" || keyStr == "Return" || keyStr == "Enter" {
+			// Commit text!
+			if len(s.textInputBuffer) > 0 {
+				pinkColorRGBA := color.RGBA{R: 255, G: 0, B: 127, A: 255}
+				// Burn into Go image permanently with fontScale
+				drawHUDTextScaled(s.rgbaImg, s.textInputBuffer, s.textInputX, s.textInputY, pinkColorRGBA, color.Black, s.fontScale)
+				// Push to history before uploading!
+				s.history = append(s.history, copyImage(s.rgbaImg))
+				// Redraw background pixmap to include the committed text
+				bgra := imageToBGRA(s.rgbaImg)
+				uploadImageChunked(s.xu, xproto.Drawable(s.bgPixmapID), s.gcID, s.screen.RootDepth, s.screenWidth, s.screenHeight, bgra)
+			}
+			s.textInputActive = false
+			s.textInputBuffer = ""
+			s.redraw()
+			return
+		}
+
+		// Check for Escape (Cancel typing)
+		if keyStr == "Escape" {
+			s.textInputActive = false
+			s.textInputBuffer = ""
+			s.redraw()
+			return
+		}
+
+		// Check for Backspace
+		if keyStr == "BackSpace" || keycode == 22 {
+			if len(s.textInputBuffer) > 0 {
+				s.textInputBuffer = s.textInputBuffer[:len(s.textInputBuffer)-1]
+				s.redraw()
+			}
+			return
+		}
+
+		// Capture printable characters
+		if len(keyStr) == 1 && keyStr[0] >= 32 && keyStr[0] <= 126 {
+			s.textInputBuffer += keyStr
+			s.redraw()
+		}
+		return
+	}
+
+	// --- Normal Mode keys ---
+
+	// Undo: Ctrl+Z
+	if (keyStr == "z" || keyStr == "Z") && (mods&xproto.ModMaskControl != 0) {
+		if len(s.history) > 1 {
+			s.history = s.history[:len(s.history)-1]
+			s.rgbaImg = copyImage(s.history[len(s.history)-1])
+			// Sync to background X11 pixmap
+			bgra := imageToBGRA(s.rgbaImg)
+			uploadImageChunked(s.xu, xproto.Drawable(s.bgPixmapID), s.gcID, s.screen.RootDepth, s.screenWidth, s.screenHeight, bgra)
+			s.redraw()
+		}
+		return
+	}
+
+	// Adjust brush thickness and font scale: Ctrl+Plus or Ctrl+Minus
+	if (keyStr == "equal" || keyStr == "plus" || keyStr == "+") && (mods&xproto.ModMaskControl != 0) {
+		s.fontScale++
+		s.brushThickness += 2
+		// Update X11 GC line width
+		xproto.ChangeGC(s.xu.Conn(), s.pinkGCID, xproto.GcLineWidth, []uint32{s.brushThickness})
+		s.redraw()
+		return
+	}
+	if (keyStr == "minus" || keyStr == "hyphen" || keyStr == "-") && (mods&xproto.ModMaskControl != 0) {
+		if s.fontScale > 1 {
+			s.fontScale--
+		}
+		if s.brushThickness > 2 {
+			s.brushThickness -= 2
+		}
+		// Update X11 GC line width
+		xproto.ChangeGC(s.xu.Conn(), s.pinkGCID, xproto.GcLineWidth, []uint32{s.brushThickness})
+		s.redraw()
+		return
+	}
+
+	// Dynamic clipboard actions
+	if keyStr == "i" || keyStr == "I" || keyStr == "p" || keyStr == "P" || keyStr == "o" || keyStr == "O" || keyStr == "t" || keyStr == "T" {
+		action := "image"
+		if keyStr == "p" || keyStr == "P" {
+			action = "path"
+		} else if keyStr == "o" || keyStr == "O" {
+			action = "ocr"
+		} else if keyStr == "t" || keyStr == "T" {
+			action = "translate"
+		}
+		s.clipboardAction = action
+		s.selected = true
+		if !s.dragStart {
+			// Entire screen selection if no active drag crop
+			s.startX = 0
+			s.startY = 0
+			s.currX = s.screenWidth
+			s.currY = s.screenHeight
+		}
+		s.dragStart = false
+		xevent.Quit(s.xu)
+		return
+	}
+
+	// Normal mode keys (Escape, q, Q)
+	if keyStr == "Escape" || keyStr == "q" || keyStr == "Q" {
+		s.aborted = true
+		xevent.Quit(s.xu)
+	}
 }

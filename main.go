@@ -4,8 +4,10 @@ package main
 import (
 	"flag"
 	"fmt"
+	"image"
 	"log"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strconv"
@@ -34,6 +36,13 @@ func runCLI() {
 	}
 
 	subcommand := os.Args[1]
+	if subcommand == "clipboard-daemon" {
+		if len(os.Args) >= 4 {
+			capture.RunClipboardServer(os.Args[2], os.Args[3])
+		}
+		os.Exit(0)
+	}
+
 	switch subcommand {
 	case "screenshot":
 		if err := handleScreenshot(); err != nil {
@@ -72,6 +81,7 @@ func handleScreenshot() error {
 	window := fs.String("w", "", "Target window: 'active', 'list', or specific window ID (e.g. 0x40000a)")
 	screen := fs.String("s", "", "Target screen index: 'list' or screen index (e.g. 0, 1)")
 	disp := fs.String("d", ":0.0", "X11 display")
+	clipMode := fs.String("c", "", "Clipboard mode: 'image', 'path', 'ocr', 'translate', 'none' (overrides config)")
 
 	if err := fs.Parse(os.Args[2:]); err != nil {
 		return err
@@ -148,14 +158,16 @@ func handleScreenshot() error {
 		return fmt.Errorf("failed to create directory for output: %w", err)
 	}
 
+	var chosenAction string
 	capCfg := capture.CaptureConfig{
-		Display:     *disp,
-		X:           x,
-		Y:           y,
-		Width:       w,
-		Height:      h,
-		WindowID:    windowID,
-		Interactive: interactive,
+		Display:         *disp,
+		X:               x,
+		Y:               y,
+		Width:           w,
+		Height:          h,
+		WindowID:        windowID,
+		Interactive:     interactive,
+		ClipboardAction: &chosenAction,
 	}
 
 	img, err := capture.CaptureScreen(capCfg)
@@ -168,6 +180,22 @@ func handleScreenshot() error {
 	}
 
 	fmt.Printf("Screenshot saved successfully to %s\n", outputPath)
+
+	// Resolve clipboard action
+	action := cfg.ClipboardMode
+	if *clipMode != "" {
+		action = *clipMode
+	}
+	if chosenAction != "" {
+		action = chosenAction // Dynamic in-crop selection takes precedence!
+	}
+
+	absPath, err := filepath.Abs(outputPath)
+	if err != nil {
+		absPath = outputPath
+	}
+	processClipboardAction(img, absPath, action, cfg)
+
 	return nil
 }
 
@@ -424,6 +452,12 @@ func handleService() error {
 					return
 				}
 				fmt.Printf("Screenshot saved successfully to %s\n", filename)
+				
+				absPath, err := filepath.Abs(filename)
+				if err != nil {
+					absPath = filename
+				}
+				processClipboardAction(img, absPath, cfg.ClipboardMode, cfg)
 			}()
 		}
 	}()
@@ -438,11 +472,13 @@ func handleService() error {
 				// Ensure folder exists
 				_ = os.MkdirAll(cfg.OutputDir, 0755)
 
+				var chosenAction string
 				capCfg := capture.CaptureConfig{
-					Display:     ":0.0",
-					X:           -1,
-					Y:           -1,
-					Interactive: true,
+					Display:         ":0.0",
+					X:               -1,
+					Y:               -1,
+					Interactive:     true,
+					ClipboardAction: &chosenAction,
 				}
 				img, err := capture.CaptureScreen(capCfg)
 				if err != nil {
@@ -454,6 +490,16 @@ func handleService() error {
 					return
 				}
 				fmt.Printf("Region screenshot saved successfully to %s\n", filename)
+
+				action := cfg.ClipboardMode
+				if chosenAction != "" {
+					action = chosenAction
+				}
+				absPath, err := filepath.Abs(filename)
+				if err != nil {
+					absPath = filename
+				}
+				processClipboardAction(img, absPath, action, cfg)
 			}()
 		}
 	}()
@@ -589,4 +635,76 @@ func parseWindowID(str string) (uint32, error) {
 		return 0, fmt.Errorf("invalid window ID %q: %w", str, err)
 	}
 	return uint32(id), nil
+}
+
+func processClipboardAction(img image.Image, absPath string, action string, cfg *config.Config) {
+	if action == "" || action == "none" {
+		return
+	}
+
+	switch action {
+	case "image":
+		if err := capture.SpawnClipboardDaemon("--image", absPath); err != nil {
+			fmt.Printf("Error spawning clipboard daemon for image: %v\n", err)
+		} else {
+			fmt.Println("[Clipboard] Copied image to clipboard.")
+			sendNotification("Zen-Cap", "Copied captured image to clipboard!")
+		}
+	case "path":
+		if err := capture.SpawnClipboardDaemon("--text", absPath); err != nil {
+			fmt.Printf("Error spawning clipboard daemon for path: %v\n", err)
+		} else {
+			fmt.Printf("[Clipboard] Copied path to clipboard: %s\n", absPath)
+			sendNotification("Zen-Cap", "Copied image file path to clipboard!")
+		}
+	case "ocr":
+		fmt.Println("[OCR] Running OCR on captured region...")
+		text, err := capture.PerformOCR(img, cfg.OCRAddress, cfg.OCRLanguage)
+		if err != nil {
+			fmt.Printf("OCR failed: %v\n", err)
+			sendNotification("Zen-Cap OCR", fmt.Sprintf("OCR failed: %v", err))
+			return
+		}
+		if text == "" {
+			fmt.Println("[OCR] No text was detected in region.")
+			sendNotification("Zen-Cap OCR", "No text was detected in captured region.")
+			return
+		}
+		if err := capture.SpawnClipboardDaemon("--text", text); err != nil {
+			fmt.Printf("Error spawning clipboard daemon for OCR text: %v\n", err)
+		} else {
+			fmt.Printf("[OCR] Copied extracted text to clipboard:\n%s\n", text)
+			sendNotification("Zen-Cap OCR", fmt.Sprintf("Copied extracted text to clipboard (%d chars)!", len(text)))
+		}
+	case "translate":
+		fmt.Println("[OCR] Running OCR for translation...")
+		text, err := capture.PerformOCR(img, cfg.OCRAddress, cfg.OCRLanguage)
+		if err != nil {
+			fmt.Printf("OCR failed: %v\n", err)
+			sendNotification("Zen-Cap Translate", fmt.Sprintf("OCR failed: %v", err))
+			return
+		}
+		if text == "" {
+			fmt.Println("[OCR] No text was detected for translation.")
+			sendNotification("Zen-Cap Translate", "No text was detected in captured region.")
+			return
+		}
+		fmt.Printf("[Translate] Translating extracted text to %s...\n", cfg.TranslationTarget)
+		translated, err := capture.TranslateText(text, cfg.TranslationTarget)
+		if err != nil {
+			fmt.Printf("Translation failed: %v\n", err)
+			sendNotification("Zen-Cap Translate", fmt.Sprintf("Translation failed: %v", err))
+			return
+		}
+		if err := capture.SpawnClipboardDaemon("--text", translated); err != nil {
+			fmt.Printf("Error spawning clipboard daemon for translation: %v\n", err)
+		} else {
+			fmt.Printf("[Translate] Copied translated text to clipboard:\n%s\n", translated)
+			sendNotification("Zen-Cap Translate", "Copied translated text to clipboard!")
+		}
+	}
+}
+
+func sendNotification(title, message string) {
+	_ = exec.Command("notify-send", "-a", "Zen-Cap", title, message).Run()
 }

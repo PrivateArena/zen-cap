@@ -10,8 +10,12 @@ import (
 )
 
 type Config struct {
-	OutputDir string        `json:"output_dir"`
-	Hotkeys   HotkeysConfig `json:"hotkeys"`
+	OutputDir         string        `json:"output_dir"`
+	Hotkeys           HotkeysConfig `json:"hotkeys"`
+	ClipboardMode     string        `json:"clipboard_mode"`     // "image", "path", "ocr", "translate", "none"
+	OCRAddress        string        `json:"ocr_address"`        // Default: "http://localhost:8765"
+	OCRLanguage       string        `json:"ocr_language"`       // Default: "ch"
+	TranslationTarget string        `json:"translation_target"` // Default: "en"
 }
 
 type HotkeysConfig struct {
@@ -53,6 +57,10 @@ func DefaultConfig() *Config {
 			RegionScreenshot: "Control-Shift-a",
 			RecordToggle:     "Control-Shift-r",
 		},
+		ClipboardMode:     "image",
+		OCRAddress:        "http://localhost:8765",
+		OCRLanguage:       "ch",
+		TranslationTarget: "en",
 	}
 }
 
@@ -65,6 +73,10 @@ func DefaultPortableConfig(binDir string) *Config {
 			RegionScreenshot: "Control-Shift-a",
 			RecordToggle:     "Control-Shift-r",
 		},
+		ClipboardMode:     "image",
+		OCRAddress:        "http://localhost:8765",
+		OCRLanguage:       "ch",
+		TranslationTarget: "en",
 	}
 }
 
@@ -167,6 +179,18 @@ func readConfig(path string, binDir string, isPortable bool) (*Config, error) {
 	}
 	if cfg.Hotkeys.RecordToggle == "" {
 		cfg.Hotkeys.RecordToggle = defaults.Hotkeys.RecordToggle
+	}
+	if cfg.ClipboardMode == "" {
+		cfg.ClipboardMode = defaults.ClipboardMode
+	}
+	if cfg.OCRAddress == "" {
+		cfg.OCRAddress = defaults.OCRAddress
+	}
+	if cfg.OCRLanguage == "" {
+		cfg.OCRLanguage = defaults.OCRLanguage
+	}
+	if cfg.TranslationTarget == "" {
+		cfg.TranslationTarget = defaults.TranslationTarget
 	}
 
 	return &cfg, nil

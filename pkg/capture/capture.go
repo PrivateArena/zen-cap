@@ -12,13 +12,14 @@ import (
 )
 
 type CaptureConfig struct {
-	Display     string
-	X           int
-	Y           int
-	Width       int
-	Height      int
-	WindowID    uint32
-	Interactive bool
+	Display         string
+	X               int
+	Y               int
+	Width           int
+	Height          int
+	WindowID        uint32
+	Interactive     bool
+	ClipboardAction *string // Dynamic clipboard action output pointer
 }
 
 // CaptureScreen opens the display capture device, grabs one frame,
@@ -39,7 +40,7 @@ func CaptureScreen(cfg CaptureConfig) (image.Image, error) {
 			return nil, fmt.Errorf("failed to capture base screen for interactive selection: %w", err)
 		}
 
-		return InteractiveSelectRegion(fullImg)
+		return InteractiveSelectRegionExt(fullImg, cfg.ClipboardAction)
 	}
 
 	devCfg := av.DeviceConfig{

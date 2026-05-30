@@ -906,4 +906,82 @@ func TestInteractiveSelectRegionAndAbort(t *testing.T) {
 			t.Fatal("timed out waiting for selection abort result")
 		}
 	})
+
+	t.Run("Successful Clipboard Hotkey Selection", func(t *testing.T) {
+		TestHookWindowID = 0
+		type result struct {
+			img    image.Image
+			action string
+			err    error
+		}
+		resChan := make(chan result, 1)
+
+		go func() {
+			var action string
+			img, err := InteractiveSelectRegionExt(dummyImg, &action)
+			resChan <- result{img: img, action: action, err: err}
+		}()
+
+		var winID uint32
+		for i := 0; i < 50; i++ {
+			if TestHookWindowID != 0 {
+				winID = TestHookWindowID
+				break
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		if winID == 0 {
+			t.Fatal("window was not created in time")
+		}
+
+		time.Sleep(200 * time.Millisecond)
+
+		clientXu, err := xgbutil.NewConn()
+		if err != nil {
+			t.Fatalf("failed client connection: %v", err)
+		}
+		defer clientXu.Conn().Close()
+
+		keybind.Initialize(clientXu)
+		oKcs := keybind.StrToKeycodes(clientXu, "o")
+		if len(oKcs) == 0 {
+			t.Fatal("could not locate keycode for 'o'")
+		}
+		oKeycode := oKcs[0]
+
+		// Send "o" key to select OCR mode
+		pressKey := xproto.KeyPressEvent{
+			Detail:     xproto.Keycode(oKeycode),
+			Time:       xproto.TimeCurrentTime,
+			Root:       screen.Root,
+			Event:      xproto.Window(winID),
+			Child:      xproto.WindowNone,
+			RootX:      0,
+			RootY:      0,
+			EventX:     0,
+			EventY:     0,
+			State:      0,
+			SameScreen: true,
+		}
+		xproto.SendEvent(clientXu.Conn(), false, xproto.Window(winID), xproto.EventMaskKeyPress, string(pressKey.Bytes()))
+		clientXu.Conn().Sync()
+
+		select {
+		case res := <-resChan:
+			if res.err != nil {
+				t.Fatalf("hotkey selection failed: %v", res.err)
+			}
+			if res.action != "ocr" {
+				t.Errorf("expected clipboard action to be 'ocr', got %q", res.action)
+			}
+			w := res.img.Bounds().Dx()
+			h := res.img.Bounds().Dy()
+			if w != screenWidth || h != screenHeight {
+				t.Errorf("expected cropped dimensions to be full screen (%dx%d), got %dx%d", screenWidth, screenHeight, w, h)
+			}
+			t.Log("Successfully verified dynamic hotkey clipboard action and whole-screen fallback crop!")
+		case <-time.After(3 * time.Second):
+			t.Fatal("timed out waiting for hotkey result")
+		}
+	})
 }
