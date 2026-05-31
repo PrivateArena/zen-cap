@@ -20,6 +20,7 @@ import (
 	"github.com/jezek/xgbutil/xevent"
 
 	"zen-cap/pkg/capture"
+	"zen-cap/pkg/clipboard"
 	"zen-cap/pkg/config"
 	"zen-cap/pkg/display"
 	"zen-cap/pkg/recorder"
@@ -339,6 +340,9 @@ func handleService() error {
 	fmt.Printf("  %-14s -> Fullscreen Screenshot\n", cfg.Hotkeys.Screenshot)
 	fmt.Printf("  %-14s -> Interactive Region Screenshot\n", cfg.Hotkeys.RegionScreenshot)
 	fmt.Printf("  %-14s -> Toggle Fullscreen Recording\n", cfg.Hotkeys.RecordToggle)
+	fmt.Printf("  %-14s -> Clipboard Manager: Copy (0-9)\n", cfg.Hotkeys.ClipboardCopyMod+"-[0-9]")
+	fmt.Printf("  %-14s -> Clipboard Manager: Paste (0-9)\n", cfg.Hotkeys.ClipboardPasteMod+"-[0-9]")
+	fmt.Printf("  %-14s -> Clipboard Manager: Cycle Transform Rules\n", cfg.Hotkeys.ClipboardCycleRule)
 	fmt.Println("UNIX Signals:")
 	fmt.Println("  SIGUSR1       -> Fullscreen Screenshot")
 	fmt.Println("  SIGUSR2       -> Toggle Fullscreen Recording")
@@ -383,6 +387,43 @@ func handleService() error {
 		default:
 		}
 	}).Connect(X, X.RootWin(), cfg.Hotkeys.RecordToggle, true)
+
+	// Initialize Clipboard Manager
+	mgr, err := clipboard.NewManager(cfg)
+	if err != nil {
+		log.Printf("Warning: Failed to initialize clipboard manager: %v", err)
+	}
+
+	if mgr != nil {
+		// Register Copy Slots (0-9 and KP_0..KP_9)
+		for i := 0; i <= 9; i++ {
+			slot := i
+			handler := func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+				go mgr.CopyToSlot(slot)
+			}
+			// Keyboard row digits
+			keybind.KeyPressFun(handler).Connect(X, X.RootWin(), fmt.Sprintf("%s-%d", cfg.Hotkeys.ClipboardCopyMod, slot), true)
+			// Numpad digits
+			keybind.KeyPressFun(handler).Connect(X, X.RootWin(), fmt.Sprintf("%s-KP_%d", cfg.Hotkeys.ClipboardCopyMod, slot), true)
+		}
+
+		// Register Paste Slots (0-9 and KP_0..KP_9)
+		for i := 0; i <= 9; i++ {
+			slot := i
+			handler := func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+				go mgr.PasteFromSlot(slot)
+			}
+			// Keyboard row digits
+			keybind.KeyPressFun(handler).Connect(X, X.RootWin(), fmt.Sprintf("%s-%d", cfg.Hotkeys.ClipboardPasteMod, slot), true)
+			// Numpad digits
+			keybind.KeyPressFun(handler).Connect(X, X.RootWin(), fmt.Sprintf("%s-KP_%d", cfg.Hotkeys.ClipboardPasteMod, slot), true)
+		}
+
+		// Register Cycle Rule Hotkey
+		keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+			go mgr.CycleTransform()
+		}).Connect(X, X.RootWin(), cfg.Hotkeys.ClipboardCycleRule, true)
+	}
 
 	// Register Global Safety Kill Hotkey (Ctrl+Shift+X) - emergency exit
 	safetyKillHandler := func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {

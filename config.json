@@ -2,7 +2,10 @@
   "output_dir": "/tmp/zen-cap",
   "hotkeys": {
     "screenshot": "Control-Shift-s",
-    "record_toggle": "Control-Shift-r"
+    "record_toggle": "Control-Shift-r",
+    "clipboard_copy_mod": "Control-Shift",
+    "clipboard_paste_mod": "Control-Mod1",
+    "clipboard_cycle_rule": "Control-grave"
   },
   "clipboard_mode": "image",
   "ocr_address": "http://localhost:8765",

@@ -9,19 +9,50 @@ import (
 	"strings"
 )
 
+type TransformRule struct {
+	Name        string `json:"name"`
+	Type        string `json:"type"`        // "passthrough", "html2md", "regex"
+	Pattern     string `json:"pattern"`     // regex pattern (for "regex" type)
+	Replacement string `json:"replacement"` // replacement string (for "regex" type)
+}
+
 type Config struct {
-	OutputDir         string        `json:"output_dir"`
-	Hotkeys           HotkeysConfig `json:"hotkeys"`
-	ClipboardMode     string        `json:"clipboard_mode"`     // "image", "path", "ocr", "translate", "none"
-	OCRAddress        string        `json:"ocr_address"`        // Default: "http://localhost:8765"
-	OCRLanguage       string        `json:"ocr_language"`       // Default: "ch"
-	TranslationTarget string        `json:"translation_target"` // Default: "en"
+	OutputDir            string          `json:"output_dir"`
+	Hotkeys              HotkeysConfig   `json:"hotkeys"`
+	ClipboardMode        string          `json:"clipboard_mode"`     // "image", "path", "ocr", "translate", "none"
+	OCRAddress           string          `json:"ocr_address"`        // Default: "http://localhost:8765"
+	OCRLanguage          string          `json:"ocr_language"`       // Default: "ch"
+	TranslationTarget    string          `json:"translation_target"` // Default: "en"
+	ClipboardSessionFile string          `json:"clipboard_session_file"`
+	TransformRules       []TransformRule `json:"transform_rules"`
 }
 
 type HotkeysConfig struct {
-	Screenshot       string `json:"screenshot"`
-	RegionScreenshot string `json:"region_screenshot"`
-	RecordToggle     string `json:"record_toggle"`
+	Screenshot         string `json:"screenshot"`
+	RegionScreenshot   string `json:"region_screenshot"`
+	RecordToggle       string `json:"record_toggle"`
+	ClipboardCopyMod   string `json:"clipboard_copy_mod"`   // e.g. "Control-Shift"
+	ClipboardPasteMod  string `json:"clipboard_paste_mod"`  // e.g. "Mod1-Shift"
+	ClipboardCycleRule string `json:"clipboard_cycle_rule"` // e.g. "Control-grave"
+}
+
+func DefaultTransformRules() []TransformRule {
+	return []TransformRule{
+		{
+			Name: "None",
+			Type: "passthrough",
+		},
+		{
+			Name: "HTML -> Markdown",
+			Type: "html2md",
+		},
+		{
+			Name:        "Strip [tokens]",
+			Type:        "regex",
+			Pattern:     `\[[a-zA-Z0-9._-]+\]`,
+			Replacement: "",
+		},
+	}
 }
 
 // getBinaryDir returns the directory of the running executable.
@@ -50,17 +81,27 @@ func DefaultConfig() *Config {
 		defaultOutputDir = "."
 	}
 
+	defaultSessionFile := filepath.Join(filepath.Dir(defaultOutputDir), ".config", "zen-cap", "clipboard_session.json")
+	if home, err := os.UserHomeDir(); err == nil {
+		defaultSessionFile = filepath.Join(home, ".config", "zen-cap", "clipboard_session.json")
+	}
+
 	return &Config{
 		OutputDir: defaultOutputDir,
 		Hotkeys: HotkeysConfig{
-			Screenshot:       "Control-Shift-s",
-			RegionScreenshot: "Control-Shift-a",
-			RecordToggle:     "Control-Shift-r",
+			Screenshot:         "Control-Shift-s",
+			RegionScreenshot:   "Control-Shift-a",
+			RecordToggle:       "Control-Shift-r",
+			ClipboardCopyMod:   "Control-Shift",
+			ClipboardPasteMod:  "Mod1-Shift",
+			ClipboardCycleRule: "Control-grave",
 		},
-		ClipboardMode:     "image",
-		OCRAddress:        "http://localhost:8765",
-		OCRLanguage:       "ch",
-		TranslationTarget: "en",
+		ClipboardMode:        "image",
+		OCRAddress:           "http://localhost:8765",
+		OCRLanguage:          "ch",
+		TranslationTarget:    "en",
+		ClipboardSessionFile: defaultSessionFile,
+		TransformRules:       DefaultTransformRules(),
 	}
 }
 
@@ -69,14 +110,19 @@ func DefaultPortableConfig(binDir string) *Config {
 	return &Config{
 		OutputDir: filepath.Join(binDir, "zen-cap-outputs"),
 		Hotkeys: HotkeysConfig{
-			Screenshot:       "Control-Shift-s",
-			RegionScreenshot: "Control-Shift-a",
-			RecordToggle:     "Control-Shift-r",
+			Screenshot:         "Control-Shift-s",
+			RegionScreenshot:   "Control-Shift-a",
+			RecordToggle:       "Control-Shift-r",
+			ClipboardCopyMod:   "Control-Shift",
+			ClipboardPasteMod:  "Mod1-Shift",
+			ClipboardCycleRule: "Control-grave",
 		},
-		ClipboardMode:     "image",
-		OCRAddress:        "http://localhost:8765",
-		OCRLanguage:       "ch",
-		TranslationTarget: "en",
+		ClipboardMode:        "image",
+		OCRAddress:           "http://localhost:8765",
+		OCRLanguage:          "ch",
+		TranslationTarget:    "en",
+		ClipboardSessionFile: filepath.Join(binDir, "clipboard_session.json"),
+		TransformRules:       DefaultTransformRules(),
 	}
 }
 
@@ -180,6 +226,15 @@ func readConfig(path string, binDir string, isPortable bool) (*Config, error) {
 	if cfg.Hotkeys.RecordToggle == "" {
 		cfg.Hotkeys.RecordToggle = defaults.Hotkeys.RecordToggle
 	}
+	if cfg.Hotkeys.ClipboardCopyMod == "" {
+		cfg.Hotkeys.ClipboardCopyMod = defaults.Hotkeys.ClipboardCopyMod
+	}
+	if cfg.Hotkeys.ClipboardPasteMod == "" {
+		cfg.Hotkeys.ClipboardPasteMod = defaults.Hotkeys.ClipboardPasteMod
+	}
+	if cfg.Hotkeys.ClipboardCycleRule == "" {
+		cfg.Hotkeys.ClipboardCycleRule = defaults.Hotkeys.ClipboardCycleRule
+	}
 	if cfg.ClipboardMode == "" {
 		cfg.ClipboardMode = defaults.ClipboardMode
 	}
@@ -191,6 +246,12 @@ func readConfig(path string, binDir string, isPortable bool) (*Config, error) {
 	}
 	if cfg.TranslationTarget == "" {
 		cfg.TranslationTarget = defaults.TranslationTarget
+	}
+	if cfg.ClipboardSessionFile == "" {
+		cfg.ClipboardSessionFile = defaults.ClipboardSessionFile
+	}
+	if len(cfg.TransformRules) == 0 {
+		cfg.TransformRules = defaults.TransformRules
 	}
 
 	return &cfg, nil
