@@ -124,6 +124,26 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 			targetVal = step.Text
 		}
 
+		var needle image.Image
+		if findType == "image" {
+			if targetVal == "" {
+				return fmt.Errorf("missing template image path in if_found step")
+			}
+			imgPath := targetVal
+			if !filepath.IsAbs(imgPath) && ctx.ScriptDir != "" {
+				imgPath = filepath.Join(ctx.ScriptDir, imgPath)
+			}
+			f, err := os.Open(imgPath)
+			if err != nil {
+				return fmt.Errorf("failed to open template image: %w", err)
+			}
+			needle, _, err = image.Decode(f)
+			f.Close()
+			if err != nil {
+				return fmt.Errorf("failed to decode template image: %w", err)
+			}
+		}
+
 		var waitTimeout time.Duration
 		if step.WaitTimeout != "" {
 			if d, err := time.ParseDuration(step.WaitTimeout); err == nil {
@@ -140,42 +160,28 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 			}
 
 			if findType == "image" {
-				if targetVal == "" {
-					return fmt.Errorf("missing template image path in if_found step")
+				confidence := step.Confidence
+				if confidence <= 0 {
+					confidence = 0.90
 				}
-				imgPath := targetVal
-				if !filepath.IsAbs(imgPath) && ctx.ScriptDir != "" {
-					imgPath = filepath.Join(ctx.ScriptDir, imgPath)
+				capCfg := capture.CaptureConfig{
+					Display:  ":0.0",
+					WindowID: ctx.WindowID,
 				}
-				f, err := os.Open(imgPath)
+				haystack, err := capture.CaptureScreen(capCfg)
 				if err == nil {
-					defer f.Close()
-					needle, _, err := image.Decode(f)
-					if err == nil {
-						confidence := step.Confidence
-						if confidence <= 0 {
-							confidence = 0.90
-						}
-						capCfg := capture.CaptureConfig{
-							Display:  ":0.0",
-							WindowID: ctx.WindowID,
-						}
-						haystack, err := capture.CaptureScreen(capCfg)
+					offsetX, offsetY := 0, 0
+					if step.Region != "" {
+						rx, ry, rw, rh, err := ParseRegion(step.Region, haystack.Bounds().Dx(), haystack.Bounds().Dy())
 						if err == nil {
-							offsetX, offsetY := 0, 0
-							if step.Region != "" {
-								rx, ry, rw, rh, err := ParseRegion(step.Region, haystack.Bounds().Dx(), haystack.Bounds().Dy())
-								if err == nil {
-									haystack, offsetX, offsetY = CropImage(haystack, rx, ry, rw, rh)
-								}
-							}
-							fx, fy, _, err := FindImage(haystack, needle, confidence)
-							if err == nil {
-								found = true
-								ctx.LastFoundX = fx + offsetX
-								ctx.LastFoundY = fy + offsetY
-							}
+							haystack, offsetX, offsetY = CropImage(haystack, rx, ry, rw, rh)
 						}
+					}
+					fx, fy, _, err := FindImage(haystack, needle, confidence)
+					if err == nil {
+						found = true
+						ctx.LastFoundX = fx + offsetX
+						ctx.LastFoundY = fy + offsetY
 					}
 				}
 			} else if findType == "text" {

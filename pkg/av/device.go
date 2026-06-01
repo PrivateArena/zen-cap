@@ -83,11 +83,6 @@ func OpenDevice(cfg DeviceConfig) (*InputDevice, error) {
 		return nil, fmt.Errorf("failed to open input device: %w", err)
 	}
 
-	if err := formatCtx.FindStreamInfo(nil); err != nil {
-		formatCtx.CloseInput()
-		return nil, fmt.Errorf("failed to find stream info: %w", err)
-	}
-
 	var videoStream *astiav.Stream
 	streamIdx := -1
 	for idx, s := range formatCtx.Streams() {

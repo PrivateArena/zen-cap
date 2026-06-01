@@ -7,7 +7,7 @@ steps:
     target: templates/play_button.png
     region: BL
     similarity: 0.9
-    wait_timeout: 5s
+    wait_timeout: 1s
     steps:
       - action: click
         x: -1

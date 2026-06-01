@@ -17,6 +17,11 @@ import (
 	"zen-cap/pkg/capture"
 )
 
+type needlePixel struct {
+	x, y int
+	r, g, b float64
+}
+
 // FindImage searches for a needle image within a haystack image using Sum of Absolute Differences (SAD).
 // It returns the X, Y coordinates of the center of the best match, and the confidence score.
 func FindImage(haystack, needle image.Image, threshold float64) (int, int, float64, error) {
@@ -30,6 +35,27 @@ func FindImage(haystack, needle image.Image, threshold float64) (int, int, float
 		return 0, 0, 0, fmt.Errorf("needle image is larger than haystack image")
 	}
 
+	// 1. Pre-extract non-transparent needle pixels
+	pixels := make([]needlePixel, 0, nW*nH)
+	for y := 0; y < nH; y++ {
+		for x := 0; x < nW; x++ {
+			c := needle.At(x, y)
+			r, g, b, a := c.RGBA()
+			if a == 0 {
+				continue
+			}
+			pixels = append(pixels, needlePixel{
+				x: x,
+				y: y,
+				r: float64(r >> 8),
+				g: float64(g >> 8),
+				b: float64(b >> 8),
+			})
+		}
+	}
+
+	rgbaHaystack, isRGBA := haystack.(*image.RGBA)
+
 	var bestX, bestY int
 	bestScore := math.MaxFloat64 // lower score is better
 
@@ -42,7 +68,7 @@ func FindImage(haystack, needle image.Image, threshold float64) (int, int, float
 	// Coarse pass
 	for y := 0; y <= hH-nH; y += step {
 		for x := 0; x <= hW-nW; x += step {
-			score := computeSAD(haystack, needle, x, y, nW, nH, bestScore)
+			score := computeSAD(rgbaHaystack, isRGBA, haystack, pixels, x, y, bestScore)
 			if score < bestScore {
 				bestScore = score
 				bestX = x
@@ -60,7 +86,7 @@ func FindImage(haystack, needle image.Image, threshold float64) (int, int, float
 				if x < 0 || y < 0 || x > hW-nW || y > hH-nH {
 					continue
 				}
-				score := computeSAD(haystack, needle, x, y, nW, nH, bestScore)
+				score := computeSAD(rgbaHaystack, isRGBA, haystack, pixels, x, y, bestScore)
 				if score < bestScore {
 					bestScore = score
 					bestX = x
@@ -71,7 +97,7 @@ func FindImage(haystack, needle image.Image, threshold float64) (int, int, float
 	}
 
 	// Calculate confidence score (1.0 = perfect match, 0.0 = completely different)
-	maxPotentialSAD := float64(255 * 3 * nW * nH)
+	maxPotentialSAD := float64(255 * 3 * len(pixels))
 	confidence := 1.0 - (bestScore / maxPotentialSAD)
 
 	if confidence < threshold {
@@ -85,26 +111,36 @@ func FindImage(haystack, needle image.Image, threshold float64) (int, int, float
 	return centerX, centerY, confidence, nil
 }
 
-func computeSAD(haystack, needle image.Image, startX, startY, nW, nH int, currentBest float64) float64 {
+func computeSAD(haystack *image.RGBA, isRGBA bool, fallback image.Image, pixels []needlePixel, startX, startY int, currentBest float64) float64 {
 	var totalDiff float64
-	for y := 0; y < nH; y++ {
-		for x := 0; x < nW; x++ {
-			nc := needle.At(x, y)
-			nr, ng, nb, na := nc.RGBA()
-
-			// Skip fully transparent pixels (support alpha masks)
-			if na == 0 {
+	if isRGBA {
+		for i := range pixels {
+			p := &pixels[i]
+			offset := haystack.PixOffset(startX+p.x, startY+p.y)
+			if offset+2 >= len(haystack.Pix) {
 				continue
 			}
+			hr := float64(haystack.Pix[offset])
+			hg := float64(haystack.Pix[offset+1])
+			hb := float64(haystack.Pix[offset+2])
 
-			hc := haystack.At(startX+x, startY+y)
+			diff := math.Abs(p.r-hr) + math.Abs(p.g-hg) + math.Abs(p.b-hb)
+			totalDiff += diff
+
+			// Early exit
+			if totalDiff >= currentBest {
+				return totalDiff
+			}
+		}
+	} else {
+		for i := range pixels {
+			p := &pixels[i]
+			hc := fallback.At(startX+p.x, startY+p.y)
 			hr, hg, hb, _ := hc.RGBA()
 
-			// Convert to 8-bit color space (0-255)
-			nRed, nGreen, nBlue := float64(nr>>8), float64(ng>>8), float64(nb>>8)
 			hRed, hGreen, hBlue := float64(hr>>8), float64(hg>>8), float64(hb>>8)
 
-			diff := math.Abs(nRed-hRed) + math.Abs(nGreen-hGreen) + math.Abs(nBlue-hBlue)
+			diff := math.Abs(p.r-hRed) + math.Abs(p.g-hGreen) + math.Abs(p.b-hBlue)
 			totalDiff += diff
 
 			// Early exit
@@ -115,6 +151,7 @@ func computeSAD(haystack, needle image.Image, startX, startY, nW, nH int, curren
 	}
 	return totalDiff
 }
+
 
 type OCRPoint struct {
 	X int `json:"X"`
