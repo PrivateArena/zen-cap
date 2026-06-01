@@ -139,3 +139,9 @@ func drawStringScaled(img draw.Image, s string, x, y int, col color.Color, scale
 		currX += 6 * scale // 5 pixels width + 1 pixel spacing * scale
 	}
 }
+
+// DrawStringScaled is an exported wrapper around drawStringScaled
+func DrawStringScaled(img draw.Image, s string, x, y int, col color.Color, scale int) {
+	drawStringScaled(img, s, x, y, col, scale)
+}
+

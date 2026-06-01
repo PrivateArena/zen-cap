@@ -24,6 +24,8 @@ import (
 	"zen-cap/pkg/config"
 	"zen-cap/pkg/display"
 	"zen-cap/pkg/recorder"
+	"zen-cap/pkg/snippet"
+	"zen-cap/pkg/tui"
 )
 
 func main() {
@@ -57,6 +59,30 @@ func runCLI() {
 		if err := handleService(); err != nil {
 			log.Fatalf("Service error: %v", err)
 		}
+	case "manage":
+		cfg, _, err := config.LoadConfig()
+		if err != nil {
+			cfg = config.DefaultConfig()
+		}
+		snipMgr, err := snippet.NewManager(cfg.SnippetFile)
+		if err != nil {
+			log.Fatalf("Failed to initialize Snippet Manager: %v", err)
+		}
+		if err := tui.RunManager(cfg, snipMgr); err != nil {
+			log.Fatalf("TUI Manager failed: %v", err)
+		}
+	case "snippet-picker":
+		cfg, _, err := config.LoadConfig()
+		if err != nil {
+			cfg = config.DefaultConfig()
+		}
+		snipMgr, err := snippet.NewManager(cfg.SnippetFile)
+		if err != nil {
+			log.Fatalf("Failed to initialize Snippet Manager: %v", err)
+		}
+		if err := snippet.ShowPicker(snipMgr); err != nil {
+			log.Fatalf("Snippet Picker failed: %v", err)
+		}
 	default:
 		fmt.Printf("Unknown subcommand: %s\n", subcommand)
 		printUsage()
@@ -68,11 +94,14 @@ func runCLI() {
 func printUsage() {
 	fmt.Println("Usage: zen-cap <subcommand> [flags]")
 	fmt.Println("\nSubcommands:")
-	fmt.Println("  screenshot   Capture a screen, region, or window to PNG")
-	fmt.Println("  record       Record video of a screen, region, or window to H.264 MP4")
-	fmt.Println("  service      Run in background listening for global hotkeys:")
-	fmt.Println("                 Ctrl+Shift+S -> Capture Fullscreen Screenshot")
-	fmt.Println("                 Ctrl+Shift+R -> Toggle Recording")
+	fmt.Println("  screenshot       Capture a screen, region, or window to PNG")
+	fmt.Println("  record           Record video of a screen, region, or window to H.264 MP4")
+	fmt.Println("  service          Run in background listening for global hotkeys:")
+	fmt.Println("                     Ctrl+Shift+S -> Capture Fullscreen Screenshot")
+	fmt.Println("                     Ctrl+Shift+R -> Toggle Recording")
+	fmt.Println("                     Alt+`        -> Open Snippet Picker GUI")
+	fmt.Println("  manage           Launch the Snippet Manager TUI")
+	fmt.Println("  snippet-picker   Open the native X11 Snippet Picker GUI")
 }
 
 func handleScreenshot() error {
@@ -343,6 +372,8 @@ func handleService() error {
 	fmt.Printf("  %-14s -> Clipboard Manager: Copy (0-9)\n", cfg.Hotkeys.ClipboardCopyMod+"-[0-9]")
 	fmt.Printf("  %-14s -> Clipboard Manager: Paste (0-9)\n", cfg.Hotkeys.ClipboardPasteMod+"-[0-9]")
 	fmt.Printf("  %-14s -> Clipboard Manager: Cycle Transform Rules\n", cfg.Hotkeys.ClipboardCycleRule)
+	fmt.Printf("  %-14s -> Snippet Picker: Open GUI\n", cfg.Hotkeys.SnippetPicker)
+	fmt.Printf("  %-14s -> Snippet Editor: Open snippets.yaml\n", "Shift-"+cfg.Hotkeys.SnippetPicker)
 	fmt.Println("UNIX Signals:")
 	fmt.Println("  SIGUSR1       -> Fullscreen Screenshot")
 	fmt.Println("  SIGUSR2       -> Toggle Fullscreen Recording")
@@ -424,6 +455,28 @@ func handleService() error {
 			go mgr.CycleTransform()
 		}).Connect(X, X.RootWin(), cfg.Hotkeys.ClipboardCycleRule, true)
 	}
+
+	// Register Snippet Picker Hotkey
+	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+		exe, err := os.Executable()
+		if err != nil {
+			exe = "zen-cap"
+		}
+		cmd := exec.Command(exe, "snippet-picker")
+		cmd.Env = os.Environ()
+		if err := cmd.Start(); err != nil {
+			fmt.Printf("[Service] Failed to start snippet-picker: %v\n", err)
+		}
+	}).Connect(X, X.RootWin(), cfg.Hotkeys.SnippetPicker, true)
+
+	// Register Snippet Editor Hotkey (Shift+Alt+`) for instant manual editing in default app
+	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+		fmt.Printf("[Service] Opening snippet file for editing: %s\n", cfg.SnippetFile)
+		cmd := exec.Command("xdg-open", cfg.SnippetFile)
+		if err := cmd.Start(); err != nil {
+			fmt.Printf("[Service] Failed to open snippet file: %v\n", err)
+		}
+	}).Connect(X, X.RootWin(), "Shift-"+cfg.Hotkeys.SnippetPicker, true)
 
 	// Register Global Safety Kill Hotkey (Ctrl+Shift+X) - emergency exit
 	safetyKillHandler := func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {

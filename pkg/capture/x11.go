@@ -78,6 +78,17 @@ func uploadImageChunked(xu *xgbutil.XUtil, drawable xproto.Drawable, gc xproto.G
 	return nil
 }
 
+// ImageToBGRA is an exported wrapper around imageToBGRA
+func ImageToBGRA(img image.Image) []byte {
+	return imageToBGRA(img)
+}
+
+// UploadImageChunked is an exported wrapper around uploadImageChunked
+func UploadImageChunked(xu *xgbutil.XUtil, drawable xproto.Drawable, gc xproto.Gcontext, depth byte, w, h int, bgraData []byte) error {
+	return uploadImageChunked(xu, drawable, gc, depth, w, h, bgraData)
+}
+
+
 // getMagnifierImage generates a 120x120 circle magnifier image with a neon-cyan bezel, neon-pink crosshairs,
 // and coordinates or current crop dimensions rendered in a custom 3x5 font at the bottom.
 func getMagnifierImage(rgbaImg *image.RGBA, mx, my, lx, ly, screenWidth, screenHeight int, dragging bool, startX, startY int) *image.RGBA {
