@@ -120,6 +120,9 @@ Performs vision-based search queries on the targeted window (or screen) and bran
 action: if_found
 type: image                  # Options: "image", "text"
 target: "templates/play.png" # Path to template image OR target text substring
+region: "BL"                 # Optional search bounds: e.g. "x,y,w,h" OR quick-dirty templates:
+                             # "TL" (Top Left), "TR" (Top Right), "BL" (Bottom Left), "BR" (Bottom Right)
+                             # "HL" (Left Half), "HR" (Right Half), "HT" (Top Half), "HB" (Bottom Half)
 similarity: 0.85             # Visual threshold (0.0 to 1.0)
 wait_timeout: 5s             # Max wait time for element to appear
 steps:

@@ -379,6 +379,8 @@ func InteractiveSelectRegionExt(fullImg image.Image, outClipboardAction *string)
 		return nil, fmt.Errorf("selected region too small (%dx%d)", w, h)
 	}
 
+	fmt.Printf("[InteractiveSelectRegion] Selected bounds: x=%d, y=%d, width=%d, height=%d\n", x1, y1, w, h)
+
 	// Crop the annotated fullscreen screenshot image
 	cropped := state.rgbaImg.SubImage(image.Rect(x1, y1, x1+w, y1+h))
 	if outClipboardAction != nil {

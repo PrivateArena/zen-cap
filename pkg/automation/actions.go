@@ -272,12 +272,25 @@ func runFindImage(step Step, ctx *ExecContext) error {
 			continue
 		}
 
+		offsetX, offsetY := 0, 0
+		if step.Region != "" {
+			rx, ry, rw, rh, err := ParseRegion(step.Region, haystack.Bounds().Dx(), haystack.Bounds().Dy())
+			if err == nil {
+				haystack, offsetX, offsetY = CropImage(haystack, rx, ry, rw, rh)
+			} else {
+				ctx.Logger("[Automation] Warning parsing region: %v", err)
+			}
+		}
+
 		x, y, conf, err := FindImage(haystack, needle, confidence)
 		if conf > bestConf {
 			bestConf = conf
 		}
 
 		if err == nil {
+			// Restore coordinates to absolute screen/window bounds
+			x += offsetX
+			y += offsetY
 			ctx.Logger("[Automation] Match found at (%d, %d) with confidence %.4f", x, y, conf)
 			ctx.LastFoundX = x
 			ctx.LastFoundY = y
@@ -351,8 +364,21 @@ func runFindText(step Step, ctx *ExecContext) error {
 			continue
 		}
 
+		offsetX, offsetY := 0, 0
+		if step.Region != "" {
+			rx, ry, rw, rh, err := ParseRegion(step.Region, haystack.Bounds().Dx(), haystack.Bounds().Dy())
+			if err == nil {
+				haystack, offsetX, offsetY = CropImage(haystack, rx, ry, rw, rh)
+			} else {
+				ctx.Logger("[Automation] Warning parsing region: %v", err)
+			}
+		}
+
 		x, y, conf, err := FindText(haystack, ocrAddr, ocrLang, step.Text)
 		if err == nil {
+			// Restore coordinates to absolute screen/window bounds
+			x += offsetX
+			y += offsetY
 			ctx.Logger("[Automation] Text %q found at (%d, %d) with confidence %.4f", step.Text, x, y, conf)
 			ctx.LastFoundX = x
 			ctx.LastFoundY = y

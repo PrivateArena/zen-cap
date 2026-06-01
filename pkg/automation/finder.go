@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"image"
+	"image/draw"
 	"image/png"
 	_ "image/png" // Support PNG loading
 	"math"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"zen-cap/pkg/capture"
@@ -196,4 +198,84 @@ func FindText(img image.Image, ocrAddr, lang, targetText string) (int, int, floa
 	}
 
 	return 0, 0, 0, fmt.Errorf("text %q not found in OCR results", targetText)
+}
+
+// ParseRegion parses region definitions and returns absolute bounds (x, y, w, h) inside haystack coordinates.
+func ParseRegion(regionStr string, hW, hH int) (int, int, int, int, error) {
+	regionStr = strings.TrimSpace(strings.ToUpper(regionStr))
+	switch regionStr {
+	case "TL":
+		return 0, 0, hW / 2, hH / 2, nil
+	case "TR":
+		return hW / 2, 0, hW / 2, hH / 2, nil
+	case "BL":
+		return 0, hH / 2, hW / 2, hH / 2, nil
+	case "BR":
+		return hW / 2, hH / 2, hW / 2, hH / 2, nil
+	case "HL":
+		return 0, 0, hW / 2, hH, nil
+	case "HR":
+		return hW / 2, 0, hW / 2, hH, nil
+	case "HT":
+		return 0, 0, hW, hH / 2, nil
+	case "HB":
+		return 0, hH / 2, hW, hH / 2, nil
+	}
+
+	// Try parsing "x,y,w,h" format
+	parts := strings.Split(regionStr, ",")
+	if len(parts) == 4 {
+		var x, y, w, h int
+		var err error
+		if x, err = strconv.Atoi(strings.TrimSpace(parts[0])); err != nil {
+			return 0, 0, 0, 0, err
+		}
+		if y, err = strconv.Atoi(strings.TrimSpace(parts[1])); err != nil {
+			return 0, 0, 0, 0, err
+		}
+		if w, err = strconv.Atoi(strings.TrimSpace(parts[2])); err != nil {
+			return 0, 0, 0, 0, err
+		}
+		if h, err = strconv.Atoi(strings.TrimSpace(parts[3])); err != nil {
+			return 0, 0, 0, 0, err
+		}
+		return x, y, w, h, nil
+	}
+
+	return 0, 0, 0, 0, fmt.Errorf("invalid region format: %q", regionStr)
+}
+
+// CropImage crops the image to specified boundaries, clamping coordinates to guarantee safe execution.
+// It returns a standard (0,0) based image to ensure full compatibility with matching and OCR engines.
+func CropImage(img image.Image, rx, ry, rw, rh int) (image.Image, int, int) {
+	bounds := img.Bounds()
+	hW, hH := bounds.Dx(), bounds.Dy()
+	hMinX, hMinY := bounds.Min.X, bounds.Min.Y
+
+	// Clamp coordinates to stay within image bounds safely
+	if rx < 0 {
+		rx = 0
+	}
+	if ry < 0 {
+		ry = 0
+	}
+	if rx >= hW {
+		rx = hW - 1
+	}
+	if ry >= hH {
+		ry = hH - 1
+	}
+	if rx+rw > hW {
+		rw = hW - rx
+	}
+	if ry+rh > hH {
+		rh = hH - ry
+	}
+
+	subRect := image.Rect(hMinX+rx, hMinY+ry, hMinX+rx+rw, hMinY+ry+rh)
+
+	// Always draw into a new (0,0) based image to normalize coordinates
+	cropped := image.NewRGBA(image.Rect(0, 0, rw, rh))
+	draw.Draw(cropped, cropped.Bounds(), img, subRect.Min, draw.Src)
+	return cropped, rx, ry
 }

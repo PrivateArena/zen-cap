@@ -5,6 +5,7 @@ steps:
   - action: if_found
     type: image
     target: templates/play_button.png
+    region: BL
     similarity: 0.9
     wait_timeout: 5s
     steps:

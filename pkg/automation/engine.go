@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"zen-cap/pkg/capture"
 	"zen-cap/pkg/config"
@@ -123,63 +124,101 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 			targetVal = step.Text
 		}
 
-		if findType == "image" {
-			if targetVal == "" {
-				return fmt.Errorf("missing template image path in if_found step")
+		var waitTimeout time.Duration
+		if step.WaitTimeout != "" {
+			if d, err := time.ParseDuration(step.WaitTimeout); err == nil {
+				waitTimeout = d
 			}
-			imgPath := targetVal
-			if !filepath.IsAbs(imgPath) && ctx.ScriptDir != "" {
-				imgPath = filepath.Join(ctx.ScriptDir, imgPath)
+		}
+
+		deadline := time.Now().Add(waitTimeout)
+		for {
+			select {
+			case <-ctx.AbortChan:
+				return fmt.Errorf("execution aborted by user")
+			default:
 			}
-			f, err := os.Open(imgPath)
-			if err == nil {
-				defer f.Close()
-				needle, _, err := image.Decode(f)
+
+			if findType == "image" {
+				if targetVal == "" {
+					return fmt.Errorf("missing template image path in if_found step")
+				}
+				imgPath := targetVal
+				if !filepath.IsAbs(imgPath) && ctx.ScriptDir != "" {
+					imgPath = filepath.Join(ctx.ScriptDir, imgPath)
+				}
+				f, err := os.Open(imgPath)
 				if err == nil {
-					confidence := step.Confidence
-					if confidence <= 0 {
-						confidence = 0.90
-					}
-					capCfg := capture.CaptureConfig{
-						Display:  ":0.0",
-						WindowID: ctx.WindowID,
-					}
-					haystack, err := capture.CaptureScreen(capCfg)
+					defer f.Close()
+					needle, _, err := image.Decode(f)
 					if err == nil {
-						fx, fy, _, err := FindImage(haystack, needle, confidence)
+						confidence := step.Confidence
+						if confidence <= 0 {
+							confidence = 0.90
+						}
+						capCfg := capture.CaptureConfig{
+							Display:  ":0.0",
+							WindowID: ctx.WindowID,
+						}
+						haystack, err := capture.CaptureScreen(capCfg)
 						if err == nil {
-							found = true
-							ctx.LastFoundX = fx
-							ctx.LastFoundY = fy
+							offsetX, offsetY := 0, 0
+							if step.Region != "" {
+								rx, ry, rw, rh, err := ParseRegion(step.Region, haystack.Bounds().Dx(), haystack.Bounds().Dy())
+								if err == nil {
+									haystack, offsetX, offsetY = CropImage(haystack, rx, ry, rw, rh)
+								}
+							}
+							fx, fy, _, err := FindImage(haystack, needle, confidence)
+							if err == nil {
+								found = true
+								ctx.LastFoundX = fx + offsetX
+								ctx.LastFoundY = fy + offsetY
+							}
 						}
 					}
 				}
-			}
-		} else if findType == "text" {
-			if targetVal == "" {
-				return fmt.Errorf("missing target text in if_found step")
-			}
-			ocrAddr := "http://localhost:8765"
-			ocrLang := "ch"
-			if ctx.Config != nil {
-				ocrAddr = ctx.Config.OCRAddress
-				ocrLang = ctx.Config.OCRLanguage
-			}
-			capCfg := capture.CaptureConfig{
-				Display:  ":0.0",
-				WindowID: ctx.WindowID,
-			}
-			haystack, err := capture.CaptureScreen(capCfg)
-			if err == nil {
-				fx, fy, _, err := FindText(haystack, ocrAddr, ocrLang, targetVal)
-				if err == nil {
-					found = true
-					ctx.LastFoundX = fx
-					ctx.LastFoundY = fy
+			} else if findType == "text" {
+				if targetVal == "" {
+					return fmt.Errorf("missing target text in if_found step")
 				}
+				ocrAddr := "http://localhost:8765"
+				ocrLang := "ch"
+				if ctx.Config != nil {
+					ocrAddr = ctx.Config.OCRAddress
+					ocrLang = ctx.Config.OCRLanguage
+				}
+				capCfg := capture.CaptureConfig{
+					Display:  ":0.0",
+					WindowID: ctx.WindowID,
+				}
+				haystack, err := capture.CaptureScreen(capCfg)
+				if err == nil {
+					offsetX, offsetY := 0, 0
+					if step.Region != "" {
+						rx, ry, rw, rh, err := ParseRegion(step.Region, haystack.Bounds().Dx(), haystack.Bounds().Dy())
+						if err == nil {
+							haystack, offsetX, offsetY = CropImage(haystack, rx, ry, rw, rh)
+						}
+					}
+					fx, fy, _, err := FindText(haystack, ocrAddr, ocrLang, targetVal)
+					if err == nil {
+						found = true
+						ctx.LastFoundX = fx + offsetX
+						ctx.LastFoundY = fy + offsetY
+					}
+				}
+			} else {
+				return fmt.Errorf("unknown find target in if_found step: %q", findType)
 			}
-		} else {
-			return fmt.Errorf("unknown find target in if_found step: %q", findType)
+
+			if found {
+				break
+			}
+			if time.Now().After(deadline) {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
 		}
 
 		var targetSteps []Step

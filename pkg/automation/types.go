@@ -31,8 +31,9 @@ type Step struct {
 	Find       string   `json:"find,omitempty" yaml:"find,omitempty"`   // image, text
 	Type       string   `json:"type,omitempty" yaml:"type,omitempty"`   // alias for find
 	Target     string   `json:"target,omitempty" yaml:"target,omitempty"` // alias for image/text/find_target
-	Else       []Step   `json:"else,omitempty" yaml:"else,omitempty"`
-	Delay      string   `json:"delay,omitempty" yaml:"delay,omitempty"`
+	Else        []Step   `json:"else,omitempty" yaml:"else,omitempty"`
+	Delay       string   `json:"delay,omitempty" yaml:"delay,omitempty"`
+	WaitTimeout string   `json:"wait_timeout,omitempty" yaml:"wait_timeout,omitempty"`
 }
 
 type Script struct {
