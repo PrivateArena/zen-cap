@@ -1,0 +1,40 @@
+package automation
+
+type WindowTarget struct {
+	Title string `json:"title,omitempty" yaml:"title,omitempty"`
+	Class string `json:"class,omitempty" yaml:"class,omitempty"`
+}
+
+type Step struct {
+	Action     string   `json:"action" yaml:"action"`
+	X          int      `json:"x,omitempty" yaml:"x,omitempty"`
+	Y          int      `json:"y,omitempty" yaml:"y,omitempty"`
+	Button     string   `json:"button,omitempty" yaml:"button,omitempty"` // left, right, middle
+	Text       string   `json:"text,omitempty" yaml:"text,omitempty"`
+	Keys       string   `json:"keys,omitempty" yaml:"keys,omitempty"`
+	Duration   string   `json:"duration,omitempty" yaml:"duration,omitempty"` // e.g. "2s", "500ms"
+	Image      string   `json:"image,omitempty" yaml:"image,omitempty"`
+	Timeout    string   `json:"timeout,omitempty" yaml:"timeout,omitempty"`
+	Confidence float64  `json:"confidence,omitempty" yaml:"confidence,omitempty"` // 0.0 - 1.0
+	Then       string   `json:"then,omitempty" yaml:"then,omitempty"`             // click, move, none
+	OffsetX    int      `json:"offset_x,omitempty" yaml:"offset_x,omitempty"`
+	OffsetY    int      `json:"offset_y,omitempty" yaml:"offset_y,omitempty"`
+	Relative   bool     `json:"relative,omitempty" yaml:"relative,omitempty"`
+	Output     string   `json:"output,omitempty" yaml:"output,omitempty"`
+	Region     string   `json:"region,omitempty" yaml:"region,omitempty"`
+	Command    string   `json:"command,omitempty" yaml:"command,omitempty"`
+	Mode       string   `json:"mode,omitempty" yaml:"mode,omitempty"` // write, read
+	Title      string   `json:"title,omitempty" yaml:"title,omitempty"`
+	Message    string   `json:"message,omitempty" yaml:"message,omitempty"`
+	Count      int      `json:"count,omitempty" yaml:"count,omitempty"`
+	Steps      []Step   `json:"steps,omitempty" yaml:"steps,omitempty"` // for loop, if_found
+	Find       string   `json:"find,omitempty" yaml:"find,omitempty"`   // image, text
+	Else       []Step   `json:"else,omitempty" yaml:"else,omitempty"`
+	Delay      string   `json:"delay,omitempty" yaml:"delay,omitempty"`
+}
+
+type Script struct {
+	Name   string        `json:"name" yaml:"name"`
+	Window *WindowTarget `json:"window,omitempty" yaml:"window,omitempty"`
+	Steps  []Step        `json:"steps" yaml:"steps"`
+}

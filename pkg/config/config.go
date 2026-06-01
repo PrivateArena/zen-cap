@@ -25,6 +25,7 @@ type Config struct {
 	TranslationTarget    string          `json:"translation_target"` // Default: "en"
 	ClipboardSessionFile string          `json:"clipboard_session_file"`
 	SnippetFile          string          `json:"snippet_file"`
+	AutomationFile       string          `json:"automation_file"`
 	TransformRules       []TransformRule `json:"transform_rules"`
 }
 
@@ -36,6 +37,7 @@ type HotkeysConfig struct {
 	ClipboardPasteMod  string `json:"clipboard_paste_mod"`  // e.g. "Mod1-Shift"
 	ClipboardCycleRule string `json:"clipboard_cycle_rule"` // e.g. "Control-grave"
 	SnippetPicker      string `json:"snippet_picker"`       // e.g. "Mod1-grave" (Alt+`)
+	AutomationPicker   string `json:"automation_picker"`    // e.g. "Mod1-a" (Alt+a)
 }
 
 func DefaultTransformRules() []TransformRule {
@@ -85,6 +87,7 @@ func DefaultConfig() *Config {
 
 	defaultSessionFile := filepath.Join(filepath.Dir(defaultOutputDir), ".config", "zen-cap", "clipboard_session.json")
 	defaultSnippetFile, _ := filepath.Abs("snippets.yaml")
+	defaultAutomationFile, _ := filepath.Abs("automations.yaml")
 	if home, err := os.UserHomeDir(); err == nil {
 		defaultSessionFile = filepath.Join(home, ".config", "zen-cap", "clipboard_session.json")
 	}
@@ -99,6 +102,7 @@ func DefaultConfig() *Config {
 			ClipboardPasteMod:  "Mod1-Shift",
 			ClipboardCycleRule: "Control-grave",
 			SnippetPicker:      "Mod1-grave",
+			AutomationPicker:   "Mod1-a",
 		},
 		ClipboardMode:        "image",
 		OCRAddress:           "http://localhost:8765",
@@ -106,6 +110,7 @@ func DefaultConfig() *Config {
 		TranslationTarget:    "en",
 		ClipboardSessionFile: defaultSessionFile,
 		SnippetFile:          defaultSnippetFile,
+		AutomationFile:       defaultAutomationFile,
 		TransformRules:       DefaultTransformRules(),
 	}
 }
@@ -122,6 +127,7 @@ func DefaultPortableConfig(binDir string) *Config {
 			ClipboardPasteMod:  "Mod1-Shift",
 			ClipboardCycleRule: "Control-grave",
 			SnippetPicker:      "Mod1-grave",
+			AutomationPicker:   "Mod1-a",
 		},
 		ClipboardMode:        "image",
 		OCRAddress:           "http://localhost:8765",
@@ -129,6 +135,7 @@ func DefaultPortableConfig(binDir string) *Config {
 		TranslationTarget:    "en",
 		ClipboardSessionFile: filepath.Join(binDir, "clipboard_session.json"),
 		SnippetFile:          filepath.Join(binDir, "snippets.yaml"),
+		AutomationFile:       filepath.Join(binDir, "automations.yaml"),
 		TransformRules:       DefaultTransformRules(),
 	}
 }
@@ -245,6 +252,9 @@ func readConfig(path string, binDir string, isPortable bool) (*Config, error) {
 	if cfg.Hotkeys.SnippetPicker == "" {
 		cfg.Hotkeys.SnippetPicker = defaults.Hotkeys.SnippetPicker
 	}
+	if cfg.Hotkeys.AutomationPicker == "" {
+		cfg.Hotkeys.AutomationPicker = defaults.Hotkeys.AutomationPicker
+	}
 	if cfg.ClipboardMode == "" {
 		cfg.ClipboardMode = defaults.ClipboardMode
 	}
@@ -272,6 +282,21 @@ func readConfig(path string, binDir string, isPortable bool) (*Config, error) {
 				cfg.SnippetFile = binSnippet
 			} else {
 				cfg.SnippetFile, _ = filepath.Abs("snippets.yaml")
+			}
+		}
+	}
+	if cfg.AutomationFile == "" || cfg.AutomationFile == defaults.AutomationFile {
+		binAuto := filepath.Join(binDir, "automations.yaml")
+		cwdAuto := "automations.yaml"
+		if _, err := os.Stat(binAuto); err == nil {
+			cfg.AutomationFile = binAuto
+		} else if _, err := os.Stat(cwdAuto); err == nil {
+			cfg.AutomationFile, _ = filepath.Abs(cwdAuto)
+		} else {
+			if isPortable {
+				cfg.AutomationFile = binAuto
+			} else {
+				cfg.AutomationFile, _ = filepath.Abs("automations.yaml")
 			}
 		}
 	}

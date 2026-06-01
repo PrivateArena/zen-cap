@@ -1,0 +1,108 @@
+package automation
+
+import (
+	"fmt"
+	"os/exec"
+	"strconv"
+	"strings"
+
+	"zen-cap/pkg/config"
+)
+
+// RunScript starts the sequential execution of a Script.
+func RunScript(script Script, cfg *config.Config, abortChan chan struct{}, logger func(string, ...interface{})) error {
+	var WID uint32
+	if script.Window != nil {
+		id, err := ResolveWindow(script.Window)
+		if err != nil {
+			logger("[Automation] Warning: %v. Running script in absolute screen space instead.", err)
+		} else {
+			WID = id
+			logger("[Automation] Target window resolved: WID=%d", WID)
+		}
+	}
+
+	ctx := &ExecContext{
+		WindowID:  WID,
+		AbortChan: abortChan,
+		Logger:    logger,
+	}
+
+	logger("[Automation] Starting script: %q", script.Name)
+	for i, step := range script.Steps {
+		select {
+		case <-ctx.AbortChan:
+			return fmt.Errorf("execution aborted by user")
+		default:
+		}
+
+		logger("[Automation] Step %d/%d: %s", i+1, len(script.Steps), step.Action)
+		if err := executeStepWithControl(step, ctx); err != nil {
+			return fmt.Errorf("step %d (%s) failed: %w", i+1, step.Action, err)
+		}
+	}
+
+	logger("[Automation] Script %q finished successfully!", script.Name)
+	return nil
+}
+
+// ResolveWindow finds a matching window ID using xdotool search.
+func ResolveWindow(target *WindowTarget) (uint32, error) {
+	if target == nil {
+		return 0, nil
+	}
+	var args []string
+	if target.Title != "" {
+		args = []string{"search", "--name", target.Title}
+	} else if target.Class != "" {
+		args = []string{"search", "--class", target.Class}
+	} else {
+		return 0, nil
+	}
+
+	cmd := exec.Command("xdotool", args...)
+	out, err := cmd.Output()
+	if err != nil {
+		return 0, fmt.Errorf("xdotool search failed: %w", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(lines) == 0 || lines[0] == "" {
+		return 0, fmt.Errorf("no window matching %q found", target.Title+target.Class)
+	}
+
+	// Use first matching window ID
+	id, err := strconv.ParseUint(lines[0], 10, 32)
+	if err != nil {
+		return 0, fmt.Errorf("invalid window ID format: %w", err)
+	}
+
+	return uint32(id), nil
+}
+
+func executeStepWithControl(step Step, ctx *ExecContext) error {
+	switch strings.ToLower(step.Action) {
+	case "loop":
+		count := step.Count
+		if count <= 0 {
+			count = 1
+		}
+		ctx.Logger("[Automation] Loop: entering count=%d", count)
+		for i := 0; i < count; i++ {
+			select {
+			case <-ctx.AbortChan:
+				return fmt.Errorf("execution aborted by user")
+			default:
+			}
+			ctx.Logger("[Automation] Loop iteration %d/%d", i+1, count)
+			for _, substep := range step.Steps {
+				if err := executeStepWithControl(substep, ctx); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	default:
+		return ExecuteStep(step, ctx)
+	}
+}
