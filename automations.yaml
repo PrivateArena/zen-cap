@@ -1,0 +1,16 @@
+- name: Example Reward Clicker
+  window:
+    title: MyGame
+  steps:
+    - action: wait
+      duration: 1s
+    - action: click
+      x: 400
+      "y": 300
+      button: left
+    - action: wait
+      duration: 500ms
+    - action: type
+      text: Hello, Zen-Cap!
+    - action: key
+      keys: Return

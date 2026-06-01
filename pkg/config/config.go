@@ -25,7 +25,7 @@ type Config struct {
 	TranslationTarget    string          `json:"translation_target"` // Default: "en"
 	ClipboardSessionFile string          `json:"clipboard_session_file"`
 	SnippetFile          string          `json:"snippet_file"`
-	AutomationFile       string          `json:"automation_file"`
+	AutomationDir        string          `json:"automation_dir"`
 	TransformRules       []TransformRule `json:"transform_rules"`
 }
 
@@ -87,7 +87,7 @@ func DefaultConfig() *Config {
 
 	defaultSessionFile := filepath.Join(filepath.Dir(defaultOutputDir), ".config", "zen-cap", "clipboard_session.json")
 	defaultSnippetFile, _ := filepath.Abs("snippets.yaml")
-	defaultAutomationFile, _ := filepath.Abs("automations.yaml")
+	defaultAutomationDir, _ := filepath.Abs("automations")
 	if home, err := os.UserHomeDir(); err == nil {
 		defaultSessionFile = filepath.Join(home, ".config", "zen-cap", "clipboard_session.json")
 	}
@@ -110,7 +110,7 @@ func DefaultConfig() *Config {
 		TranslationTarget:    "en",
 		ClipboardSessionFile: defaultSessionFile,
 		SnippetFile:          defaultSnippetFile,
-		AutomationFile:       defaultAutomationFile,
+		AutomationDir:         defaultAutomationDir,
 		TransformRules:       DefaultTransformRules(),
 	}
 }
@@ -285,18 +285,18 @@ func readConfig(path string, binDir string, isPortable bool) (*Config, error) {
 			}
 		}
 	}
-	if cfg.AutomationFile == "" || cfg.AutomationFile == defaults.AutomationFile {
-		binAuto := filepath.Join(binDir, "automations.yaml")
-		cwdAuto := "automations.yaml"
+	if cfg.AutomationDir == "" || cfg.AutomationDir == defaults.AutomationDir {
+		binAuto := filepath.Join(binDir, "automations")
+		cwdAuto := "automations"
 		if _, err := os.Stat(binAuto); err == nil {
-			cfg.AutomationFile = binAuto
+			cfg.AutomationDir = binAuto
 		} else if _, err := os.Stat(cwdAuto); err == nil {
-			cfg.AutomationFile, _ = filepath.Abs(cwdAuto)
+			cfg.AutomationDir, _ = filepath.Abs(cwdAuto)
 		} else {
 			if isPortable {
-				cfg.AutomationFile = binAuto
+				cfg.AutomationDir = binAuto
 			} else {
-				cfg.AutomationFile, _ = filepath.Abs("automations.yaml")
+				cfg.AutomationDir, _ = filepath.Abs("automations")
 			}
 		}
 	}

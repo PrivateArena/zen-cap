@@ -15,10 +15,8 @@ func TestAutomationManagerSeedingAndLoading(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	filePath := filepath.Join(tempDir, "automations.yaml")
-
-	// 1. Initial creation (should seed example script)
-	mgr, err := NewManager(filePath)
+	// 1. Initial creation (should seed example script in tempDir)
+	mgr, err := NewManager(tempDir)
 	if err != nil {
 		t.Fatalf("failed to create NewManager: %v", err)
 	}
@@ -38,10 +36,11 @@ func TestAutomationManagerSeedingAndLoading(t *testing.T) {
 	}
 
 	// 2. Simulate manual edit (Hot-Reload)
+	filePath := filepath.Join(tempDir, "Example_Reward_Clicker.yaml")
 	scripts[0].Name = "Custom Reward Script"
-	data, err := yaml.Marshal(scripts)
+	data, err := yaml.Marshal(scripts[0])
 	if err != nil {
-		t.Fatalf("failed to marshal scripts: %v", err)
+		t.Fatalf("failed to marshal script: %v", err)
 	}
 
 	err = os.WriteFile(filePath, data, 0644)
@@ -50,7 +49,7 @@ func TestAutomationManagerSeedingAndLoading(t *testing.T) {
 	}
 
 	// 3. Reload manager / check hot reload
-	scripts2 := mgr.GetAll() // Should hot-reload from file
+	scripts2 := mgr.GetAll() // Should hot-reload from folder files
 	if len(scripts2) != 1 {
 		t.Fatalf("expected 1 script after reload, got %d", len(scripts2))
 	}
