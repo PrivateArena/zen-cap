@@ -16,11 +16,13 @@ import (
 )
 
 type ExecContext struct {
-	WindowID  uint32
-	AbortChan chan struct{}
-	Logger    func(string, ...interface{})
-	ScriptDir string
-	Config    *config.Config
+	WindowID   uint32
+	AbortChan  chan struct{}
+	Logger     func(string, ...interface{})
+	ScriptDir  string
+	Config     *config.Config
+	LastFoundX int
+	LastFoundY int
 }
 
 func ExecuteStep(step Step, ctx *ExecContext) error {
@@ -67,31 +69,45 @@ func runClick(step Step, ctx *ExecContext) error {
 		btn = b
 	}
 
-	var args []string
-	if ctx.WindowID != 0 {
-		args = []string{"mousemove", "--window", strconv.FormatUint(uint64(ctx.WindowID), 10), strconv.Itoa(step.X), strconv.Itoa(step.Y), "click", "--window", strconv.FormatUint(uint64(ctx.WindowID), 10), btn}
-	} else {
-		args = []string{"mousemove", strconv.Itoa(step.X), strconv.Itoa(step.Y), "click", btn}
+	x := step.X
+	y := step.Y
+	if x == -1 && y == -1 {
+		x = ctx.LastFoundX
+		y = ctx.LastFoundY
 	}
 
-	ctx.Logger("[Automation] Click: x=%d, y=%d, button=%s (window=%d)", step.X, step.Y, step.Button, ctx.WindowID)
+	var args []string
+	if ctx.WindowID != 0 {
+		args = []string{"mousemove", "--window", strconv.FormatUint(uint64(ctx.WindowID), 10), strconv.Itoa(x), strconv.Itoa(y), "click", "--window", strconv.FormatUint(uint64(ctx.WindowID), 10), btn}
+	} else {
+		args = []string{"mousemove", strconv.Itoa(x), strconv.Itoa(y), "click", btn}
+	}
+
+	ctx.Logger("[Automation] Click: x=%d, y=%d, button=%s (window=%d)", x, y, step.Button, ctx.WindowID)
 	cmd := exec.Command("xdotool", args...)
 	return cmd.Run()
 }
 
 func runMove(step Step, ctx *ExecContext) error {
+	x := step.X
+	y := step.Y
+	if x == -1 && y == -1 {
+		x = ctx.LastFoundX
+		y = ctx.LastFoundY
+	}
+
 	var args []string
 	if ctx.WindowID != 0 {
-		args = []string{"mousemove", "--window", strconv.FormatUint(uint64(ctx.WindowID), 10), strconv.Itoa(step.X), strconv.Itoa(step.Y)}
+		args = []string{"mousemove", "--window", strconv.FormatUint(uint64(ctx.WindowID), 10), strconv.Itoa(x), strconv.Itoa(y)}
 	} else {
 		if step.Relative {
-			args = []string{"mousemove_relative", strconv.Itoa(step.X), strconv.Itoa(step.Y)}
+			args = []string{"mousemove_relative", strconv.Itoa(x), strconv.Itoa(y)}
 		} else {
-			args = []string{"mousemove", strconv.Itoa(step.X), strconv.Itoa(step.Y)}
+			args = []string{"mousemove", strconv.Itoa(x), strconv.Itoa(y)}
 		}
 	}
 
-	ctx.Logger("[Automation] Move: x=%d, y=%d, relative=%v (window=%d)", step.X, step.Y, step.Relative, ctx.WindowID)
+	ctx.Logger("[Automation] Move: x=%d, y=%d, relative=%v (window=%d)", x, y, step.Relative, ctx.WindowID)
 	cmd := exec.Command("xdotool", args...)
 	return cmd.Run()
 }
@@ -263,6 +279,8 @@ func runFindImage(step Step, ctx *ExecContext) error {
 
 		if err == nil {
 			ctx.Logger("[Automation] Match found at (%d, %d) with confidence %.4f", x, y, conf)
+			ctx.LastFoundX = x
+			ctx.LastFoundY = y
 			targetX := x + step.OffsetX
 			targetY := y + step.OffsetY
 
@@ -336,6 +354,8 @@ func runFindText(step Step, ctx *ExecContext) error {
 		x, y, conf, err := FindText(haystack, ocrAddr, ocrLang, step.Text)
 		if err == nil {
 			ctx.Logger("[Automation] Text %q found at (%d, %d) with confidence %.4f", step.Text, x, y, conf)
+			ctx.LastFoundX = x
+			ctx.LastFoundY = y
 			targetX := x + step.OffsetX
 			targetY := y + step.OffsetY
 

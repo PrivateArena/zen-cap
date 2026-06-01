@@ -29,6 +29,8 @@ type Step struct {
 	Count      int      `json:"count,omitempty" yaml:"count,omitempty"`
 	Steps      []Step   `json:"steps,omitempty" yaml:"steps,omitempty"` // for loop, if_found
 	Find       string   `json:"find,omitempty" yaml:"find,omitempty"`   // image, text
+	Type       string   `json:"type,omitempty" yaml:"type,omitempty"`   // alias for find
+	Target     string   `json:"target,omitempty" yaml:"target,omitempty"` // alias for image/text/find_target
 	Else       []Step   `json:"else,omitempty" yaml:"else,omitempty"`
 	Delay      string   `json:"delay,omitempty" yaml:"delay,omitempty"`
 }

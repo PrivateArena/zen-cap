@@ -1,0 +1,21 @@
+name: Image Clicker Example
+steps:
+  - action: wait
+    duration: 1s
+  - action: if_found
+    type: image
+    target: templates/play_button.png
+    similarity: 0.9
+    wait_timeout: 5s
+    steps:
+      - action: click
+        x: -1
+        y: -1
+        button: left
+      - action: notify
+        title: "Success"
+        message: "Found and clicked the target image!"
+    else:
+      - action: notify
+        title: "Failed"
+        message: "Target image not found on screen within timeout."

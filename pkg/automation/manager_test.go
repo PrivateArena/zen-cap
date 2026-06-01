@@ -58,3 +58,38 @@ func TestAutomationManagerSeedingAndLoading(t *testing.T) {
 		t.Errorf("expected hot-reloaded name 'Custom Reward Script', got %q", scripts2[0].Name)
 	}
 }
+
+func TestLoadRealScripts(t *testing.T) {
+	// Look at the real automations directory
+	dir := "../../automations"
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		t.Logf("no real automations dir found at %s: %v", dir, err)
+		return
+	}
+
+	for _, f := range files {
+		if f.IsDir() {
+			continue
+		}
+		ext := filepath.Ext(f.Name())
+		if ext != ".yaml" && ext != ".yml" {
+			continue
+		}
+
+		path := filepath.Join(dir, f.Name())
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Errorf("failed to read %s: %v", f.Name(), err)
+			continue
+		}
+
+		var s Script
+		if err := yaml.Unmarshal(data, &s); err != nil {
+			t.Errorf("failed to parse %s: %v", f.Name(), err)
+			continue
+		}
+
+		t.Logf("SUCCESSFULLY LOADED REAL SCRIPT: %q with %d steps", s.Name, len(s.Steps))
+	}
+}

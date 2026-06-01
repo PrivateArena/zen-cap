@@ -122,10 +122,11 @@ type: image                  # Options: "image", "text"
 target: "templates/play.png" # Path to template image OR target text substring
 similarity: 0.85             # Visual threshold (0.0 to 1.0)
 wait_timeout: 5s             # Max wait time for element to appear
-then:
+steps:
   - action: click            # Executes if target is found
     x: -1                    # -1 means auto-click the detected target center!
     y: -1
+    button: left
 else:
   - action: notify           # Executes if target is not found
     title: "Not Found"

@@ -109,11 +109,25 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 		return nil
 	case "if_found":
 		found := false
-		if strings.ToLower(step.Find) == "image" {
-			if step.Image == "" {
+		findType := step.Find
+		if findType == "" {
+			findType = step.Type
+		}
+		findType = strings.ToLower(findType)
+
+		targetVal := step.Image
+		if targetVal == "" {
+			targetVal = step.Target
+		}
+		if targetVal == "" {
+			targetVal = step.Text
+		}
+
+		if findType == "image" {
+			if targetVal == "" {
 				return fmt.Errorf("missing template image path in if_found step")
 			}
-			imgPath := step.Image
+			imgPath := targetVal
 			if !filepath.IsAbs(imgPath) && ctx.ScriptDir != "" {
 				imgPath = filepath.Join(ctx.ScriptDir, imgPath)
 			}
@@ -132,15 +146,17 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 					}
 					haystack, err := capture.CaptureScreen(capCfg)
 					if err == nil {
-						_, _, _, err = FindImage(haystack, needle, confidence)
+						fx, fy, _, err := FindImage(haystack, needle, confidence)
 						if err == nil {
 							found = true
+							ctx.LastFoundX = fx
+							ctx.LastFoundY = fy
 						}
 					}
 				}
 			}
-		} else if strings.ToLower(step.Find) == "text" {
-			if step.Text == "" {
+		} else if findType == "text" {
+			if targetVal == "" {
 				return fmt.Errorf("missing target text in if_found step")
 			}
 			ocrAddr := "http://localhost:8765"
@@ -155,21 +171,23 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 			}
 			haystack, err := capture.CaptureScreen(capCfg)
 			if err == nil {
-				_, _, _, err = FindText(haystack, ocrAddr, ocrLang, step.Text)
+				fx, fy, _, err := FindText(haystack, ocrAddr, ocrLang, targetVal)
 				if err == nil {
 					found = true
+					ctx.LastFoundX = fx
+					ctx.LastFoundY = fy
 				}
 			}
 		} else {
-			return fmt.Errorf("unknown find target in if_found step: %q", step.Find)
+			return fmt.Errorf("unknown find target in if_found step: %q", findType)
 		}
 
 		var targetSteps []Step
 		if found {
-			ctx.Logger("[Automation] Condition MET (found %s)", step.Find)
+			ctx.Logger("[Automation] Condition MET (found %s)", findType)
 			targetSteps = step.Steps
 		} else {
-			ctx.Logger("[Automation] Condition NOT MET (found %s)", step.Find)
+			ctx.Logger("[Automation] Condition NOT MET (found %s)", findType)
 			targetSteps = step.Else
 		}
 

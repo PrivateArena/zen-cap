@@ -3,7 +3,7 @@ window:
     title: MyGame
 steps:
     - action: wait
-      duration: 1s
+      duration: 3s
     - action: click
       x: 400
       "y": 300
