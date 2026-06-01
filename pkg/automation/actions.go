@@ -3,18 +3,24 @@ package automation
 import (
 	"context"
 	"fmt"
+	"image"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	"zen-cap/pkg/capture"
+	"zen-cap/pkg/config"
 )
 
 type ExecContext struct {
 	WindowID  uint32
 	AbortChan chan struct{}
 	Logger    func(string, ...interface{})
+	ScriptDir string
+	Config    *config.Config
 }
 
 func ExecuteStep(step Step, ctx *ExecContext) error {
@@ -41,6 +47,10 @@ func ExecuteStep(step Step, ctx *ExecContext) error {
 		return runCommand(step, ctx)
 	case "clipboard":
 		return runClipboard(step, ctx)
+	case "find_image":
+		return runFindImage(step, ctx)
+	case "find_text":
+		return runFindText(step, ctx)
 	default:
 		return fmt.Errorf("unknown action: %s", step.Action)
 	}
@@ -188,4 +198,170 @@ func runClipboard(step Step, ctx *ExecContext) error {
 	}
 
 	return nil
+}
+
+func runFindImage(step Step, ctx *ExecContext) error {
+	if step.Image == "" {
+		return fmt.Errorf("missing template image path in find_image step")
+	}
+
+	// Resolve path
+	imgPath := step.Image
+	if !filepath.IsAbs(imgPath) && ctx.ScriptDir != "" {
+		imgPath = filepath.Join(ctx.ScriptDir, imgPath)
+	}
+
+	f, err := os.Open(imgPath)
+	if err != nil {
+		return fmt.Errorf("failed to open template image: %w", err)
+	}
+	defer f.Close()
+
+	needle, _, err := image.Decode(f)
+	if err != nil {
+		return fmt.Errorf("failed to decode template image: %w", err)
+	}
+
+	confidence := step.Confidence
+	if confidence <= 0 {
+		confidence = 0.90
+	}
+
+	timeout := 10 * time.Second
+	if step.Timeout != "" {
+		if d, err := time.ParseDuration(step.Timeout); err == nil {
+			timeout = d
+		}
+	}
+
+	ctx.Logger("[Automation] Find Image: %q (timeout=%v, confidence=%.2f)", step.Image, timeout, confidence)
+
+	deadline := time.Now().Add(timeout)
+	var bestConf float64
+	for {
+		select {
+		case <-ctx.AbortChan:
+			return fmt.Errorf("execution aborted by user")
+		default:
+		}
+
+		capCfg := capture.CaptureConfig{
+			Display:  ":0.0",
+			WindowID: ctx.WindowID,
+		}
+		haystack, err := capture.CaptureScreen(capCfg)
+		if err != nil {
+			ctx.Logger("[Automation] Error capturing screen for search: %v", err)
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+
+		x, y, conf, err := FindImage(haystack, needle, confidence)
+		if conf > bestConf {
+			bestConf = conf
+		}
+
+		if err == nil {
+			ctx.Logger("[Automation] Match found at (%d, %d) with confidence %.4f", x, y, conf)
+			targetX := x + step.OffsetX
+			targetY := y + step.OffsetY
+
+			if strings.ToLower(step.Then) == "click" {
+				clickStep := Step{
+					Action: "click",
+					X:      targetX,
+					Y:      targetY,
+					Button: step.Button,
+				}
+				return runClick(clickStep, ctx)
+			} else if strings.ToLower(step.Then) == "move" {
+				moveStep := Step{
+					Action: "move",
+					X:      targetX,
+					Y:      targetY,
+				}
+				return runMove(moveStep, ctx)
+			}
+			return nil
+		}
+
+		if time.Now().After(deadline) {
+			return fmt.Errorf("template image %q not found within timeout (best confidence %.4f)", step.Image, bestConf)
+		}
+
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
+func runFindText(step Step, ctx *ExecContext) error {
+	if step.Text == "" {
+		return fmt.Errorf("missing target text in find_text step")
+	}
+
+	timeout := 10 * time.Second
+	if step.Timeout != "" {
+		if d, err := time.ParseDuration(step.Timeout); err == nil {
+			timeout = d
+		}
+	}
+
+	ocrAddr := "http://localhost:8765"
+	ocrLang := "ch"
+	if ctx.Config != nil {
+		ocrAddr = ctx.Config.OCRAddress
+		ocrLang = ctx.Config.OCRLanguage
+	}
+
+	ctx.Logger("[Automation] Find Text: %q (timeout=%v, lang=%s)", step.Text, timeout, ocrLang)
+
+	deadline := time.Now().Add(timeout)
+	for {
+		select {
+		case <-ctx.AbortChan:
+			return fmt.Errorf("execution aborted by user")
+		default:
+		}
+
+		capCfg := capture.CaptureConfig{
+			Display:  ":0.0",
+			WindowID: ctx.WindowID,
+		}
+		haystack, err := capture.CaptureScreen(capCfg)
+		if err != nil {
+			ctx.Logger("[Automation] Error capturing screen for search: %v", err)
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+
+		x, y, conf, err := FindText(haystack, ocrAddr, ocrLang, step.Text)
+		if err == nil {
+			ctx.Logger("[Automation] Text %q found at (%d, %d) with confidence %.4f", step.Text, x, y, conf)
+			targetX := x + step.OffsetX
+			targetY := y + step.OffsetY
+
+			if strings.ToLower(step.Then) == "click" {
+				clickStep := Step{
+					Action: "click",
+					X:      targetX,
+					Y:      targetY,
+					Button: step.Button,
+				}
+				return runClick(clickStep, ctx)
+			} else if strings.ToLower(step.Then) == "move" {
+				moveStep := Step{
+					Action: "move",
+					X:      targetX,
+					Y:      targetY,
+				}
+				return runMove(moveStep, ctx)
+			}
+			return nil
+		}
+
+		if time.Now().After(deadline) {
+			return fmt.Errorf("text %q not found within timeout: %w", step.Text, err)
+		}
+
+		time.Sleep(500 * time.Millisecond)
+	}
 }

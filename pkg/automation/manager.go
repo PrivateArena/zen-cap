@@ -73,7 +73,7 @@ func (m *Manager) loadScripts() error {
 	return nil
 }
 
-func (m *Manager) saveScripts() error {
+func (m *Manager) Save() error {
 	m.mu.RLock()
 	data, err := yaml.Marshal(m.scripts)
 	m.mu.RUnlock()
@@ -107,5 +107,5 @@ func (m *Manager) Add(script Script) error {
 	m.scripts = append(m.scripts, script)
 	m.mu.Unlock()
 
-	return m.saveScripts()
+	return m.Save()
 }

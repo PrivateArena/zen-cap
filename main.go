@@ -19,6 +19,7 @@ import (
 	"github.com/jezek/xgbutil/keybind"
 	"github.com/jezek/xgbutil/xevent"
 
+	"zen-cap/pkg/automation"
 	"zen-cap/pkg/capture"
 	"zen-cap/pkg/clipboard"
 	"zen-cap/pkg/config"
@@ -83,6 +84,18 @@ func runCLI() {
 		if err := snippet.ShowPicker(snipMgr); err != nil {
 			log.Fatalf("Snippet Picker failed: %v", err)
 		}
+	case "automation-picker":
+		cfg, _, err := config.LoadConfig()
+		if err != nil {
+			cfg = config.DefaultConfig()
+		}
+		autoMgr, err := automation.NewManager(cfg.AutomationFile)
+		if err != nil {
+			log.Fatalf("Failed to initialize Automation Manager: %v", err)
+		}
+		if err := automation.ShowPicker(autoMgr, cfg); err != nil {
+			log.Fatalf("Automation Picker failed: %v", err)
+		}
 	default:
 		fmt.Printf("Unknown subcommand: %s\n", subcommand)
 		printUsage()
@@ -94,14 +107,16 @@ func runCLI() {
 func printUsage() {
 	fmt.Println("Usage: zen-cap <subcommand> [flags]")
 	fmt.Println("\nSubcommands:")
-	fmt.Println("  screenshot       Capture a screen, region, or window to PNG")
-	fmt.Println("  record           Record video of a screen, region, or window to H.264 MP4")
-	fmt.Println("  service          Run in background listening for global hotkeys:")
-	fmt.Println("                     Ctrl+Shift+S -> Capture Fullscreen Screenshot")
-	fmt.Println("                     Ctrl+Shift+R -> Toggle Recording")
-	fmt.Println("                     Alt+`        -> Open Snippet Picker GUI")
-	fmt.Println("  manage           Launch the Snippet Manager TUI")
-	fmt.Println("  snippet-picker   Open the native X11 Snippet Picker GUI")
+	fmt.Println("  screenshot        Capture a screen, region, or window to PNG")
+	fmt.Println("  record            Record video of a screen, region, or window to H.264 MP4")
+	fmt.Println("  service           Run in background listening for global hotkeys:")
+	fmt.Println("                      Ctrl+Shift+S -> Capture Fullscreen Screenshot")
+	fmt.Println("                      Ctrl+Shift+R -> Toggle Recording")
+	fmt.Println("                      Alt+`        -> Open Snippet Picker GUI")
+	fmt.Println("                      Alt+a        -> Open Automation Picker GUI")
+	fmt.Println("  manage            Launch the Snippet Manager TUI")
+	fmt.Println("  snippet-picker    Open the native X11 Snippet Picker GUI")
+	fmt.Println("  automation-picker Open the native X11 Automation Picker GUI")
 }
 
 func handleScreenshot() error {
@@ -374,6 +389,8 @@ func handleService() error {
 	fmt.Printf("  %-14s -> Clipboard Manager: Cycle Transform Rules\n", cfg.Hotkeys.ClipboardCycleRule)
 	fmt.Printf("  %-14s -> Snippet Picker: Open GUI\n", cfg.Hotkeys.SnippetPicker)
 	fmt.Printf("  %-14s -> Snippet Editor: Open snippets.yaml\n", "Shift-"+cfg.Hotkeys.SnippetPicker)
+	fmt.Printf("  %-14s -> Automation Picker: Open GUI\n", cfg.Hotkeys.AutomationPicker)
+	fmt.Printf("  %-14s -> Automation Editor: Open automations.yaml\n", "Shift-"+cfg.Hotkeys.AutomationPicker)
 	fmt.Println("UNIX Signals:")
 	fmt.Println("  SIGUSR1       -> Fullscreen Screenshot")
 	fmt.Println("  SIGUSR2       -> Toggle Fullscreen Recording")
@@ -477,6 +494,28 @@ func handleService() error {
 			fmt.Printf("[Service] Failed to open snippet file: %v\n", err)
 		}
 	}).Connect(X, X.RootWin(), "Shift-"+cfg.Hotkeys.SnippetPicker, true)
+
+	// Register Automation Picker Hotkey
+	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+		exe, err := os.Executable()
+		if err != nil {
+			exe = "zen-cap"
+		}
+		cmd := exec.Command(exe, "automation-picker")
+		cmd.Env = os.Environ()
+		if err := cmd.Start(); err != nil {
+			fmt.Printf("[Service] Failed to start automation-picker: %v\n", err)
+		}
+	}).Connect(X, X.RootWin(), cfg.Hotkeys.AutomationPicker, true)
+
+	// Register Automation Editor Hotkey (Shift+Alt+a) for instant manual editing in default app
+	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+		fmt.Printf("[Service] Opening automation file for editing: %s\n", cfg.AutomationFile)
+		cmd := exec.Command("xdg-open", cfg.AutomationFile)
+		if err := cmd.Start(); err != nil {
+			fmt.Printf("[Service] Failed to open automation file: %v\n", err)
+		}
+	}).Connect(X, X.RootWin(), "Shift-"+cfg.Hotkeys.AutomationPicker, true)
 
 	// Register Global Safety Kill Hotkey (Ctrl+Shift+X) - emergency exit
 	safetyKillHandler := func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {

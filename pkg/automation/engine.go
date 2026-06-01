@@ -2,15 +2,19 @@ package automation
 
 import (
 	"fmt"
+	"image"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 
+	"zen-cap/pkg/capture"
 	"zen-cap/pkg/config"
 )
 
 // RunScript starts the sequential execution of a Script.
-func RunScript(script Script, cfg *config.Config, abortChan chan struct{}, logger func(string, ...interface{})) error {
+func RunScript(script Script, cfg *config.Config, scriptDir string, abortChan chan struct{}, logger func(string, ...interface{})) error {
 	var WID uint32
 	if script.Window != nil {
 		id, err := ResolveWindow(script.Window)
@@ -26,6 +30,7 @@ func RunScript(script Script, cfg *config.Config, abortChan chan struct{}, logge
 		WindowID:  WID,
 		AbortChan: abortChan,
 		Logger:    logger,
+		ScriptDir: scriptDir,
 	}
 
 	logger("[Automation] Starting script: %q", script.Name)
@@ -99,6 +104,78 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 				if err := executeStepWithControl(substep, ctx); err != nil {
 					return err
 				}
+			}
+		}
+		return nil
+	case "if_found":
+		found := false
+		if strings.ToLower(step.Find) == "image" {
+			if step.Image == "" {
+				return fmt.Errorf("missing template image path in if_found step")
+			}
+			imgPath := step.Image
+			if !filepath.IsAbs(imgPath) && ctx.ScriptDir != "" {
+				imgPath = filepath.Join(ctx.ScriptDir, imgPath)
+			}
+			f, err := os.Open(imgPath)
+			if err == nil {
+				defer f.Close()
+				needle, _, err := image.Decode(f)
+				if err == nil {
+					confidence := step.Confidence
+					if confidence <= 0 {
+						confidence = 0.90
+					}
+					capCfg := capture.CaptureConfig{
+						Display:  ":0.0",
+						WindowID: ctx.WindowID,
+					}
+					haystack, err := capture.CaptureScreen(capCfg)
+					if err == nil {
+						_, _, _, err = FindImage(haystack, needle, confidence)
+						if err == nil {
+							found = true
+						}
+					}
+				}
+			}
+		} else if strings.ToLower(step.Find) == "text" {
+			if step.Text == "" {
+				return fmt.Errorf("missing target text in if_found step")
+			}
+			ocrAddr := "http://localhost:8765"
+			ocrLang := "ch"
+			if ctx.Config != nil {
+				ocrAddr = ctx.Config.OCRAddress
+				ocrLang = ctx.Config.OCRLanguage
+			}
+			capCfg := capture.CaptureConfig{
+				Display:  ":0.0",
+				WindowID: ctx.WindowID,
+			}
+			haystack, err := capture.CaptureScreen(capCfg)
+			if err == nil {
+				_, _, _, err = FindText(haystack, ocrAddr, ocrLang, step.Text)
+				if err == nil {
+					found = true
+				}
+			}
+		} else {
+			return fmt.Errorf("unknown find target in if_found step: %q", step.Find)
+		}
+
+		var targetSteps []Step
+		if found {
+			ctx.Logger("[Automation] Condition MET (found %s)", step.Find)
+			targetSteps = step.Steps
+		} else {
+			ctx.Logger("[Automation] Condition NOT MET (found %s)", step.Find)
+			targetSteps = step.Else
+		}
+
+		for _, substep := range targetSteps {
+			if err := executeStepWithControl(substep, ctx); err != nil {
+				return err
 			}
 		}
 		return nil
