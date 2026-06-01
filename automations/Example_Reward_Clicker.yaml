@@ -1,7 +1,7 @@
-- name: Example Reward Clicker
-  window:
+name: Example Reward Clicker
+window:
     title: MyGame
-  steps:
+steps:
     - action: wait
       duration: 1s
     - action: click

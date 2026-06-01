@@ -89,7 +89,7 @@ func runCLI() {
 		if err != nil {
 			cfg = config.DefaultConfig()
 		}
-		autoMgr, err := automation.NewManager(cfg.AutomationFile)
+		autoMgr, err := automation.NewManager(cfg.AutomationDir)
 		if err != nil {
 			log.Fatalf("Failed to initialize Automation Manager: %v", err)
 		}
@@ -510,10 +510,10 @@ func handleService() error {
 
 	// Register Automation Editor Hotkey (Shift+Alt+a) for instant manual editing in default app
 	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
-		fmt.Printf("[Service] Opening automation file for editing: %s\n", cfg.AutomationFile)
-		cmd := exec.Command("xdg-open", cfg.AutomationFile)
+		fmt.Printf("[Service] Opening automation directory: %s\n", cfg.AutomationDir)
+		cmd := exec.Command("xdg-open", cfg.AutomationDir)
 		if err := cmd.Start(); err != nil {
-			fmt.Printf("[Service] Failed to open automation file: %v\n", err)
+			fmt.Printf("[Service] Failed to open automation directory: %v\n", err)
 		}
 	}).Connect(X, X.RootWin(), "Shift-"+cfg.Hotkeys.AutomationPicker, true)
 

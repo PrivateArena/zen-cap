@@ -135,7 +135,7 @@ func DefaultPortableConfig(binDir string) *Config {
 		TranslationTarget:    "en",
 		ClipboardSessionFile: filepath.Join(binDir, "clipboard_session.json"),
 		SnippetFile:          filepath.Join(binDir, "snippets.yaml"),
-		AutomationFile:       filepath.Join(binDir, "automations.yaml"),
+		AutomationDir:         filepath.Join(binDir, "automations"),
 		TransformRules:       DefaultTransformRules(),
 	}
 }

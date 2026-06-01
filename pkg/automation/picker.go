@@ -7,7 +7,6 @@ import (
 	"image/draw"
 	"log"
 	"os/exec"
-	"path/filepath"
 	"time"
 
 	"github.com/jezek/xgb/xproto"
@@ -199,7 +198,7 @@ func ShowPicker(mgr *Manager, cfg *config.Config) error {
 		fmt.Printf("[AutomationPicker] Executing script: %s...\n", selectedScript.Name)
 
 		abortChan := make(chan struct{})
-		err := RunScript(selectedScript, cfg, filepath.Dir(mgr.filePath), abortChan, func(format string, args ...interface{}) {
+		err := RunScript(selectedScript, cfg, mgr.dirPath, abortChan, func(format string, args ...interface{}) {
 			fmt.Printf(format+"\n", args...)
 		})
 		if err != nil {
