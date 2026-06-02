@@ -295,3 +295,221 @@ func TestIfFoundOCR(t *testing.T) {
 	}
 }
 
+func TestVariablesAndExpressions(t *testing.T) {
+	ctx := &ExecContext{
+		Logger:    func(string, ...interface{}) {},
+		Variables: make(map[string]interface{}),
+	}
+
+	// 1. Assign variable
+	step1 := Step{
+		Action: "var",
+		Name:   "counter",
+		Value:  10,
+	}
+	if err := executeStepWithControl(step1, ctx); err != nil {
+		t.Fatalf("var set failed: %v", err)
+	}
+	if ctx.Variables["counter"] != 10 {
+		t.Errorf("expected counter=10, got %v", ctx.Variables["counter"])
+	}
+
+	// 2. Math assignment
+	step2 := Step{
+		Action: "var",
+		Name:   "counter",
+		Value:  "${counter} + 5",
+	}
+	if err := executeStepWithControl(step2, ctx); err != nil {
+		t.Fatalf("var math addition failed: %v", err)
+	}
+	if ctx.Variables["counter"] != 15.0 { // math returns float64
+		t.Errorf("expected counter=15.0, got %v", ctx.Variables["counter"])
+	}
+
+	// 3. String interpolation
+	ctx.Variables["name"] = "World"
+	step3 := Step{
+		Action: "var",
+		Name:   "greeting",
+		Value:  "Hello ${name}",
+	}
+	if err := executeStepWithControl(step3, ctx); err != nil {
+		t.Fatalf("var interpolation failed: %v", err)
+	}
+	if ctx.Variables["greeting"] != "Hello World" {
+		t.Errorf("expected greeting='Hello World', got %q", ctx.Variables["greeting"])
+	}
+
+	// 4. Nested dotted path lookup
+	ctx.Variables["data"] = map[string]interface{}{
+		"user": map[string]interface{}{
+			"age": 30.0,
+		},
+	}
+	step4 := Step{
+		Action: "var",
+		Name:   "age",
+		Value:  "${data.user.age}",
+	}
+	if err := executeStepWithControl(step4, ctx); err != nil {
+		t.Fatalf("var nested path failed: %v", err)
+	}
+	if ctx.Variables["age"] != 30.0 {
+		t.Errorf("expected age=30.0, got %v", ctx.Variables["age"])
+	}
+}
+
+func TestConditionals(t *testing.T) {
+	ctx := &ExecContext{
+		Logger:    func(string, ...interface{}) {},
+		Variables: make(map[string]interface{}),
+	}
+	ctx.Variables["counter"] = 5.0
+	ctx.Variables["status"] = "active"
+
+	// Step that should execute
+	var executed1 bool
+	step1 := Step{
+		Action: "var", // we'll use var to record execution
+		Name:   "executed1",
+		Value:  true,
+		When:   "${counter} < 10",
+	}
+	if err := executeStepWithControl(step1, ctx); err != nil {
+		t.Fatalf("execution failed: %v", err)
+	}
+	executed1 = ctx.Variables["executed1"] == true
+	if !executed1 {
+		t.Errorf("expected step1 to execute when condition is met")
+	}
+
+	// Step that should be skipped
+	ctx.Variables["executed2"] = false
+	step2 := Step{
+		Action: "var",
+		Name:   "executed2",
+		Value:  true,
+		When:   "${counter} == 10",
+	}
+	if err := executeStepWithControl(step2, ctx); err != nil {
+		t.Fatalf("execution failed: %v", err)
+	}
+	if ctx.Variables["executed2"] == true {
+		t.Errorf("expected step2 to be skipped when condition is not met")
+	}
+
+	// String comparison condition
+	ctx.Variables["executed3"] = false
+	step3 := Step{
+		Action: "var",
+		Name:   "executed3",
+		Value:  true,
+		When:   `"${status}" == "active"`,
+	}
+	if err := executeStepWithControl(step3, ctx); err != nil {
+		t.Fatalf("execution failed: %v", err)
+	}
+	if ctx.Variables["executed3"] != true {
+		t.Errorf("expected step3 to execute when string condition is met")
+	}
+}
+
+func TestJumpsAndGotos(t *testing.T) {
+	ctx := &ExecContext{
+		Logger:    func(string, ...interface{}) {},
+		Variables: make(map[string]interface{}),
+	}
+	ctx.Variables["counter"] = 0.0
+
+	// We construct a list of steps representing a loop that runs 3 times:
+	// 1. var: counter = counter + 1
+	// 2. goto: end (when counter == 3)
+	// 3. goto: start
+	// 4. (label: end) var: done = true
+	steps := []Step{
+		{
+			Label:  "start",
+			Action: "var",
+			Name:   "counter",
+			Value:  "${counter} + 1",
+		},
+		{
+			Action: "goto",
+			Target: "end",
+			When:   "${counter} == 3",
+		},
+		{
+			Action: "goto",
+			Target: "start",
+		},
+		{
+			Label:  "end",
+			Action: "var",
+			Name:   "done",
+			Value:  true,
+		},
+	}
+
+	err := executeStepList(steps, ctx)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if ctx.Variables["counter"] != 3.0 {
+		t.Errorf("expected counter=3, got %v", ctx.Variables["counter"])
+	}
+	if ctx.Variables["done"] != true {
+		t.Errorf("expected done=true, got %v", ctx.Variables["done"])
+	}
+}
+
+func TestProceduresAndFunctions(t *testing.T) {
+	ctx := &ExecContext{
+		Logger:    func(string, ...interface{}) {},
+		Variables: make(map[string]interface{}),
+		Functions: map[string][]Step{
+			"double_value": {
+				{
+					Action: "var",
+					Name:   "val",
+					Value:  "${val} * 2",
+				},
+				// Mutates global variable status
+				{
+					Action: "var",
+					Name:   "status",
+					Value:  "modified",
+				},
+			},
+		},
+	}
+
+	ctx.Variables["val"] = 5.0
+	ctx.Variables["status"] = "initial"
+
+	// Call function passing argument val
+	step := Step{
+		Action: "call",
+		Target: "double_value",
+		Args: map[string]interface{}{
+			"val": "${val}",
+		},
+	}
+
+	if err := executeStepWithControl(step, ctx); err != nil {
+		t.Fatalf("function call failed: %v", err)
+	}
+
+	// 1. Verify global variable was mutated
+	if ctx.Variables["status"] != "modified" {
+		t.Errorf("expected status to be mutated to 'modified', got %v", ctx.Variables["status"])
+	}
+
+	// 2. Verify local/shadowed parameter 'val' restored to original caller's value (5.0)
+	if ctx.Variables["val"] != 5.0 {
+		t.Errorf("expected val to be restored to 5.0, got %v", ctx.Variables["val"])
+	}
+}
+
+

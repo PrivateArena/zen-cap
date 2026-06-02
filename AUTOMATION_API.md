@@ -200,3 +200,108 @@ else:
 - Supports coordinates re-mapping: automatically converts text coordinates into focusless mouse clicks.
 - Supports step-level `language` and `model` overrides.
 - Supports cropping and saving the matched bounding-box image to the file specified in the `output` field for hybrid workflow integration (e.g. `output: "textbox.png"`).
+
+---
+
+## 5. Advanced Scripting Extensions
+
+Zen-Cap includes a powerful declarative scripting layer to handle dynamic state, conditional logic, and reusable code blocks without requiring external scripting dependencies.
+
+### Variables & Expressions (`action: var`)
+Variables are stored in a persistent execution scope and can be set, updated, and interpolated dynamically using the `${variable_name}` syntax.
+
+#### Setting Variables
+Use the `var` action to assign or calculate values:
+```yaml
+action: var
+name: counter
+value: 0
+```
+
+#### Math & Arithmetic
+Basic binary arithmetic operations (`+`, `-`, `*`, `/`) are supported:
+```yaml
+action: var
+name: counter
+value: "${counter} + 1"
+```
+
+#### String Interpolation
+Variables can be embedded within string parameters and are automatically resolved prior to step execution:
+```yaml
+action: log
+message: "Current loop iteration is ${counter}"
+```
+
+#### Dotted Path Navigation
+For structured outputs, nested fields can be traversed using dotted path notation:
+```yaml
+action: var
+name: ocr_x
+value: "${last.ocr.bounds.Min.X}"
+```
+
+### Conditional Execution (`when` filter)
+Any automation action can include a `when` clause. The step will only execute if the condition evaluates to `true`.
+```yaml
+action: click
+x: 100
+y: 200
+when: "${counter} < 5"
+```
+Supported operators: `<=`, `>=`, `==`, `!=`, `<`, `>` for numbers, booleans, and strings.
+
+### Control Flow Jumps (`label` and `goto`)
+You can define custom execution labels and jump to them conditionally or unconditionally, enabling loops, retries, and custom branches.
+
+```yaml
+steps:
+  - label: retry_start
+    action: log
+    message: "Attempting task..."
+
+  - action: if_found
+    type: image
+    target: "success.png"
+    wait_timeout: "2s"
+    steps:
+      - action: goto
+        target: success_done
+    else:
+      - action: var
+        name: retries
+        value: "${retries} + 1"
+      - action: goto
+        target: retry_start
+        when: "${retries} < 3"
+
+  - label: success_done
+    action: notify
+    title: "Success"
+    message: "Task completed successfully"
+```
+
+### Reusable Functions (`functions` & `action: call`)
+Procedures can be defined under the top-level `functions` block and called via `action: call`. Parameters passed via `args` shadow variables within the function's scope but restore their caller-level state when the procedure finishes.
+
+```yaml
+name: "Reusable Procedure Example"
+functions:
+  click_target:
+    steps:
+      - action: log
+        message: "Clicking target text: ${target_text}"
+      - action: if_found
+        type: ocr
+        target: "${target_text}"
+        steps:
+          - action: click
+            x: -1
+            y: -1
+
+steps:
+  - action: call
+    target: click_target
+    args:
+      target_text: "Submit"
+```

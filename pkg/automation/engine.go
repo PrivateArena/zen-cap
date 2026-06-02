@@ -46,23 +46,59 @@ func RunScript(script Script, cfg *config.Config, scriptDir string, abortChan ch
 		Logger:    logger,
 		ScriptDir: scriptDir,
 		Config:    cfg,
+		Variables: make(map[string]interface{}),
+		Functions: script.Functions,
 	}
 
 	logger("[Automation] Starting script: %q", script.Name)
-	for i, step := range script.Steps {
+	if err := executeStepList(script.Steps, ctx); err != nil {
+		return fmt.Errorf("script execution failed: %w", err)
+	}
+
+	logger("[Automation] Script %q finished successfully!", script.Name)
+	return nil
+}
+
+type GotoError struct {
+	Target string
+}
+
+func (e GotoError) Error() string {
+	return "goto: " + e.Target
+}
+
+func executeStepList(steps []Step, ctx *ExecContext) error {
+	for i := 0; i < len(steps); {
 		select {
 		case <-ctx.AbortChan:
 			return fmt.Errorf("execution aborted by user")
 		default:
 		}
 
-		logger("[Automation] Step %d/%d: %s", i+1, len(script.Steps), step.Action)
-		if err := executeStepWithControl(step, ctx); err != nil {
-			return fmt.Errorf("step %d (%s) failed: %w", i+1, step.Action, err)
+		step := steps[i]
+		ctx.Logger("[Automation] Step %d/%d: %s", i+1, len(steps), step.Action)
+		err := executeStepWithControl(step, ctx)
+		if err != nil {
+			if gotoErr, ok := err.(GotoError); ok {
+				// Search for target label in the current block first (local jump)
+				targetIdx := -1
+				for idx, s := range steps {
+					if s.Label == gotoErr.Target {
+						targetIdx = idx
+						break
+					}
+				}
+				if targetIdx != -1 {
+					i = targetIdx
+					continue
+				}
+				// Otherwise propagate GotoError upwards
+				return gotoErr
+			}
+			return err
 		}
+		i++
 	}
-
-	logger("[Automation] Script %q finished successfully!", script.Name)
 	return nil
 }
 
@@ -104,9 +140,24 @@ func ResolveWindow(xu *xgbutil.XUtil, target *WindowTarget) (uint32, error) {
 }
 
 func executeStepWithControl(step Step, ctx *ExecContext) error {
-	switch strings.ToLower(step.Action) {
+	// 1. Interpolate string fields in a copy of the step
+	interpolatedStep := InterpolateStep(step, ctx.Variables)
+
+	// 2. Check conditional expression "when"
+	if interpolatedStep.When != "" {
+		condMet, err := evaluateCondition(interpolatedStep.When, ctx.Variables)
+		if err != nil {
+			return err
+		}
+		if !condMet {
+			ctx.Logger("[Automation] Skipping step %s (condition %s not met)", interpolatedStep.Action, interpolatedStep.When)
+			return nil
+		}
+	}
+
+	switch strings.ToLower(interpolatedStep.Action) {
 	case "loop":
-		count := step.Count
+		count := interpolatedStep.Count
 		if count <= 0 {
 			count = 1
 		}
@@ -118,27 +169,25 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 			default:
 			}
 			ctx.Logger("[Automation] Loop iteration %d/%d", i+1, count)
-			for _, substep := range step.Steps {
-				if err := executeStepWithControl(substep, ctx); err != nil {
-					return err
-				}
+			if err := executeStepList(interpolatedStep.Steps, ctx); err != nil {
+				return err
 			}
 		}
 		return nil
 	case "if_found":
 		found := false
-		findType := step.Find
+		findType := interpolatedStep.Find
 		if findType == "" {
-			findType = step.Type
+			findType = interpolatedStep.Type
 		}
 		findType = strings.ToLower(findType)
 
-		targetVal := step.Image
+		targetVal := interpolatedStep.Image
 		if targetVal == "" {
-			targetVal = step.Target
+			targetVal = interpolatedStep.Target
 		}
 		if targetVal == "" {
-			targetVal = step.Text
+			targetVal = interpolatedStep.Text
 		}
 
 		var needle image.Image
@@ -162,8 +211,8 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 		}
 
 		var waitTimeout time.Duration
-		if step.WaitTimeout != "" {
-			if d, err := time.ParseDuration(step.WaitTimeout); err == nil {
+		if interpolatedStep.WaitTimeout != "" {
+			if d, err := time.ParseDuration(interpolatedStep.WaitTimeout); err == nil {
 				waitTimeout = d
 			}
 		}
@@ -177,7 +226,7 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 			}
 
 			if findType == "image" {
-				confidence := step.Confidence
+				confidence := interpolatedStep.Confidence
 				if confidence <= 0 {
 					confidence = 0.90
 				}
@@ -188,8 +237,8 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 				haystack, err := capture.CaptureScreen(capCfg)
 				if err == nil {
 					offsetX, offsetY := 0, 0
-					if step.Region != "" {
-						rx, ry, rw, rh, err := ParseRegion(step.Region, haystack.Bounds().Dx(), haystack.Bounds().Dy())
+					if interpolatedStep.Region != "" {
+						rx, ry, rw, rh, err := ParseRegion(interpolatedStep.Region, haystack.Bounds().Dx(), haystack.Bounds().Dy())
 						if err == nil {
 							haystack, offsetX, offsetY = CropImage(haystack, rx, ry, rw, rh)
 						}
@@ -211,10 +260,10 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 					ocrAddr = ctx.Config.OCRAddress
 					ocrLang = ctx.Config.OCRLanguage
 				}
-				if step.Language != "" {
-					ocrLang = step.Language
+				if interpolatedStep.Language != "" {
+					ocrLang = interpolatedStep.Language
 				}
-				ocrModel := step.Model
+				ocrModel := interpolatedStep.Model
 				capCfg := capture.CaptureConfig{
 					Display:  ":0.0",
 					WindowID: ctx.WindowID,
@@ -222,8 +271,8 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 				haystack, err := capture.CaptureScreen(capCfg)
 				if err == nil {
 					offsetX, offsetY := 0, 0
-					if step.Region != "" {
-						rx, ry, rw, rh, err := ParseRegion(step.Region, haystack.Bounds().Dx(), haystack.Bounds().Dy())
+					if interpolatedStep.Region != "" {
+						rx, ry, rw, rh, err := ParseRegion(interpolatedStep.Region, haystack.Bounds().Dx(), haystack.Bounds().Dy())
 						if err == nil {
 							haystack, offsetX, offsetY = CropImage(haystack, rx, ry, rw, rh)
 						}
@@ -234,7 +283,7 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 						ctx.LastFoundX = fx + offsetX
 						ctx.LastFoundY = fy + offsetY
 
-						if step.Output != "" {
+						if interpolatedStep.Output != "" {
 							minX, minY := bounds.Min.X, bounds.Min.Y
 							maxX, maxY := bounds.Max.X, bounds.Max.Y
 							rw := maxX - minX
@@ -242,7 +291,7 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 
 							textboxImg, _, _ := CropImage(haystack, minX, minY, rw, rh)
 
-							outputPath := step.Output
+							outputPath := interpolatedStep.Output
 							if !filepath.IsAbs(outputPath) && ctx.ScriptDir != "" {
 								outputPath = filepath.Join(ctx.ScriptDir, outputPath)
 							}
@@ -273,19 +322,50 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 		var targetSteps []Step
 		if found {
 			ctx.Logger("[Automation] Condition MET (found %s)", findType)
-			targetSteps = step.Steps
+			targetSteps = interpolatedStep.Steps
 		} else {
 			ctx.Logger("[Automation] Condition NOT MET (found %s)", findType)
-			targetSteps = step.Else
+			targetSteps = interpolatedStep.Else
 		}
 
-		for _, substep := range targetSteps {
-			if err := executeStepWithControl(substep, ctx); err != nil {
-				return err
+		if err := executeStepList(targetSteps, ctx); err != nil {
+			return err
+		}
+		return nil
+	case "var":
+		ctx.Variables[interpolatedStep.Name] = evaluateValue(interpolatedStep.Value, ctx.Variables)
+		return nil
+	case "call":
+		funcSteps, exists := ctx.Functions[interpolatedStep.Target]
+		if !exists {
+			return fmt.Errorf("function not found: %q", interpolatedStep.Target)
+		}
+		// Shadow params and restore afterwards
+		backup := make(map[string]interface{})
+		backupExists := make(map[string]bool)
+		for k, v := range interpolatedStep.Args {
+			val, exists := ctx.Variables[k]
+			if exists {
+				backup[k] = val
+				backupExists[k] = true
 			}
+			ctx.Variables[k] = evaluateValue(v, ctx.Variables)
+		}
+		defer func() {
+			for k := range interpolatedStep.Args {
+				if backupExists[k] {
+					ctx.Variables[k] = backup[k]
+				} else {
+					delete(ctx.Variables, k)
+				}
+			}
+		}()
+
+		if err := executeStepList(funcSteps, ctx); err != nil {
+			return err
 		}
 		return nil
 	default:
-		return ExecuteStep(step, ctx)
+		return ExecuteStep(interpolatedStep, ctx)
 	}
 }

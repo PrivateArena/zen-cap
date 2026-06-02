@@ -32,6 +32,9 @@ type ExecContext struct {
 	Config     *config.Config
 	LastFoundX int
 	LastFoundY int
+
+	Variables  map[string]interface{}
+	Functions  map[string][]Step
 }
 
 func ExecuteStep(step Step, ctx *ExecContext) error {
@@ -66,14 +69,16 @@ func ExecuteStep(step Step, ctx *ExecContext) error {
 		return runFindText(step, ctx)
 	case "ocr":
 		return runOCR(step, ctx)
+	case "goto":
+		return GotoError{Target: step.Target}
 	default:
 		return fmt.Errorf("unknown action: %s", step.Action)
 	}
 }
 
 func runClick(step Step, ctx *ExecContext) error {
-	x := step.X
-	y := step.Y
+	x := getIntField(step.X, ctx.Variables, -1)
+	y := getIntField(step.Y, ctx.Variables, -1)
 	if x == -1 && y == -1 {
 		x = ctx.LastFoundX
 		y = ctx.LastFoundY
@@ -96,8 +101,8 @@ func runClick(step Step, ctx *ExecContext) error {
 }
 
 func runMove(step Step, ctx *ExecContext) error {
-	x := step.X
-	y := step.Y
+	x := getIntField(step.X, ctx.Variables, -1)
+	y := getIntField(step.Y, ctx.Variables, -1)
 	if x == -1 && y == -1 {
 		x = ctx.LastFoundX
 		y = ctx.LastFoundY
