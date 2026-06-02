@@ -1,5 +1,7 @@
 name: Image Clicker Example
 steps:
+  - action: log
+    message: "Starting Image Clicker Example script..."
   - action: wait
     duration: 1s
   - action: if_found
@@ -9,14 +11,21 @@ steps:
     similarity: 0.9
     wait_timeout: 1s
     steps:
+      - action: log
+        message: "Image play_button.png found, clicking it..."
       - action: click
         x: -1
         y: -1
         button: left
-      - action: notify
-        title: "Success"
-        message: "Found and clicked the target image!"
+      - action: log
+        message: "Target clicked, notifying user..."
+      #- action: notify
+      #  title: "Success"
+      #  message: "Found and clicked the target image!"
     else:
-      - action: notify
-        title: "Failed"
-        message: "Target image not found on screen within timeout."
+      - action: log
+        message: "Target image play_button.png was not found!"
+      #- action: notify
+      #  title: "Failed"
+      #  message: "Target image not found on screen within timeout."
+

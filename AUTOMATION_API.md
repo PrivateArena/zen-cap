@@ -81,6 +81,16 @@ title: "Automation Started"
 message: "Now executing rewards loop..."
 ```
 
+### `log`
+Logs a message to the application standard output (stdout/stderr) for silent/agent debugging.
+```yaml
+action: log
+message: "Clicking target element..."
+# Fallback field:
+# text: "Clicking target element..."
+```
+
+
 ### `run`
 Spawns background OS shell commands.
 ```yaml

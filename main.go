@@ -481,6 +481,8 @@ func handleService() error {
 		}
 		cmd := exec.Command(exe, "snippet-picker")
 		cmd.Env = os.Environ()
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
 		if err := cmd.Start(); err != nil {
 			fmt.Printf("[Service] Failed to start snippet-picker: %v\n", err)
 		}
@@ -503,6 +505,8 @@ func handleService() error {
 		}
 		cmd := exec.Command(exe, "automation-picker")
 		cmd.Env = os.Environ()
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
 		if err := cmd.Start(); err != nil {
 			fmt.Printf("[Service] Failed to start automation-picker: %v\n", err)
 		}

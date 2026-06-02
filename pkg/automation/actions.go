@@ -45,6 +45,8 @@ func ExecuteStep(step Step, ctx *ExecContext) error {
 		return runWait(step, ctx)
 	case "notify":
 		return runNotify(step, ctx)
+	case "log":
+		return runLog(step, ctx)
 	case "run":
 		return runCommand(step, ctx)
 	case "clipboard":
@@ -176,6 +178,19 @@ func runNotify(step Step, ctx *ExecContext) error {
 	ctx.Logger("[Automation] Notify: %s - %s", title, message)
 	cmd := exec.Command("notify-send", "-a", "Zen-Cap", title, message)
 	return cmd.Run()
+}
+
+func runLog(step Step, ctx *ExecContext) error {
+	message := step.Message
+	if message == "" {
+		message = step.Text
+	}
+	if ctx.Logger != nil {
+		ctx.Logger("[Automation] Log: %s", message)
+	} else {
+		fmt.Printf("[Automation] Log: %s\n", message)
+	}
+	return nil
 }
 
 func runCommand(step Step, ctx *ExecContext) error {
