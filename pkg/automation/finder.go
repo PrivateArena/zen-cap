@@ -174,22 +174,40 @@ type fullRecognizeResponse struct {
 	Error   string          `json:"error,omitempty"`
 }
 
-// FindText captures a screenshot and sends it to the OCR server to locate target text.
-func FindText(img image.Image, ocrAddr, lang, targetText string) (int, int, float64, error) {
+// FindTextWithBounds queries the OCR server to locate target text and returns center coordinates, bounds, and confidence.
+func FindTextWithBounds(img image.Image, ocrAddr, lang, model, targetText string) (int, int, OCRBounds, float64, error) {
 	resolvedAddr, err := capture.EnsureOCRServer(ocrAddr)
 	if err != nil {
-		return 0, 0, 0, fmt.Errorf("OCR server check failed: %w", err)
+		return 0, 0, OCRBounds{}, 0, fmt.Errorf("OCR server check failed: %w", err)
 	}
 
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, img); err != nil {
-		return 0, 0, 0, fmt.Errorf("failed to encode PNG: %w", err)
+		return 0, 0, OCRBounds{}, 0, fmt.Errorf("failed to encode PNG: %w", err)
 	}
 
-	// Try unified /ocr first, then fallback to /recognize
+	var ocrParams []string
+	var recParams []string
+	if model != "" {
+		ocrParams = append(ocrParams, fmt.Sprintf("model=%s", url.QueryEscape(model)))
+	}
+	if lang != "" {
+		ocrParams = append(ocrParams, fmt.Sprintf("lang=%s", url.QueryEscape(lang)))
+		recParams = append(recParams, fmt.Sprintf("lang=%s", url.QueryEscape(lang)))
+	}
+
+	ocrQuery := ""
+	if len(ocrParams) > 0 {
+		ocrQuery = "?" + strings.Join(ocrParams, "&")
+	}
+	recQuery := ""
+	if len(recParams) > 0 {
+		recQuery = "?" + strings.Join(recParams, "&")
+	}
+
 	endpoints := []string{
-		fmt.Sprintf("%s/ocr?lang=%s", strings.TrimSuffix(resolvedAddr, "/"), url.QueryEscape(lang)),
-		fmt.Sprintf("%s/recognize?lang=%s", strings.TrimSuffix(resolvedAddr, "/"), url.QueryEscape(lang)),
+		fmt.Sprintf("%s/ocr%s", strings.TrimSuffix(resolvedAddr, "/"), ocrQuery),
+		fmt.Sprintf("%s/recognize%s", strings.TrimSuffix(resolvedAddr, "/"), recQuery),
 	}
 
 	var resp *http.Response
@@ -208,17 +226,17 @@ func FindText(img image.Image, ocrAddr, lang, targetText string) (int, int, floa
 	}
 
 	if resp == nil || resp.StatusCode != http.StatusOK {
-		return 0, 0, 0, fmt.Errorf("OCR server request failed: %v", lastErr)
+		return 0, 0, OCRBounds{}, 0, fmt.Errorf("OCR server request failed: %v", lastErr)
 	}
 	defer resp.Body.Close()
 
 	var ocrResp fullRecognizeResponse
 	if err := json.NewDecoder(resp.Body).Decode(&ocrResp); err != nil {
-		return 0, 0, 0, fmt.Errorf("failed to decode response: %w", err)
+		return 0, 0, OCRBounds{}, 0, fmt.Errorf("failed to decode response: %w", err)
 	}
 
 	if ocrResp.Error != "" {
-		return 0, 0, 0, fmt.Errorf("OCR server error: %s", ocrResp.Error)
+		return 0, 0, OCRBounds{}, 0, fmt.Errorf("OCR server error: %s", ocrResp.Error)
 	}
 
 	targetLower := strings.ToLower(targetText)
@@ -230,11 +248,17 @@ func FindText(img image.Image, ocrAddr, lang, targetText string) (int, int, floa
 			centerX := minX + (maxX-minX)/2
 			centerY := minY + (maxY-minY)/2
 
-			return centerX, centerY, float64(res.Confidence), nil
+			return centerX, centerY, res.Bounds, float64(res.Confidence), nil
 		}
 	}
 
-	return 0, 0, 0, fmt.Errorf("text %q not found in OCR results", targetText)
+	return 0, 0, OCRBounds{}, 0, fmt.Errorf("text %q not found in OCR results", targetText)
+}
+
+// FindText captures a screenshot and sends it to the OCR server to locate target text.
+func FindText(img image.Image, ocrAddr, lang, targetText string) (int, int, float64, error) {
+	x, y, _, conf, err := FindTextWithBounds(img, ocrAddr, lang, "", targetText)
+	return x, y, conf, err
 }
 
 // ParseRegion parses region definitions and returns absolute bounds (x, y, w, h) inside haystack coordinates.

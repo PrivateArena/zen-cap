@@ -106,6 +106,22 @@ action_type: copy   # Options: "copy", "clear"
 text: "Copied value"
 ```
 
+### `ocr`
+Performs OCR to find a target text substring on the active window or screen, saves the cropped bounding box (textbox) to the specified output file, and optionally triggers click/move actions on it.
+```yaml
+action: ocr
+text: "Play"                  # Target text substring to locate (or 'target' / 'find')
+output: "templates/play.png"  # Optional path to save the cropped textbox image to
+region: "BL"                 # Optional region search bounds (e.g. "TL", "BL", "x,y,w,h")
+language: "ja"               # Optional language override (e.g. "ja", "ch", "en")
+model: "ja"                  # Optional OCR model identifier override
+timeout: 5s                  # Max wait time for the text to appear
+then: click                  # Optional action to execute if found: "click", "move", "none"
+button: left                 # Optional mouse button for click action
+offset_x: 10                 # Optional horizontal click offset
+offset_y: 5                  # Optional vertical click offset
+```
+
 ---
 
 ## 3. Control Flow & Branching
@@ -126,10 +142,11 @@ steps:
 ### `if_found` (Conditionals)
 Performs vision-based search queries on the targeted window (or screen) and branches execution based on existence.
 
+**Example 1: Image Template Matching (`type: image`)**
 ```yaml
 action: if_found
-type: image                  # Options: "image", "text"
-target: "templates/play.png" # Path to template image OR target text substring
+type: image                  # Options: "image", "text", "ocr"
+target: "templates/play.png" # Path to template image
 region: "BL"                 # Optional search bounds: e.g. "x,y,w,h" OR quick-dirty templates:
                              # "TL" (Top Left), "TR" (Top Right), "BL" (Bottom Left), "BR" (Bottom Right)
                              # "HL" (Left Half), "HR" (Right Half), "HT" (Top Half), "HB" (Bottom Half)
@@ -146,6 +163,28 @@ else:
     message: "Could not find play button"
 ```
 
+**Example 2: OCR Text Matching (`type: ocr` or `type: text`)**
+```yaml
+action: if_found
+type: ocr                     # Options: "image", "text", "ocr"
+target: "target text"        # Target text substring
+region: "BL"                 # Optional search bounds
+similarity: 0.85             # Visual threshold
+language: "ja"               # OCR specific: language code (e.g., "ch", "en", "ja", "ko")
+model: "ja"                  # OCR specific: model selector
+output: "cropped_textbox.png"# OCR specific: Path to save the cropped textbox image if found
+wait_timeout: 5s             # Max wait time for element to appear
+steps:
+  - action: click            # Executes if target is found
+    x: -1                    # -1 means auto-click the detected target center!
+    y: -1
+    button: left
+else:
+  - action: notify           # Executes if target is not found
+    title: "Not Found"
+    message: "Could not find text"
+```
+
 ---
 
 ## 4. Vision Engine Mechanics
@@ -155,7 +194,9 @@ else:
 - Automatically handles downsampling and early-exit thresholds to ensure high-performance evaluations.
 - Paths are resolved relative to the script's directory.
 
-### OCR Substring Finding (`type: text`)
-- Communicates natively with the local `zen-lights` PaddleOCR server (`http://localhost:8765/recognize`).
+### OCR Substring Finding (`type: text` or `type: ocr`)
+- Communicates natively with the local `zen-lights` PaddleOCR server (`http://localhost:8765/recognize` or `/ocr`).
 - Extracts precise bounding-boxes (`Bounds`) matching substrings.
 - Supports coordinates re-mapping: automatically converts text coordinates into focusless mouse clicks.
+- Supports step-level `language` and `model` overrides.
+- Supports cropping and saving the matched bounding-box image to the file specified in the `output` field for hybrid workflow integration (e.g. `output: "textbox.png"`).

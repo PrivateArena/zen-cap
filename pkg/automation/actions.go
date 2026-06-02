@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"image"
+	"image/png"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -63,6 +64,8 @@ func ExecuteStep(step Step, ctx *ExecContext) error {
 		return runFindImage(step, ctx)
 	case "find_text":
 		return runFindText(step, ctx)
+	case "ocr":
+		return runOCR(step, ctx)
 	default:
 		return fmt.Errorf("unknown action: %s", step.Action)
 	}
@@ -637,6 +640,128 @@ func runFindText(step Step, ctx *ExecContext) error {
 
 		if time.Now().After(deadline) {
 			return fmt.Errorf("text %q not found within timeout: %w", step.Text, err)
+		}
+
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
+func runOCR(step Step, ctx *ExecContext) error {
+	targetText := step.Text
+	if targetText == "" {
+		targetText = step.Target
+	}
+	if targetText == "" {
+		return fmt.Errorf("missing target text in ocr step")
+	}
+
+	timeout := 10 * time.Second
+	if step.Timeout != "" {
+		if d, err := time.ParseDuration(step.Timeout); err == nil {
+			timeout = d
+		}
+	}
+
+	ocrAddr := "http://localhost:8765"
+	ocrLang := "ch"
+	if ctx.Config != nil {
+		ocrAddr = ctx.Config.OCRAddress
+		ocrLang = ctx.Config.OCRLanguage
+	}
+	if step.Language != "" {
+		ocrLang = step.Language
+	}
+	ocrModel := step.Model
+
+	ctx.Logger("[Automation] OCR search: %q (timeout=%v, lang=%s, model=%s)", targetText, timeout, ocrLang, ocrModel)
+
+	deadline := time.Now().Add(timeout)
+	for {
+		select {
+		case <-ctx.AbortChan:
+			return fmt.Errorf("execution aborted by user")
+		default:
+		}
+
+		capCfg := capture.CaptureConfig{
+			Display:  ":0.0",
+			WindowID: ctx.WindowID,
+		}
+		haystack, err := capture.CaptureScreen(capCfg)
+		if err != nil {
+			ctx.Logger("[Automation] Error capturing screen for OCR: %v", err)
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+
+		offsetX, offsetY := 0, 0
+		if step.Region != "" {
+			rx, ry, rw, rh, err := ParseRegion(step.Region, haystack.Bounds().Dx(), haystack.Bounds().Dy())
+			if err == nil {
+				haystack, offsetX, offsetY = CropImage(haystack, rx, ry, rw, rh)
+			} else {
+				ctx.Logger("[Automation] Warning parsing region: %v", err)
+			}
+		}
+
+		x, y, bounds, conf, err := FindTextWithBounds(haystack, ocrAddr, ocrLang, ocrModel, targetText)
+		if err == nil {
+			if step.Output != "" {
+				minX, minY := bounds.Min.X, bounds.Min.Y
+				maxX, maxY := bounds.Max.X, bounds.Max.Y
+				rw := maxX - minX
+				rh := maxY - minY
+
+				textboxImg, _, _ := CropImage(haystack, minX, minY, rw, rh)
+
+				outputPath := step.Output
+				if !filepath.IsAbs(outputPath) && ctx.ScriptDir != "" {
+					outputPath = filepath.Join(ctx.ScriptDir, outputPath)
+				}
+				if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
+					return fmt.Errorf("failed to create directory for OCR output: %w", err)
+				}
+				outF, err := os.Create(outputPath)
+				if err != nil {
+					return fmt.Errorf("failed to create OCR output file: %w", err)
+				}
+				if err := png.Encode(outF, textboxImg); err != nil {
+					outF.Close()
+					return fmt.Errorf("failed to encode/write OCR textbox image: %w", err)
+				}
+				outF.Close()
+				ctx.Logger("[Automation] OCR textbox image saved to %s", outputPath)
+			}
+
+			x += offsetX
+			y += offsetY
+			ctx.Logger("[Automation] OCR: Text %q found at (%d, %d) with confidence %.4f", targetText, x, y, conf)
+			ctx.LastFoundX = x
+			ctx.LastFoundY = y
+			targetX := x + step.OffsetX
+			targetY := y + step.OffsetY
+
+			if strings.ToLower(step.Then) == "click" {
+				clickStep := Step{
+					Action: "click",
+					X:      targetX,
+					Y:      targetY,
+					Button: step.Button,
+				}
+				return runClick(clickStep, ctx)
+			} else if strings.ToLower(step.Then) == "move" {
+				moveStep := Step{
+					Action: "move",
+					X:      targetX,
+					Y:      targetY,
+				}
+				return runMove(moveStep, ctx)
+			}
+			return nil
+		}
+
+		if time.Now().After(deadline) {
+			return fmt.Errorf("text %q not found via OCR within timeout: %w", targetText, err)
 		}
 
 		time.Sleep(500 * time.Millisecond)

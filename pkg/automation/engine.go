@@ -3,6 +3,7 @@ package automation
 import (
 	"fmt"
 	"image"
+	"image/png"
 	"os"
 	"path/filepath"
 	"strings"
@@ -200,7 +201,7 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 						ctx.LastFoundY = fy + offsetY
 					}
 				}
-			} else if findType == "text" {
+			} else if findType == "text" || findType == "ocr" {
 				if targetVal == "" {
 					return fmt.Errorf("missing target text in if_found step")
 				}
@@ -210,6 +211,10 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 					ocrAddr = ctx.Config.OCRAddress
 					ocrLang = ctx.Config.OCRLanguage
 				}
+				if step.Language != "" {
+					ocrLang = step.Language
+				}
+				ocrModel := step.Model
 				capCfg := capture.CaptureConfig{
 					Display:  ":0.0",
 					WindowID: ctx.WindowID,
@@ -223,11 +228,33 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 							haystack, offsetX, offsetY = CropImage(haystack, rx, ry, rw, rh)
 						}
 					}
-					fx, fy, _, err := FindText(haystack, ocrAddr, ocrLang, targetVal)
+					fx, fy, bounds, _, err := FindTextWithBounds(haystack, ocrAddr, ocrLang, ocrModel, targetVal)
 					if err == nil {
 						found = true
 						ctx.LastFoundX = fx + offsetX
 						ctx.LastFoundY = fy + offsetY
+
+						if step.Output != "" {
+							minX, minY := bounds.Min.X, bounds.Min.Y
+							maxX, maxY := bounds.Max.X, bounds.Max.Y
+							rw := maxX - minX
+							rh := maxY - minY
+
+							textboxImg, _, _ := CropImage(haystack, minX, minY, rw, rh)
+
+							outputPath := step.Output
+							if !filepath.IsAbs(outputPath) && ctx.ScriptDir != "" {
+								outputPath = filepath.Join(ctx.ScriptDir, outputPath)
+							}
+							if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err == nil {
+								if outF, err := os.Create(outputPath); err == nil {
+									if err := png.Encode(outF, textboxImg); err == nil {
+										ctx.Logger("[Automation] if_found cropped textbox image saved to %s", outputPath)
+									}
+									outF.Close()
+								}
+							}
+						}
 					}
 				}
 			} else {

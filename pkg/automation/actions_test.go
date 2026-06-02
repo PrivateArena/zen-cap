@@ -2,7 +2,18 @@ package automation
 
 import (
 	"fmt"
+	"image"
+	"image/color"
+	"image/draw"
+	"image/png"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
+
+	"zen-cap/pkg/capture"
+	"zen-cap/pkg/config"
 )
 
 func TestRunLog(t *testing.T) {
@@ -47,3 +58,240 @@ func TestRunLog(t *testing.T) {
 		t.Errorf("expected logged message %q, got %q", expectedFallback, loggedMessage)
 	}
 }
+
+func TestRunOCR(t *testing.T) {
+	// Create a mock OCR server
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Mock response containing "match-me" with bounds (10, 20) -> (50, 40)
+		resp := `{
+			"results": [
+				{
+					"Text": "match-me",
+					"Confidence": 0.95,
+					"Bounds": {
+						"Min": {"X": 10, "Y": 20},
+						"Max": {"X": 50, "Y": 40}
+					}
+				}
+			]
+		}`
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(resp))
+	}))
+	defer server.Close()
+
+	// Mock CaptureScreen to return a dummy 100x100 image
+	dummyImg := image.NewRGBA(image.Rect(0, 0, 100, 100))
+	draw.Draw(dummyImg, dummyImg.Bounds(), &image.Uniform{color.RGBA{255, 0, 0, 255}}, image.Point{}, draw.Src)
+
+	oldCapture := capture.CaptureScreen
+	defer func() { capture.CaptureScreen = oldCapture }()
+	capture.CaptureScreen = func(cfg capture.CaptureConfig) (image.Image, error) {
+		return dummyImg, nil
+	}
+
+	// Create temp output file path
+	tempDir, err := os.MkdirTemp("", "ocr-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+	outputPath := filepath.Join(tempDir, "cropped_textbox.png")
+
+	// Set up execution context
+	var loggedMessage string
+	logger := func(format string, args ...interface{}) {
+		loggedMessage += fmt.Sprintf(format, args...) + "\n"
+	}
+
+	cfg := &config.Config{
+		OCRAddress:  server.URL,
+		OCRLanguage: "en",
+	}
+
+	ctx := &ExecContext{
+		Logger:    logger,
+		Config:    cfg,
+		ScriptDir: tempDir,
+	}
+
+	step := Step{
+		Action:      "ocr",
+		Text:        "match-me",
+		Output:      outputPath,
+		Timeout:     "100ms",
+	}
+
+	err = ExecuteStep(step, ctx)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	// Verify coordinates were updated
+	if ctx.LastFoundX != 30 || ctx.LastFoundY != 30 {
+		t.Errorf("expected LastFound coordinates to be (30, 30), got (%d, %d)", ctx.LastFoundX, ctx.LastFoundY)
+	}
+
+	// Verify cropped image exists and has correct dimensions
+	if _, err := os.Stat(outputPath); os.IsNotExist(err) {
+		t.Fatalf("expected output file to exist, but it doesn't")
+	}
+
+	outF, err := os.Open(outputPath)
+	if err != nil {
+		t.Fatalf("failed to open output file: %v", err)
+	}
+	defer outF.Close()
+
+	savedImg, err := png.Decode(outF)
+	if err != nil {
+		t.Fatalf("failed to decode saved PNG: %v", err)
+	}
+
+	bounds := savedImg.Bounds()
+	if bounds.Dx() != 40 || bounds.Dy() != 20 {
+		t.Errorf("expected cropped image dimensions 40x20, got %dx%d", bounds.Dx(), bounds.Dy())
+	}
+}
+
+func TestFindTextWithBounds(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := `{
+			"results": [
+				{
+					"Text": "target-text",
+					"Confidence": 0.99,
+					"Bounds": {
+						"Min": {"X": 5, "Y": 5},
+						"Max": {"X": 25, "Y": 15}
+					}
+				}
+			]
+		}`
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(resp))
+	}))
+	defer server.Close()
+
+	img := image.NewRGBA(image.Rect(0, 0, 50, 50))
+	x, y, bounds, conf, err := FindTextWithBounds(img, server.URL, "en", "ja", "target-text")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if x != 15 || y != 10 {
+		t.Errorf("expected center (15, 10), got (%d, %d)", x, y)
+	}
+
+	if bounds.Min.X != 5 || bounds.Min.Y != 5 || bounds.Max.X != 25 || bounds.Max.Y != 15 {
+		t.Errorf("bounds mismatch: %+v", bounds)
+	}
+
+	if float32(conf) != 0.99 {
+		t.Errorf("expected confidence 0.99, got %f", conf)
+	}
+}
+
+func TestIfFoundOCR(t *testing.T) {
+	// Create a mock OCR server
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := `{
+			"results": [
+				{
+					"Text": "target-text",
+					"Confidence": 0.95,
+					"Bounds": {
+						"Min": {"X": 20, "Y": 30},
+						"Max": {"X": 60, "Y": 50}
+					}
+				}
+			]
+		}`
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(resp))
+	}))
+	defer server.Close()
+
+	// Mock CaptureScreen to return a dummy 100x100 image
+	dummyImg := image.NewRGBA(image.Rect(0, 0, 100, 100))
+	draw.Draw(dummyImg, dummyImg.Bounds(), &image.Uniform{color.RGBA{255, 0, 0, 255}}, image.Point{}, draw.Src)
+
+	oldCapture := capture.CaptureScreen
+	defer func() { capture.CaptureScreen = oldCapture }()
+	capture.CaptureScreen = func(cfg capture.CaptureConfig) (image.Image, error) {
+		return dummyImg, nil
+	}
+
+	tempDir, err := os.MkdirTemp("", "iffound-ocr-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+	outputPath := filepath.Join(tempDir, "if_found_textbox.png")
+
+	var loggedMessage string
+	logger := func(format string, args ...interface{}) {
+		loggedMessage += fmt.Sprintf(format, args...) + "\n"
+	}
+
+	cfg := &config.Config{
+		OCRAddress:  server.URL,
+		OCRLanguage: "en",
+	}
+
+	ctx := &ExecContext{
+		Logger:    logger,
+		Config:    cfg,
+		ScriptDir: tempDir,
+	}
+
+	// Create step: if_found with type: ocr
+	substep := Step{
+		Action: "log",
+		Text:   "Substep Executed!",
+	}
+
+	step := Step{
+		Action:      "if_found",
+		Type:        "ocr",
+		Text:        "target-text",
+		Output:      outputPath,
+		WaitTimeout: "100ms",
+		Steps:       []Step{substep},
+	}
+
+	err = executeStepWithControl(step, ctx)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	// Verify LastFound coordinates (center of 20,30 -> 60,50 is 40,40)
+	if ctx.LastFoundX != 40 || ctx.LastFoundY != 40 {
+		t.Errorf("expected LastFound coordinates (40, 40), got (%d, %d)", ctx.LastFoundX, ctx.LastFoundY)
+	}
+
+	// Verify cropped image exists and has correct dimensions (40x20)
+	if _, err := os.Stat(outputPath); os.IsNotExist(err) {
+		t.Fatalf("expected output file to exist, but it doesn't")
+	}
+
+	outF, err := os.Open(outputPath)
+	if err != nil {
+		t.Fatalf("failed to open output file: %v", err)
+	}
+	defer outF.Close()
+
+	savedImg, err := png.Decode(outF)
+	if err != nil {
+		t.Fatalf("failed to decode saved PNG: %v", err)
+	}
+
+	bounds := savedImg.Bounds()
+	if bounds.Dx() != 40 || bounds.Dy() != 20 {
+		t.Errorf("expected cropped image dimensions 40x20, got %dx%d", bounds.Dx(), bounds.Dy())
+	}
+}
+

@@ -34,6 +34,8 @@ type Step struct {
 	Else        []Step   `json:"else,omitempty" yaml:"else,omitempty"`
 	Delay       string   `json:"delay,omitempty" yaml:"delay,omitempty"`
 	WaitTimeout string   `json:"wait_timeout,omitempty" yaml:"wait_timeout,omitempty"`
+	Language    string   `json:"language,omitempty" yaml:"language,omitempty"`
+	Model       string   `json:"model,omitempty" yaml:"model,omitempty"`
 }
 
 type Script struct {

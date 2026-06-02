@@ -24,7 +24,13 @@ type CaptureConfig struct {
 
 // CaptureScreen opens the display capture device, grabs one frame,
 // converts it to RGBA, and returns it as a Go image.Image.
-func CaptureScreen(cfg CaptureConfig) (image.Image, error) {
+var CaptureScreen func(cfg CaptureConfig) (image.Image, error)
+
+func init() {
+	CaptureScreen = captureScreenImpl
+}
+
+func captureScreenImpl(cfg CaptureConfig) (image.Image, error) {
 	if cfg.Interactive {
 		// First capture the entire screen
 		fullCfg := cfg
