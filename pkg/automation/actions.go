@@ -63,6 +63,10 @@ func ExecuteStep(step Step, ctx *ExecContext) error {
 		return runCommand(step, ctx)
 	case "clipboard":
 		return runClipboard(step, ctx)
+	case "file":
+		return runFile(step, ctx)
+	case "window":
+		return runWindow(step, ctx)
 	case "find_image":
 		return runFindImage(step, ctx)
 	case "find_text":
@@ -71,6 +75,8 @@ func ExecuteStep(step Step, ctx *ExecContext) error {
 		return runOCR(step, ctx)
 	case "goto":
 		return GotoError{Target: step.Target}
+	case "stop":
+		return StopError{Message: step.Message}
 	default:
 		return fmt.Errorf("unknown action: %s", step.Action)
 	}
@@ -448,11 +454,120 @@ func runClipboard(step Step, ctx *ExecContext) error {
 			return err
 		}
 		ctx.Logger("[Automation] Clipboard: read %q", text)
+		if step.Name != "" {
+			ctx.Variables[step.Name] = text
+		}
 	} else {
 		return fmt.Errorf("unknown clipboard mode: %q", step.Mode)
 	}
 
 	return nil
+}
+
+func runFile(step Step, ctx *ExecContext) error {
+	if step.Target == "" {
+		return fmt.Errorf("missing target path for file action")
+	}
+	path := step.Target
+	if !filepath.IsAbs(path) && ctx.ScriptDir != "" {
+		path = filepath.Join(ctx.ScriptDir, path)
+	}
+
+	mode := strings.ToLower(step.Mode)
+	switch mode {
+	case "read":
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if step.Name != "" {
+			ctx.Variables[step.Name] = string(data)
+		}
+	case "write", "append":
+		flags := os.O_CREATE | os.O_WRONLY
+		if mode == "append" {
+			flags |= os.O_APPEND
+		} else {
+			flags |= os.O_TRUNC
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			return err
+		}
+		f, err := os.OpenFile(path, flags, 0644)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		if _, err := f.WriteString(step.Text); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("unknown file mode: %q", step.Mode)
+	}
+	return nil
+}
+
+func runWindow(step Step, ctx *ExecContext) error {
+	xu := ctx.X
+	var winID uint32
+	var err error
+
+	if step.Window != nil {
+		winID, err = ResolveWindow(xu, step.Window)
+		if err != nil {
+			return err
+		}
+	} else {
+		winID = ctx.WindowID
+	}
+	if winID == 0 {
+		return fmt.Errorf("no target window specified or resolved")
+	}
+
+	mode := strings.ToLower(step.Mode)
+	switch mode {
+	case "activate":
+		return ewmh.ActiveWindowReq(xu, xproto.Window(winID))
+	case "close":
+		return ewmh.CloseWindow(xu, xproto.Window(winID))
+	case "minimize":
+		return ewmh.WmStateReq(xu, xproto.Window(winID), 1, "_NET_WM_STATE_HIDDEN")
+	case "maximize":
+		return ewmh.WmStateReqExtra(xu, xproto.Window(winID), 1, "_NET_WM_STATE_MAXIMIZED_HORZ", "_NET_WM_STATE_MAXIMIZED_VERT", 1)
+	case "geometry":
+		x := getIntField(step.X, ctx.Variables, -1)
+		y := getIntField(step.Y, ctx.Variables, -1)
+		w := step.OffsetX
+		h := step.OffsetY
+
+		win := xwindow.New(xu, xproto.Window(winID))
+		geom, err := win.Geometry()
+		if err != nil {
+			return fmt.Errorf("failed to get current window geometry: %w", err)
+		}
+
+		targetX := x
+		if x == -1 {
+			targetX = geom.X()
+		}
+		targetY := y
+		if y == -1 {
+			targetY = geom.Y()
+		}
+		targetW := w
+		if w <= 0 {
+			targetW = geom.Width()
+		}
+		targetH := h
+		if h <= 0 {
+			targetH = geom.Height()
+		}
+
+		win.MoveResize(targetX, targetY, targetW, targetH)
+		return nil
+	default:
+		return fmt.Errorf("unsupported window mode: %q", step.Mode)
+	}
 }
 
 func runFindImage(step Step, ctx *ExecContext) error {

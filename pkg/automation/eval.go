@@ -177,6 +177,13 @@ func InterpolateStep(step Step, vars map[string]interface{}) Step {
 	step.Language = Interpolate(step.Language, vars)
 	step.Model = Interpolate(step.Model, vars)
 	step.When = Interpolate(step.When, vars)
+	step.Color = Interpolate(step.Color, vars)
+	if step.Window != nil {
+		winCopy := *step.Window
+		winCopy.Title = Interpolate(winCopy.Title, vars)
+		winCopy.Class = Interpolate(winCopy.Class, vars)
+		step.Window = &winCopy
+	}
 	if s, ok := step.X.(string); ok {
 		step.X = Interpolate(s, vars)
 	}

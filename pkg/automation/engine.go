@@ -52,6 +52,10 @@ func RunScript(script Script, cfg *config.Config, scriptDir string, abortChan ch
 
 	logger("[Automation] Starting script: %q", script.Name)
 	if err := executeStepList(script.Steps, ctx); err != nil {
+		if stopErr, ok := err.(StopError); ok {
+			logger("[Automation] Script execution stopped: %v", stopErr)
+			return nil
+		}
 		return fmt.Errorf("script execution failed: %w", err)
 	}
 
@@ -65,6 +69,17 @@ type GotoError struct {
 
 func (e GotoError) Error() string {
 	return "goto: " + e.Target
+}
+
+type StopError struct {
+	Message string
+}
+
+func (e StopError) Error() string {
+	if e.Message != "" {
+		return "stopped: " + e.Message
+	}
+	return "stopped"
 }
 
 func executeStepList(steps []Step, ctx *ExecContext) error {
@@ -325,6 +340,64 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 			targetSteps = interpolatedStep.Steps
 		} else {
 			ctx.Logger("[Automation] Condition NOT MET (found %s)", findType)
+			targetSteps = interpolatedStep.Else
+		}
+
+		if err := executeStepList(targetSteps, ctx); err != nil {
+			return err
+		}
+		return nil
+	case "if_pixel":
+		x := getIntField(interpolatedStep.X, ctx.Variables, -1)
+		y := getIntField(interpolatedStep.Y, ctx.Variables, -1)
+		if x == -1 || y == -1 {
+			return fmt.Errorf("invalid or missing pixel coordinate for if_pixel: x=%v, y=%v", interpolatedStep.X, interpolatedStep.Y)
+		}
+
+		capCfg := capture.CaptureConfig{
+			Display:  ":0.0",
+			WindowID: ctx.WindowID,
+		}
+		img, err := capture.CaptureScreen(capCfg)
+		if err != nil {
+			return fmt.Errorf("failed to capture screen for if_pixel: %w", err)
+		}
+
+		bounds := img.Bounds()
+		if x < bounds.Min.X || x >= bounds.Max.X || y < bounds.Min.Y || y >= bounds.Max.Y {
+			return fmt.Errorf("pixel coordinate (%d, %d) out of bounds (%v)", x, y, bounds)
+		}
+
+		col := img.At(x, y)
+		r, g, b, _ := col.RGBA()
+		currR, currG, currB := uint8(r>>8), uint8(g>>8), uint8(b>>8)
+
+		hexStr := strings.TrimPrefix(interpolatedStep.Color, "#")
+		var tr, tg, tb uint8
+		if n, err := fmt.Sscanf(hexStr, "%02x%02x%02x", &tr, &tg, &tb); err != nil || n != 3 {
+			return fmt.Errorf("invalid hex color string %q for if_pixel", interpolatedStep.Color)
+		}
+
+		tolerance := 0
+		if interpolatedStep.Tolerance > 0 {
+			tolerance = interpolatedStep.Tolerance
+		}
+
+		diff := func(a, b uint8) int {
+			if a > b {
+				return int(a - b)
+			}
+			return int(b - a)
+		}
+
+		match := diff(currR, tr) <= tolerance && diff(currG, tg) <= tolerance && diff(currB, tb) <= tolerance
+		ctx.Logger("[Automation] if_pixel at (%d, %d): color is RGB(%d,%d,%d), target is RGB(%d,%d,%d), tolerance=%d, match=%v",
+			x, y, currR, currG, currB, tr, tg, tb, tolerance, match)
+
+		var targetSteps []Step
+		if match {
+			targetSteps = interpolatedStep.Steps
+		} else {
 			targetSteps = interpolatedStep.Else
 		}
 

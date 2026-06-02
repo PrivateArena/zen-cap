@@ -36,6 +36,9 @@ type Step struct {
 	WaitTimeout string                 `json:"wait_timeout,omitempty" yaml:"wait_timeout,omitempty"`
 	Language    string                 `json:"language,omitempty" yaml:"language,omitempty"`
 	Model       string                 `json:"model,omitempty" yaml:"model,omitempty"`
+	Window      *WindowTarget          `json:"window,omitempty" yaml:"window,omitempty"`
+	Color       string                 `json:"color,omitempty" yaml:"color,omitempty"`
+	Tolerance   int                    `json:"tolerance,omitempty" yaml:"tolerance,omitempty"`
 
 	// Scripting extensions:
 	Label       string                 `json:"label,omitempty" yaml:"label,omitempty"`

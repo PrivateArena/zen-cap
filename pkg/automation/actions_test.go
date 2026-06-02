@@ -512,4 +512,225 @@ func TestProceduresAndFunctions(t *testing.T) {
 	}
 }
 
+func TestStopAction(t *testing.T) {
+	ctx := &ExecContext{
+		Logger: func(string, ...interface{}) {},
+	}
+	step := Step{
+		Action:  "stop",
+		Message: "target reached",
+	}
+	err := ExecuteStep(step, ctx)
+	if err == nil {
+		t.Fatalf("expected StopError, got nil")
+	}
+	stopErr, ok := err.(StopError)
+	if !ok {
+		t.Fatalf("expected StopError, got %T: %v", err, err)
+	}
+	if stopErr.Message != "target reached" {
+		t.Errorf("expected message 'target reached', got %q", stopErr.Message)
+	}
+
+	script := Script{
+		Name: "test stop",
+		Steps: []Step{
+			step,
+		},
+	}
+	err = executeStepList(script.Steps, ctx)
+	if err == nil {
+		t.Fatalf("expected executeStepList to propagate StopError")
+	}
+	if _, ok := err.(StopError); !ok {
+		t.Errorf("expected StopError, got %v", err)
+	}
+}
+
+func TestClipboardReadBack(t *testing.T) {
+	oldRead := capture.ReadTextFromClipboard
+	oldCopy := capture.CopyTextToClipboard
+	defer func() {
+		capture.ReadTextFromClipboard = oldRead
+		capture.CopyTextToClipboard = oldCopy
+	}()
+
+	capture.ReadTextFromClipboard = func() (string, error) {
+		return "hello-clipboard", nil
+	}
+	capture.CopyTextToClipboard = func(text string) error {
+		return nil
+	}
+
+	ctx := &ExecContext{
+		Logger:    func(string, ...interface{}) {},
+		Variables: make(map[string]interface{}),
+	}
+
+	stepRead := Step{
+		Action: "clipboard",
+		Mode:   "read",
+		Name:   "clip_val",
+	}
+	err := ExecuteStep(stepRead, ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ctx.Variables["clip_val"] != "hello-clipboard" {
+		t.Errorf("expected variables['clip_val'] to be 'hello-clipboard', got %v", ctx.Variables["clip_val"])
+	}
+}
+
+func TestFileOperations(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "file-action-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	filePath := filepath.Join(tempDir, "test.txt")
+	ctx := &ExecContext{
+		Logger:    func(string, ...interface{}) {},
+		ScriptDir: tempDir,
+		Variables: make(map[string]interface{}),
+	}
+
+	// 1. Write
+	stepWrite := Step{
+		Action: "file",
+		Mode:   "write",
+		Target: filePath,
+		Text:   "line 1\n",
+	}
+	if err := ExecuteStep(stepWrite, ctx); err != nil {
+		t.Fatalf("write failed: %v", err)
+	}
+
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatalf("failed to read file: %v", err)
+	}
+	if string(data) != "line 1\n" {
+		t.Errorf("expected 'line 1\n', got %q", string(data))
+	}
+
+	// 2. Append
+	stepAppend := Step{
+		Action: "file",
+		Mode:   "append",
+		Target: filePath,
+		Text:   "line 2\n",
+	}
+	if err := ExecuteStep(stepAppend, ctx); err != nil {
+		t.Fatalf("append failed: %v", err)
+	}
+
+	data, err = os.ReadFile(filePath)
+	if err != nil {
+		t.Fatalf("failed to read file: %v", err)
+	}
+	if string(data) != "line 1\nline 2\n" {
+		t.Errorf("expected 'line 1\nline 2\n', got %q", string(data))
+	}
+
+	// 3. Read
+	stepRead := Step{
+		Action: "file",
+		Mode:   "read",
+		Target: filePath,
+		Name:   "file_data",
+	}
+	if err := ExecuteStep(stepRead, ctx); err != nil {
+		t.Fatalf("read failed: %v", err)
+	}
+	if ctx.Variables["file_data"] != "line 1\nline 2\n" {
+		t.Errorf("expected variable to be 'line 1\nline 2\n', got %q", ctx.Variables["file_data"])
+	}
+}
+
+func TestIfPixel(t *testing.T) {
+	img := image.NewRGBA(image.Rect(0, 0, 10, 10))
+	img.Set(5, 5, color.RGBA{255, 0, 0, 255})
+
+	oldCapture := capture.CaptureScreen
+	defer func() { capture.CaptureScreen = oldCapture }()
+	capture.CaptureScreen = func(cfg capture.CaptureConfig) (image.Image, error) {
+		return img, nil
+	}
+
+	var executed bool
+	ctx := &ExecContext{
+		Logger:    func(string, ...interface{}) {},
+		Variables: make(map[string]interface{}),
+	}
+
+	stepMatch := Step{
+		Action:    "if_pixel",
+		X:         5,
+		Y:         5,
+		Color:     "#FF0000",
+		Tolerance: 5,
+		Steps: []Step{
+			{
+				Action: "var",
+				Name:   "executed",
+				Value:  true,
+			},
+		},
+	}
+	if err := executeStepWithControl(stepMatch, ctx); err != nil {
+		t.Fatalf("if_pixel failed: %v", err)
+	}
+	executed = ctx.Variables["executed"] == true
+	if !executed {
+		t.Errorf("expected steps to execute because color matches")
+	}
+
+	ctx.Variables["executed"] = false
+	stepMismatch := Step{
+		Action:    "if_pixel",
+		X:         5,
+		Y:         5,
+		Color:     "#00FF00",
+		Tolerance: 5,
+		Steps: []Step{
+			{
+				Action: "var",
+				Name:   "executed",
+				Value:  true,
+			},
+		},
+		Else: []Step{
+			{
+				Action: "var",
+				Name:   "else_executed",
+				Value:  true,
+			},
+		},
+	}
+	if err := executeStepWithControl(stepMismatch, ctx); err != nil {
+		t.Fatalf("if_pixel failed: %v", err)
+	}
+	if ctx.Variables["executed"] == true {
+		t.Errorf("expected steps not to execute because color mismatches")
+	}
+	if ctx.Variables["else_executed"] != true {
+		t.Errorf("expected else steps to execute")
+	}
+}
+
+func TestWindowActionErrors(t *testing.T) {
+	ctx := &ExecContext{
+		Logger: func(string, ...interface{}) {},
+	}
+	step := Step{
+		Action: "window",
+		Mode:   "activate",
+	}
+	err := ExecuteStep(step, ctx)
+	if err == nil {
+		t.Fatalf("expected error due to missing/zero WindowID, got nil")
+	}
+}
+
 

@@ -37,7 +37,7 @@ func CopyImageToClipboard(pngBytes []byte) error {
 }
 
 // CopyTextToClipboard copies a text string to the system clipboard natively.
-func CopyTextToClipboard(text string) error {
+var CopyTextToClipboard = func(text string) error {
 	if err := initClipboard(); err != nil {
 		return fmt.Errorf("failed to initialize clipboard: %w", err)
 	}
@@ -93,7 +93,7 @@ func RunClipboardServer(mode string, payload string) {
 
 // ReadTextFromClipboard reads the current text content from the system clipboard.
 // Returns empty string if clipboard contains no text.
-func ReadTextFromClipboard() (string, error) {
+var ReadTextFromClipboard = func() (string, error) {
 	if err := initClipboard(); err != nil {
 		return "", fmt.Errorf("failed to initialize clipboard: %w", err)
 	}
