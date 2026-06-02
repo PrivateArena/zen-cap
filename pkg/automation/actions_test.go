@@ -10,10 +10,13 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"zen-cap/pkg/capture"
 	"zen-cap/pkg/config"
+
+	"github.com/jezek/xgbutil"
 )
 
 func TestRunLog(t *testing.T) {
@@ -730,6 +733,100 @@ func TestWindowActionErrors(t *testing.T) {
 	err := ExecuteStep(step, ctx)
 	if err == nil {
 		t.Fatalf("expected error due to missing/zero WindowID, got nil")
+	}
+}
+
+func TestIfWindow(t *testing.T) {
+	oldResolve := ResolveWindow
+	defer func() { ResolveWindow = oldResolve }()
+
+	var calls int
+	ResolveWindow = func(xu *xgbutil.XUtil, target *WindowTarget) (uint32, error) {
+		calls++
+		if target.Title == "Firefox" && calls >= 3 {
+			return 12345, nil
+		}
+		return 0, fmt.Errorf("not found")
+	}
+
+	ctx := &ExecContext{
+		Logger:    func(string, ...interface{}) {},
+		Variables: make(map[string]interface{}),
+	}
+
+	stepNoWait := Step{
+		Action: "if_window",
+		Window: &WindowTarget{Title: "Firefox"},
+		Steps: []Step{
+			{Action: "var", Name: "res", Value: "found"},
+		},
+		Else: []Step{
+			{Action: "var", Name: "res", Value: "else"},
+		},
+	}
+	calls = 0
+	if err := executeStepWithControl(stepNoWait, ctx); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ctx.Variables["res"] != "else" {
+		t.Errorf("expected res to be 'else', got %v", ctx.Variables["res"])
+	}
+
+	stepWait := Step{
+		Action:      "if_window",
+		Window:      &WindowTarget{Title: "Firefox"},
+		WaitTimeout: "1s",
+		Steps: []Step{
+			{Action: "var", Name: "res", Value: "found"},
+		},
+		Else: []Step{
+			{Action: "var", Name: "res", Value: "else"},
+		},
+	}
+	calls = 0
+	if err := executeStepWithControl(stepWait, ctx); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ctx.Variables["res"] != "found" {
+		t.Errorf("expected res to be 'found', got %v", ctx.Variables["res"])
+	}
+
+	stepAbsent := Step{
+		Action: "if_window",
+		Mode:   "absent",
+		Window: &WindowTarget{Title: "Firefox"},
+		Steps: []Step{
+			{Action: "var", Name: "res", Value: "absent_met"},
+		},
+		Else: []Step{
+			{Action: "var", Name: "res", Value: "absent_unmet"},
+		},
+	}
+	calls = 0
+	if err := executeStepWithControl(stepAbsent, ctx); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ctx.Variables["res"] != "absent_met" {
+		t.Errorf("expected res to be 'absent_met', got %v", ctx.Variables["res"])
+	}
+}
+
+func TestWindowActionsMocked(t *testing.T) {
+	ctx := &ExecContext{
+		Logger:   func(string, ...interface{}) {},
+		WindowID: 12345,
+		X:        nil,
+	}
+	step := Step{
+		Action: "window",
+		Mode:   "fullscreen",
+	}
+	err := ExecuteStep(step, ctx)
+	if err == nil {
+		t.Fatalf("expected error due to nil X connection, got nil")
+	}
+	if !strings.Contains(err.Error(), "X connection is nil") {
+		t.Errorf("expected error message to contain 'X connection is nil', got %q", err.Error())
 	}
 }
 

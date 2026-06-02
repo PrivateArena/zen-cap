@@ -99,11 +99,64 @@ command: "xdg-open https://google.com"
 ```
 
 ### `clipboard`
-Manipulates the system clipboard.
+Manipulates the system clipboard (copy, clear, and read-back).
 ```yaml
+# Copy text to clipboard
 action: clipboard
-action_type: copy   # Options: "copy", "clear"
+mode: copy             # Options: "copy", "clear", "read" (or fallback via 'action_type')
 text: "Copied value"
+
+# Read text from clipboard into a variable
+action: clipboard
+mode: read
+name: my_variable
+```
+
+### `file`
+Performs file operations (reading, writing, appending).
+```yaml
+# Write text to a file (overwrites existing file content)
+action: file
+mode: write            # Options: "write", "append", "read"
+target: "logs.txt"     # Relative to script directory, or absolute path
+text: "Initialized log file\n"
+
+# Append text to a file
+action: file
+mode: append
+target: "logs.txt"
+text: "Append this log message\n"
+
+# Read file contents into a variable
+action: file
+mode: read
+target: "logs.txt"
+name: file_contents
+```
+
+### `window`
+Manages native OS window state, stack placement, and geometry coordinates focuslessly.
+```yaml
+action: window
+mode: activate         # Options: "activate", "close", "minimize", "maximize", "fullscreen", "restore", "raise", "lower", "geometry"
+window:                # Optional target filter (defaults to current window context)
+  title: "VLC media player"
+```
+For `geometry` mode, window position and dimensions are adjusted (omitted coordinates retain original window values):
+```yaml
+action: window
+mode: geometry
+x: 100                 # Target X position (variables supported)
+y: 150                 # Target Y position
+offset_x: 800          # Target width
+offset_y: 600          # Target height
+```
+
+### `stop`
+Terminates the script execution prematurely with a success status.
+```yaml
+action: stop
+message: "Execution successfully finished early"
 ```
 
 ### `ocr`
@@ -183,6 +236,41 @@ else:
   - action: notify           # Executes if target is not found
     title: "Not Found"
     message: "Could not find text"
+```
+
+### `if_pixel` (Pixel Color Check)
+Samples the color at a coordinate on the targeted window (or screen) and checks it against a target hex color within a tolerance threshold.
+
+```yaml
+action: if_pixel
+x: 450                         # X coordinate (variables/expressions supported)
+y: 320                         # Y coordinate
+color: "#FF0000"               # Target hex color (starts with #)
+tolerance: 10                  # Allowed RGB channel difference (0 to 255)
+steps:
+  - action: log
+    message: "Red pixel detected!"
+else:
+  - action: log
+    message: "Color mismatched."
+```
+
+### `if_window` (Window Condition Check)
+Checks if a window matching title/class exists, waits for it, and branches execution.
+
+```yaml
+action: if_window
+mode: exists                   # Options: "exists" (or "present"), "absent" (or "not_exists")
+window:
+  title: "Firefox"             # Substring to match window title
+  class: "firefox"             # Substring to match window class
+wait_timeout: "5s"             # Maximum time to wait for condition to be met (Go duration format)
+steps:
+  - action: log
+    message: "Firefox detected, performing tasks..."
+else:
+  - action: log
+    message: "Firefox was not found."
 ```
 
 ---

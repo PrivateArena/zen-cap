@@ -509,6 +509,9 @@ func runFile(step Step, ctx *ExecContext) error {
 
 func runWindow(step Step, ctx *ExecContext) error {
 	xu := ctx.X
+	if xu == nil {
+		return fmt.Errorf("X connection is nil")
+	}
 	var winID uint32
 	var err error
 
@@ -534,6 +537,20 @@ func runWindow(step Step, ctx *ExecContext) error {
 		return ewmh.WmStateReq(xu, xproto.Window(winID), 1, "_NET_WM_STATE_HIDDEN")
 	case "maximize":
 		return ewmh.WmStateReqExtra(xu, xproto.Window(winID), 1, "_NET_WM_STATE_MAXIMIZED_HORZ", "_NET_WM_STATE_MAXIMIZED_VERT", 1)
+	case "fullscreen":
+		return ewmh.WmStateReq(xu, xproto.Window(winID), 1, "_NET_WM_STATE_FULLSCREEN")
+	case "restore":
+		_ = ewmh.WmStateReq(xu, xproto.Window(winID), 0, "_NET_WM_STATE_FULLSCREEN")
+		_ = ewmh.WmStateReqExtra(xu, xproto.Window(winID), 0, "_NET_WM_STATE_MAXIMIZED_HORZ", "_NET_WM_STATE_MAXIMIZED_VERT", 1)
+		_ = ewmh.WmStateReq(xu, xproto.Window(winID), 0, "_NET_WM_STATE_HIDDEN")
+		xwindow.New(xu, xproto.Window(winID)).Map()
+		return nil
+	case "raise":
+		xwindow.New(xu, xproto.Window(winID)).Stack(xproto.StackModeAbove)
+		return nil
+	case "lower":
+		xwindow.New(xu, xproto.Window(winID)).Stack(xproto.StackModeBelow)
+		return nil
 	case "geometry":
 		x := getIntField(step.X, ctx.Variables, -1)
 		y := getIntField(step.Y, ctx.Variables, -1)

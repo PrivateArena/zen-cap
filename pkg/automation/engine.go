@@ -118,9 +118,12 @@ func executeStepList(steps []Step, ctx *ExecContext) error {
 }
 
 // ResolveWindow finds a matching window ID using native X11 window listing.
-func ResolveWindow(xu *xgbutil.XUtil, target *WindowTarget) (uint32, error) {
+var ResolveWindow = func(xu *xgbutil.XUtil, target *WindowTarget) (uint32, error) {
 	if target == nil {
 		return 0, nil
+	}
+	if xu == nil {
+		return 0, fmt.Errorf("X connection is nil")
 	}
 	clientIDs, err := ewmh.ClientListGet(xu)
 	if err != nil {
@@ -398,6 +401,67 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 		if match {
 			targetSteps = interpolatedStep.Steps
 		} else {
+			targetSteps = interpolatedStep.Else
+		}
+
+		if err := executeStepList(targetSteps, ctx); err != nil {
+			return err
+		}
+		return nil
+	case "if_window":
+		if interpolatedStep.Window == nil {
+			return fmt.Errorf("missing window target in if_window step")
+		}
+
+		var waitTimeout time.Duration
+		if interpolatedStep.WaitTimeout != "" {
+			if d, err := time.ParseDuration(interpolatedStep.WaitTimeout); err == nil {
+				waitTimeout = d
+			}
+		} else if interpolatedStep.Timeout != "" {
+			if d, err := time.ParseDuration(interpolatedStep.Timeout); err == nil {
+				waitTimeout = d
+			}
+		}
+
+		checkAbsent := strings.ToLower(interpolatedStep.Mode) == "absent" || strings.ToLower(interpolatedStep.Mode) == "not_exists"
+
+		found := false
+		deadline := time.Now().Add(waitTimeout)
+		for {
+			select {
+			case <-ctx.AbortChan:
+				return fmt.Errorf("execution aborted by user")
+			default:
+			}
+
+			_, err := ResolveWindow(ctx.X, interpolatedStep.Window)
+			exists := (err == nil)
+
+			if checkAbsent {
+				if !exists {
+					found = true
+					break
+				}
+			} else {
+				if exists {
+					found = true
+					break
+				}
+			}
+
+			if time.Now().After(deadline) {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+
+		var targetSteps []Step
+		if found {
+			ctx.Logger("[Automation] if_window condition MET (mode: %s)", interpolatedStep.Mode)
+			targetSteps = interpolatedStep.Steps
+		} else {
+			ctx.Logger("[Automation] if_window condition NOT MET (mode: %s)", interpolatedStep.Mode)
 			targetSteps = interpolatedStep.Else
 		}
 
