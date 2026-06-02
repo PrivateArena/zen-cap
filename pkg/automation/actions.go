@@ -11,11 +11,19 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jezek/xgb/xproto"
+	"github.com/jezek/xgb/xtest"
+	"github.com/jezek/xgbutil"
+	"github.com/jezek/xgbutil/ewmh"
+	"github.com/jezek/xgbutil/keybind"
+	"github.com/jezek/xgbutil/xwindow"
+
 	"zen-cap/pkg/capture"
 	"zen-cap/pkg/config"
 )
 
 type ExecContext struct {
+	X          *xgbutil.XUtil
 	WindowID   uint32
 	AbortChan  chan struct{}
 	Logger     func(string, ...interface{})
@@ -61,16 +69,6 @@ func ExecuteStep(step Step, ctx *ExecContext) error {
 }
 
 func runClick(step Step, ctx *ExecContext) error {
-	btnMap := map[string]string{
-		"left":   "1",
-		"middle": "2",
-		"right":  "3",
-	}
-	btn := "1"
-	if b, ok := btnMap[strings.ToLower(step.Button)]; ok {
-		btn = b
-	}
-
 	x := step.X
 	y := step.Y
 	if x == -1 && y == -1 {
@@ -78,16 +76,20 @@ func runClick(step Step, ctx *ExecContext) error {
 		y = ctx.LastFoundY
 	}
 
-	var args []string
-	if ctx.WindowID != 0 {
-		args = []string{"mousemove", "--window", strconv.FormatUint(uint64(ctx.WindowID), 10), strconv.Itoa(x), strconv.Itoa(y), "click", "--window", strconv.FormatUint(uint64(ctx.WindowID), 10), btn}
-	} else {
-		args = []string{"mousemove", strconv.Itoa(x), strconv.Itoa(y), "click", btn}
+	ctx.Logger("[Automation] Click: x=%d, y=%d, button=%s (window=%d)", x, y, step.Button, ctx.WindowID)
+
+	xu := ctx.X
+	if xu == nil {
+		var err error
+		xu, err = xgbutil.NewConn()
+		if err != nil {
+			return fmt.Errorf("failed to open X connection: %w", err)
+		}
+		defer xu.Conn().Close()
+		keybind.Initialize(xu)
 	}
 
-	ctx.Logger("[Automation] Click: x=%d, y=%d, button=%s (window=%d)", x, y, step.Button, ctx.WindowID)
-	cmd := exec.Command("xdotool", args...)
-	return cmd.Run()
+	return nativeClick(xu, ctx.WindowID, step.Button, x, y)
 }
 
 func runMove(step Step, ctx *ExecContext) error {
@@ -98,53 +100,267 @@ func runMove(step Step, ctx *ExecContext) error {
 		y = ctx.LastFoundY
 	}
 
-	var args []string
-	if ctx.WindowID != 0 {
-		args = []string{"mousemove", "--window", strconv.FormatUint(uint64(ctx.WindowID), 10), strconv.Itoa(x), strconv.Itoa(y)}
-	} else {
-		if step.Relative {
-			args = []string{"mousemove_relative", strconv.Itoa(x), strconv.Itoa(y)}
-		} else {
-			args = []string{"mousemove", strconv.Itoa(x), strconv.Itoa(y)}
+	ctx.Logger("[Automation] Move: x=%d, y=%d, relative=%v (window=%d)", x, y, step.Relative, ctx.WindowID)
+
+	xu := ctx.X
+	if xu == nil {
+		var err error
+		xu, err = xgbutil.NewConn()
+		if err != nil {
+			return fmt.Errorf("failed to open X connection: %w", err)
 		}
+		defer xu.Conn().Close()
+		keybind.Initialize(xu)
 	}
 
-	ctx.Logger("[Automation] Move: x=%d, y=%d, relative=%v (window=%d)", x, y, step.Relative, ctx.WindowID)
-	cmd := exec.Command("xdotool", args...)
-	return cmd.Run()
+	return nativeMove(xu, ctx.WindowID, x, y, step.Relative)
 }
 
 func runType(step Step, ctx *ExecContext) error {
-	delayMs := "12"
+	var delayMs int64 = 12
 	if step.Delay != "" {
 		if d, err := time.ParseDuration(step.Delay); err == nil {
-			delayMs = strconv.FormatInt(d.Milliseconds(), 10)
+			delayMs = d.Milliseconds()
 		}
 	}
 
-	var args []string
-	if ctx.WindowID != 0 {
-		args = []string{"type", "--window", strconv.FormatUint(uint64(ctx.WindowID), 10), "--delay", delayMs, step.Text}
-	} else {
-		args = []string{"type", "--delay", delayMs, step.Text}
+	ctx.Logger("[Automation] Type: %q (window=%d, delay=%dms)", step.Text, ctx.WindowID, delayMs)
+
+	xu := ctx.X
+	if xu == nil {
+		var err error
+		xu, err = xgbutil.NewConn()
+		if err != nil {
+			return fmt.Errorf("failed to open X connection: %w", err)
+		}
+		defer xu.Conn().Close()
+		keybind.Initialize(xu)
 	}
 
-	ctx.Logger("[Automation] Type: %q (window=%d, delay=%sms)", step.Text, ctx.WindowID, delayMs)
-	cmd := exec.Command("xdotool", args...)
-	return cmd.Run()
+	return nativeType(xu, ctx.WindowID, step.Text, delayMs)
 }
 
 func runKey(step Step, ctx *ExecContext) error {
-	var args []string
-	if ctx.WindowID != 0 {
-		args = []string{"key", "--window", strconv.FormatUint(uint64(ctx.WindowID), 10), "--clearmodifiers", step.Keys}
-	} else {
-		args = []string{"key", "--clearmodifiers", step.Keys}
+	ctx.Logger("[Automation] Key: %q (window=%d)", step.Keys, ctx.WindowID)
+
+	xu := ctx.X
+	if xu == nil {
+		var err error
+		xu, err = xgbutil.NewConn()
+		if err != nil {
+			return fmt.Errorf("failed to open X connection: %w", err)
+		}
+		defer xu.Conn().Close()
+		keybind.Initialize(xu)
 	}
 
-	ctx.Logger("[Automation] Key: %q (window=%d)", step.Keys, ctx.WindowID)
-	cmd := exec.Command("xdotool", args...)
-	return cmd.Run()
+	return nativeKey(xu, ctx.WindowID, step.Keys)
+}
+
+func nativeClick(xu *xgbutil.XUtil, windowID uint32, button string, x, y int) error {
+	c := xu.Conn()
+	if err := xtest.Init(c); err != nil {
+		return fmt.Errorf("xtest init failed: %w", err)
+	}
+
+	targetX, targetY := x, y
+	if windowID != 0 {
+		geom, err := xwindow.New(xu, xproto.Window(windowID)).Geometry()
+		if err == nil {
+			targetX = geom.X() + x
+			targetY = geom.Y() + y
+		}
+	}
+
+	// Move mouse
+	xtest.FakeInput(c, xproto.MotionNotify, 0, 0, 0, int16(targetX), int16(targetY), 0)
+
+	var btnDetail byte = 1
+	switch strings.ToLower(button) {
+	case "left":
+		btnDetail = 1
+	case "middle":
+		btnDetail = 2
+	case "right":
+		btnDetail = 3
+	default:
+		if val, err := strconv.Atoi(button); err == nil {
+			btnDetail = byte(val)
+		}
+	}
+
+	xtest.FakeInput(c, xproto.ButtonPress, btnDetail, 0, 0, 0, 0, 0)
+	xtest.FakeInput(c, xproto.ButtonRelease, btnDetail, 0, 0, 0, 0, 0)
+	return nil
+}
+
+func nativeMove(xu *xgbutil.XUtil, windowID uint32, x, y int, relative bool) error {
+	c := xu.Conn()
+	if err := xtest.Init(c); err != nil {
+		return fmt.Errorf("xtest init failed: %w", err)
+	}
+
+	if windowID != 0 {
+		geom, err := xwindow.New(xu, xproto.Window(windowID)).Geometry()
+		if err == nil {
+			x = geom.X() + x
+			y = geom.Y() + y
+		}
+		relative = false
+	}
+
+	var detail byte = 0
+	if relative {
+		detail = 1
+	}
+
+	xtest.FakeInput(c, xproto.MotionNotify, detail, 0, 0, int16(x), int16(y), 0)
+	return nil
+}
+
+func nativeType(xu *xgbutil.XUtil, windowID uint32, text string, delayMs int64) error {
+	if windowID != 0 {
+		_ = ewmh.ActiveWindowReq(xu, xproto.Window(windowID))
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	c := xu.Conn()
+	if err := xtest.Init(c); err != nil {
+		return fmt.Errorf("xtest init failed: %w", err)
+	}
+
+	keyMap := keybind.KeyMapGet(xu)
+	if keyMap == nil {
+		return fmt.Errorf("failed to get keyboard mapping")
+	}
+
+	setup := xproto.Setup(c)
+	minKC := setup.MinKeycode
+	maxKC := setup.MaxKeycode
+	per := keyMap.KeysymsPerKeycode
+
+	_, shiftKCs, _ := keybind.ParseString(xu, "Shift_L")
+	var shiftKC byte
+	if len(shiftKCs) > 0 {
+		shiftKC = byte(shiftKCs[0])
+	} else {
+		shiftKC = 50
+	}
+
+	for _, r := range text {
+		sym := xproto.Keysym(r)
+
+		var targetKC byte
+		var col byte
+		found := false
+		for kc := int(minKC); kc <= int(maxKC); kc++ {
+			offset := (kc - int(minKC)) * int(per)
+			for c := 0; c < int(per); c++ {
+				if keyMap.Keysyms[offset+c] == sym {
+					targetKC = byte(kc)
+					col = byte(c)
+					found = true
+					break
+				}
+			}
+			if found {
+				break
+			}
+		}
+
+		if !found {
+			continue
+		}
+
+		needShift := col%2 == 1
+		if needShift {
+			xtest.FakeInput(c, xproto.KeyPress, shiftKC, 0, 0, 0, 0, 0)
+		}
+
+		xtest.FakeInput(c, xproto.KeyPress, targetKC, 0, 0, 0, 0, 0)
+		xtest.FakeInput(c, xproto.KeyRelease, targetKC, 0, 0, 0, 0, 0)
+
+		if needShift {
+			xtest.FakeInput(c, xproto.KeyRelease, shiftKC, 0, 0, 0, 0, 0)
+		}
+
+		if delayMs > 0 {
+			time.Sleep(time.Duration(delayMs) * time.Millisecond)
+		}
+	}
+	return nil
+}
+
+func nativeKey(xu *xgbutil.XUtil, windowID uint32, keysStr string) error {
+	if windowID != 0 {
+		_ = ewmh.ActiveWindowReq(xu, xproto.Window(windowID))
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	c := xu.Conn()
+	if err := xtest.Init(c); err != nil {
+		return fmt.Errorf("xtest init failed: %w", err)
+	}
+
+	norm := normalizeKeyString(keysStr)
+	mods, keycodes, err := keybind.ParseString(xu, norm)
+	if err != nil {
+		return fmt.Errorf("failed to parse key sequence %q: %w", keysStr, err)
+	}
+	if len(keycodes) == 0 {
+		return fmt.Errorf("no keycode found for key sequence %q", keysStr)
+	}
+
+	modMap := []struct {
+		mask uint16
+		name string
+	}{
+		{xproto.ModMaskControl, "Control_L"},
+		{xproto.ModMaskShift, "Shift_L"},
+		{xproto.ModMask1, "Alt_L"},
+		{xproto.ModMask4, "Super_L"},
+	}
+
+	var activeModKeycodes []byte
+	for _, m := range modMap {
+		if mods&m.mask != 0 {
+			_, kcs, err := keybind.ParseString(xu, m.name)
+			if err == nil && len(kcs) > 0 {
+				kc := byte(kcs[0])
+				activeModKeycodes = append(activeModKeycodes, kc)
+				xtest.FakeInput(c, xproto.KeyPress, kc, 0, 0, 0, 0, 0)
+			}
+		}
+	}
+
+	targetKC := byte(keycodes[0])
+	xtest.FakeInput(c, xproto.KeyPress, targetKC, 0, 0, 0, 0, 0)
+	xtest.FakeInput(c, xproto.KeyRelease, targetKC, 0, 0, 0, 0, 0)
+
+	for i := len(activeModKeycodes) - 1; i >= 0; i-- {
+		xtest.FakeInput(c, xproto.KeyRelease, activeModKeycodes[i], 0, 0, 0, 0, 0)
+	}
+
+	return nil
+}
+
+func normalizeKeyString(s string) string {
+	s = strings.ToLower(s)
+	s = strings.ReplaceAll(s, "+", "-")
+	parts := strings.Split(s, "-")
+	for i, part := range parts {
+		switch part {
+		case "ctrl", "control":
+			parts[i] = "control"
+		case "alt":
+			parts[i] = "mod1"
+		case "win", "super":
+			parts[i] = "mod4"
+		case "shift":
+			parts[i] = "shift"
+		}
+	}
+	return strings.Join(parts, "-")
 }
 
 func runWait(step Step, ctx *ExecContext) error {

@@ -3,11 +3,15 @@ package snippet
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/jezek/xgb/xproto"
+	"github.com/jezek/xgb/xtest"
+	"github.com/jezek/xgbutil"
+	"github.com/jezek/xgbutil/keybind"
 	"gopkg.in/yaml.v3"
 
 	"zen-cap/pkg/capture"
@@ -183,8 +187,62 @@ func (m *Manager) Paste(content string) error {
 
 	// Perform auto-paste synchronously with a small delay for OS clipboard sync before process exits
 	time.Sleep(100 * time.Millisecond)
-	cmd := exec.Command("xdotool", "key", "--clearmodifiers", "ctrl+v")
-	_ = cmd.Run()
+
+	xu, err := xgbutil.NewConn()
+	if err != nil {
+		return fmt.Errorf("failed to connect to X server: %w", err)
+	}
+	defer xu.Conn().Close()
+
+	keybind.Initialize(xu)
+	if err := xtest.Init(xu.Conn()); err != nil {
+		return fmt.Errorf("failed to initialize xtest extension: %w", err)
+	}
+
+	norm := normalizeKeyString("ctrl+v")
+	_, keycodes, err := keybind.ParseString(xu, norm)
+	if err != nil || len(keycodes) == 0 {
+		return fmt.Errorf("failed to parse Paste hotkey: %w", err)
+	}
+
+	c := xu.Conn()
+	// Press Ctrl
+	_, kcs, err := keybind.ParseString(xu, "Control_L")
+	var ctrlKC byte
+	if err == nil && len(kcs) > 0 {
+		ctrlKC = byte(kcs[0])
+	} else {
+		ctrlKC = 37 // fallback
+	}
+
+	xtest.FakeInput(c, xproto.KeyPress, ctrlKC, 0, 0, 0, 0, 0)
+
+	// Press and release V
+	vKC := byte(keycodes[0])
+	xtest.FakeInput(c, xproto.KeyPress, vKC, 0, 0, 0, 0, 0)
+	xtest.FakeInput(c, xproto.KeyRelease, vKC, 0, 0, 0, 0, 0)
+
+	// Release Ctrl
+	xtest.FakeInput(c, xproto.KeyRelease, ctrlKC, 0, 0, 0, 0, 0)
 
 	return nil
+}
+
+func normalizeKeyString(s string) string {
+	s = strings.ToLower(s)
+	s = strings.ReplaceAll(s, "+", "-")
+	parts := strings.Split(s, "-")
+	for i, part := range parts {
+		switch part {
+		case "ctrl", "control":
+			parts[i] = "control"
+		case "alt":
+			parts[i] = "mod1"
+		case "win", "super":
+			parts[i] = "mod4"
+		case "shift":
+			parts[i] = "shift"
+		}
+	}
+	return strings.Join(parts, "-")
 }

@@ -4,11 +4,15 @@ import (
 	"fmt"
 	"image"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
+
+	"github.com/jezek/xgb/xproto"
+	"github.com/jezek/xgbutil"
+	"github.com/jezek/xgbutil/ewmh"
+	"github.com/jezek/xgbutil/icccm"
+	"github.com/jezek/xgbutil/keybind"
 
 	"zen-cap/pkg/capture"
 	"zen-cap/pkg/config"
@@ -16,9 +20,16 @@ import (
 
 // RunScript starts the sequential execution of a Script.
 func RunScript(script Script, cfg *config.Config, scriptDir string, abortChan chan struct{}, logger func(string, ...interface{})) error {
+	xu, err := xgbutil.NewConn()
+	if err != nil {
+		return fmt.Errorf("failed to open X connection: %w", err)
+	}
+	defer xu.Conn().Close()
+	keybind.Initialize(xu)
+
 	var WID uint32
 	if script.Window != nil {
-		id, err := ResolveWindow(script.Window)
+		id, err := ResolveWindow(xu, script.Window)
 		if err != nil {
 			logger("[Automation] Warning: %v. Running script in absolute screen space instead.", err)
 		} else {
@@ -28,10 +39,12 @@ func RunScript(script Script, cfg *config.Config, scriptDir string, abortChan ch
 	}
 
 	ctx := &ExecContext{
+		X:         xu,
 		WindowID:  WID,
 		AbortChan: abortChan,
 		Logger:    logger,
 		ScriptDir: scriptDir,
+		Config:    cfg,
 	}
 
 	logger("[Automation] Starting script: %q", script.Name)
@@ -52,38 +65,41 @@ func RunScript(script Script, cfg *config.Config, scriptDir string, abortChan ch
 	return nil
 }
 
-// ResolveWindow finds a matching window ID using xdotool search.
-func ResolveWindow(target *WindowTarget) (uint32, error) {
+// ResolveWindow finds a matching window ID using native X11 window listing.
+func ResolveWindow(xu *xgbutil.XUtil, target *WindowTarget) (uint32, error) {
 	if target == nil {
 		return 0, nil
 	}
-	var args []string
-	if target.Title != "" {
-		args = []string{"search", "--name", target.Title}
-	} else if target.Class != "" {
-		args = []string{"search", "--class", target.Class}
-	} else {
-		return 0, nil
-	}
-
-	cmd := exec.Command("xdotool", args...)
-	out, err := cmd.Output()
+	clientIDs, err := ewmh.ClientListGet(xu)
 	if err != nil {
-		return 0, fmt.Errorf("xdotool search failed: %w", err)
+		tree, err := xproto.QueryTree(xu.Conn(), xu.RootWin()).Reply()
+		if err != nil {
+			return 0, fmt.Errorf("failed to query window tree: %w", err)
+		}
+		clientIDs = tree.Children
 	}
 
-	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-	if len(lines) == 0 || lines[0] == "" {
-		return 0, fmt.Errorf("no window matching %q found", target.Title+target.Class)
+	for _, winID := range clientIDs {
+		if target.Title != "" {
+			title, err := ewmh.WmNameGet(xu, winID)
+			if err != nil || title == "" {
+				title, err = icccm.WmNameGet(xu, winID)
+			}
+			if err == nil && strings.Contains(strings.ToLower(title), strings.ToLower(target.Title)) {
+				return uint32(winID), nil
+			}
+		} else if target.Class != "" {
+			classInfo, err := icccm.WmClassGet(xu, winID)
+			if err == nil && classInfo != nil {
+				if strings.Contains(strings.ToLower(classInfo.Class), strings.ToLower(target.Class)) ||
+					strings.Contains(strings.ToLower(classInfo.Instance), strings.ToLower(target.Class)) {
+					return uint32(winID), nil
+				}
+			}
+		}
 	}
 
-	// Use first matching window ID
-	id, err := strconv.ParseUint(lines[0], 10, 32)
-	if err != nil {
-		return 0, fmt.Errorf("invalid window ID format: %w", err)
-	}
-
-	return uint32(id), nil
+	return 0, fmt.Errorf("no window matching target found")
 }
 
 func executeStepWithControl(step Step, ctx *ExecContext) error {

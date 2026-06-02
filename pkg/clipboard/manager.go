@@ -6,8 +6,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/jezek/xgb/xproto"
+	"github.com/jezek/xgb/xtest"
+	"github.com/jezek/xgbutil"
+	"github.com/jezek/xgbutil/keybind"
 
 	"zen-cap/pkg/capture"
 	"zen-cap/pkg/config"
@@ -234,11 +240,48 @@ func (m *Manager) PasteFromSlot(n int) {
 	go func() {
 		// Small delay to allow the OS to register the new clipboard content
 		time.Sleep(100 * time.Millisecond)
-		cmd := exec.Command("xdotool", "key", "--clearmodifiers", "ctrl+v")
-		if err := cmd.Run(); err != nil {
-			fmt.Printf("[ClipboardManager] Auto-paste via xdotool failed: %v\n", err)
+		if err := nativePasteShortcut(); err != nil {
+			fmt.Printf("[ClipboardManager] Auto-paste via native X11 failed: %v\n", err)
 		}
 	}()
+}
+
+func nativePasteShortcut() error {
+	xu, err := xgbutil.NewConn()
+	if err != nil {
+		return fmt.Errorf("failed to connect to X server: %w", err)
+	}
+	defer xu.Conn().Close()
+
+	keybind.Initialize(xu)
+	if err := xtest.Init(xu.Conn()); err != nil {
+		return fmt.Errorf("failed to initialize xtest: %w", err)
+	}
+
+	norm := strings.ToLower("control-v")
+	_, keycodes, err := keybind.ParseString(xu, norm)
+	if err != nil || len(keycodes) == 0 {
+		return fmt.Errorf("failed to parse ctrl+v: %w", err)
+	}
+
+	c := xu.Conn()
+	_, kcs, err := keybind.ParseString(xu, "Control_L")
+	var ctrlKC byte
+	if err == nil && len(kcs) > 0 {
+		ctrlKC = byte(kcs[0])
+	} else {
+		ctrlKC = 37
+	}
+
+	xtest.FakeInput(c, xproto.KeyPress, ctrlKC, 0, 0, 0, 0, 0)
+
+	vKC := byte(keycodes[0])
+	xtest.FakeInput(c, xproto.KeyPress, vKC, 0, 0, 0, 0, 0)
+	xtest.FakeInput(c, xproto.KeyRelease, vKC, 0, 0, 0, 0, 0)
+
+	xtest.FakeInput(c, xproto.KeyRelease, ctrlKC, 0, 0, 0, 0, 0)
+
+	return nil
 }
 
 // CycleTransform cycles to the next transform rule.

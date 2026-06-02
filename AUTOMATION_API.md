@@ -24,7 +24,7 @@ steps:
 ```
 
 ### `window` Configuration
-If a `window` block is provided, Zen-Cap uses `xdotool` search queries to resolve the active `WindowID`:
+If a `window` block is provided, Zen-Cap queries window properties via EWMH/ICCCM APIs to resolve the active `WindowID`:
 - **`title`**: String to match against window title.
 - **`class`**: String to match against window class name.
 - Zen-Cap runs all input actions (`click`, `type`, `key`, etc.) directly targeting the resolved `WindowID` without stealing mouse focus or switching active desktops.

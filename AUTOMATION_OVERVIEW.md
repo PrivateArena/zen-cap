@@ -20,7 +20,7 @@ All source code resides inside `pkg/automation/` and is fully self-contained:
 
 - **`engine.go`**
   - The core orchestrator.
-  - Spawns the execution stack (`RunScript`), manages contexts, and translates relative windows using X11 `xdotool` query maps.
+  - Spawns the execution stack (`RunScript`), manages contexts, and translates relative windows using native X11 window listing (EWMH/ICCCM).
 
 - **`actions.go`**
   - Implements the dispatch engine.
@@ -50,7 +50,7 @@ graph TD
     Window -->|Keyboard/Mouse Events| Selection{User Selects Script}
     Selection -->|Escape/RightClick| Abort[Close & Ungrab]
     Selection -->|Enter/LeftClick| Execute[RunScript]
-    Execute -->|xdotool search| TargetWin[Resolve Window ID]
+    Execute -->|EWMH/ICCCM query| TargetWin[Resolve Window ID]
     Execute -->|Sequential Dispatch| Steps[ExecuteStep]
     Steps -->|Actions| Simulator[Focusless Actions Simulation]
 ```
@@ -60,13 +60,13 @@ graph TD
 ## 3. Focusless Execution Design
 
 To automate tasks while you work, Zen-Cap avoids taking cursor or desktop focus:
-1. **Window Queries**: If `WindowTarget` is defined, `xdotool search --onlyvisible --class/--name` resolves the OS-level `WindowID`.
+1. **Window Queries**: If `WindowTarget` is defined, Zen-Cap queries window properties via EWMH/ICCCM APIs to resolve the OS-level `WindowID`.
 2. **Context Captures**: Screenshot routines capture frame buffers restricted to the coordinates of that `WindowID` natively.
 3. **Vision Calculations**: Pixel and OCR matching results return coordinates relative to the target window frame.
 4. **Input Simulation**:
-   - `xdotool windowactivate --sync` is bypassed.
-   - Mouse inputs target the window frame via: `xdotool click --window <id> --x <x> --y <y> <button>`.
-   - Keyboard inputs target the input pipeline via: `xdotool type --window <id> "<text>"`.
+   - Window activation is bypassed for background tasks, or triggered via `_NET_ACTIVE_WINDOW` requests.
+   - Mouse inputs target the window frame by resolving absolute screen coordinates using the window's geometry, followed by XTest pointer and button simulation.
+   - Keyboard inputs are targeted using XTest key press and release event sequences.
 
 ---
 
