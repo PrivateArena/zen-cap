@@ -15,33 +15,56 @@ import (
 	"github.com/jezek/xgbutil/icccm"
 	"github.com/jezek/xgbutil/keybind"
 
-	"zen-cap/pkg/capture"
+
 	"zen-cap/pkg/config"
+	"zen-cap/pkg/target"
 )
 
 // RunScript starts the sequential execution of a Script.
 func RunScript(script Script, cfg *config.Config, scriptDir string, abortChan chan struct{}, logger func(string, ...interface{})) error {
-	xu, err := xgbutil.NewConn()
-	if err != nil {
-		return fmt.Errorf("failed to open X connection: %w", err)
-	}
-	defer xu.Conn().Close()
-	keybind.Initialize(xu)
-
-	var WID uint32
-	if script.Window != nil {
-		id, err := ResolveWindow(xu, script.Window)
-		if err != nil {
-			logger("[Automation] Warning: %v. Running script in absolute screen space instead.", err)
-		} else {
-			WID = id
-			logger("[Automation] Target window resolved: WID=%d", WID)
+	// Build target from script config. Defaults to X11 when script.Target is nil.
+	tCfg := target.Config{}
+	if script.Target != nil {
+		tCfg = target.Config{
+			Type:       script.Target.Type,
+			Display:    script.Target.Display,
+			Host:       script.Target.Host,
+			Port:       script.Target.Port,
+			Password:   script.Target.Password,
+			Serial:     script.Target.Serial,
+			WDAHost:    script.Target.WDAHost,
+			VFBDisplay: script.Target.VFBDisplay,
+			VFBSerial:  script.Target.VFBSerial,
+			VFBWidth:   script.Target.VFBWidth,
+			VFBHeight:  script.Target.VFBHeight,
+			Scale:      script.Target.Scale,
 		}
 	}
 
+	// Resolve window for X11 targets only.
+	var WID uint32
+	if (tCfg.Type == "" || tCfg.Type == "x11") && script.Window != nil {
+		xu, err := xgbutil.NewConn()
+		if err == nil {
+			keybind.Initialize(xu)
+			if id, err := ResolveWindow(xu, script.Window); err != nil {
+				logger("[Automation] Warning: %v. Running in absolute screen space.", err)
+			} else {
+				WID = id
+				logger("[Automation] Target window resolved: WID=%d", WID)
+			}
+			xu.Conn().Close()
+		}
+	}
+
+	tgt, err := target.New(tCfg, WID)
+	if err != nil {
+		return fmt.Errorf("failed to create automation target: %w", err)
+	}
+	defer tgt.Close()
+
 	ctx := &ExecContext{
-		X:         xu,
-		WindowID:  WID,
+		Target:    tgt,
 		AbortChan: abortChan,
 		Logger:    logger,
 		ScriptDir: scriptDir,
@@ -248,11 +271,7 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 				if confidence <= 0 {
 					confidence = 0.90
 				}
-				capCfg := capture.CaptureConfig{
-					Display:  ":0.0",
-					WindowID: ctx.WindowID,
-				}
-				haystack, err := capture.CaptureScreen(capCfg)
+				haystack, err := ctx.Target.Screenshot()
 				if err == nil {
 					offsetX, offsetY := 0, 0
 					if interpolatedStep.Region != "" {
@@ -282,11 +301,7 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 					ocrLang = interpolatedStep.Language
 				}
 				ocrModel := interpolatedStep.Model
-				capCfg := capture.CaptureConfig{
-					Display:  ":0.0",
-					WindowID: ctx.WindowID,
-				}
-				haystack, err := capture.CaptureScreen(capCfg)
+				haystack, err := ctx.Target.Screenshot()
 				if err == nil {
 					offsetX, offsetY := 0, 0
 					if interpolatedStep.Region != "" {
@@ -357,11 +372,7 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 			return fmt.Errorf("invalid or missing pixel coordinate for if_pixel: x=%v, y=%v", interpolatedStep.X, interpolatedStep.Y)
 		}
 
-		capCfg := capture.CaptureConfig{
-			Display:  ":0.0",
-			WindowID: ctx.WindowID,
-		}
-		img, err := capture.CaptureScreen(capCfg)
+		img, err := ctx.Target.Screenshot()
 		if err != nil {
 			return fmt.Errorf("failed to capture screen for if_pixel: %w", err)
 		}
@@ -435,8 +446,11 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 			default:
 			}
 
-			_, err := ResolveWindow(ctx.X, interpolatedStep.Window)
-			exists := (err == nil)
+			var exists bool
+			if x11 := ctx.x11ctx(); x11 != nil {
+				_, err := ResolveWindow(x11.XUtil(), interpolatedStep.Window)
+				exists = (err == nil)
+			}
 
 			if checkAbsent {
 				if !exists {

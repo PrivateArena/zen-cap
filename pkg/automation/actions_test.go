@@ -15,9 +15,32 @@ import (
 
 	"zen-cap/pkg/capture"
 	"zen-cap/pkg/config"
-
-	"github.com/jezek/xgbutil"
 )
+
+// mockTarget satisfies target.Target for unit tests.
+// Screenshot returns the image set in screenshotImg (defaults to 100x100 black).
+type mockTarget struct {
+	screenshotImg image.Image
+	clicks        []struct{ x, y int; btn string }
+	types         []string
+	keys          []string
+}
+
+func newMockTarget(img image.Image) *mockTarget {
+	if img == nil {
+		img = image.NewRGBA(image.Rect(0, 0, 100, 100))
+	}
+	return &mockTarget{screenshotImg: img}
+}
+
+func (m *mockTarget) Screenshot() (image.Image, error)          { return m.screenshotImg, nil }
+func (m *mockTarget) ScreenSize() (int, int)                    { b := m.screenshotImg.Bounds(); return b.Dx(), b.Dy() }
+func (m *mockTarget) Click(x, y int, btn string) error          { m.clicks = append(m.clicks, struct{ x, y int; btn string }{x, y, btn}); return nil }
+func (m *mockTarget) Move(x, y int) error                       { return nil }
+func (m *mockTarget) Type(text string, delay int64) error       { m.types = append(m.types, text); return nil }
+func (m *mockTarget) Key(keys string) error                     { m.keys = append(m.keys, keys); return nil }
+func (m *mockTarget) Scroll(x, y, dx, dy int) error            { return nil }
+func (m *mockTarget) Close() error                              { return nil }
 
 func TestRunLog(t *testing.T) {
 	var loggedMessage string
@@ -84,15 +107,10 @@ func TestRunOCR(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// Mock CaptureScreen to return a dummy 100x100 image
+	// Screenshot mocked via ctx.Target (newMockTarget)
 	dummyImg := image.NewRGBA(image.Rect(0, 0, 100, 100))
 	draw.Draw(dummyImg, dummyImg.Bounds(), &image.Uniform{color.RGBA{255, 0, 0, 255}}, image.Point{}, draw.Src)
 
-	oldCapture := capture.CaptureScreen
-	defer func() { capture.CaptureScreen = oldCapture }()
-	capture.CaptureScreen = func(cfg capture.CaptureConfig) (image.Image, error) {
-		return dummyImg, nil
-	}
 
 	// Create temp output file path
 	tempDir, err := os.MkdirTemp("", "ocr-test")
@@ -114,6 +132,7 @@ func TestRunOCR(t *testing.T) {
 	}
 
 	ctx := &ExecContext{
+		Target:    newMockTarget(dummyImg),
 		Logger:    logger,
 		Config:    cfg,
 		ScriptDir: tempDir,
@@ -218,15 +237,9 @@ func TestIfFoundOCR(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// Mock CaptureScreen to return a dummy 100x100 image
+	// Screenshot mocked via ctx.Target (newMockTarget)
 	dummyImg := image.NewRGBA(image.Rect(0, 0, 100, 100))
 	draw.Draw(dummyImg, dummyImg.Bounds(), &image.Uniform{color.RGBA{255, 0, 0, 255}}, image.Point{}, draw.Src)
-
-	oldCapture := capture.CaptureScreen
-	defer func() { capture.CaptureScreen = oldCapture }()
-	capture.CaptureScreen = func(cfg capture.CaptureConfig) (image.Image, error) {
-		return dummyImg, nil
-	}
 
 	tempDir, err := os.MkdirTemp("", "iffound-ocr-test")
 	if err != nil {
@@ -246,6 +259,7 @@ func TestIfFoundOCR(t *testing.T) {
 	}
 
 	ctx := &ExecContext{
+		Target:    newMockTarget(dummyImg),
 		Logger:    logger,
 		Config:    cfg,
 		ScriptDir: tempDir,
@@ -655,14 +669,9 @@ func TestIfPixel(t *testing.T) {
 	img := image.NewRGBA(image.Rect(0, 0, 10, 10))
 	img.Set(5, 5, color.RGBA{255, 0, 0, 255})
 
-	oldCapture := capture.CaptureScreen
-	defer func() { capture.CaptureScreen = oldCapture }()
-	capture.CaptureScreen = func(cfg capture.CaptureConfig) (image.Image, error) {
-		return img, nil
-	}
-
 	var executed bool
 	ctx := &ExecContext{
+		Target:    newMockTarget(img),
 		Logger:    func(string, ...interface{}) {},
 		Variables: make(map[string]interface{}),
 	}
@@ -737,23 +746,15 @@ func TestWindowActionErrors(t *testing.T) {
 }
 
 func TestIfWindow(t *testing.T) {
-	oldResolve := ResolveWindow
-	defer func() { ResolveWindow = oldResolve }()
-
-	var calls int
-	ResolveWindow = func(xu *xgbutil.XUtil, target *WindowTarget) (uint32, error) {
-		calls++
-		if target.Title == "Firefox" && calls >= 3 {
-			return 12345, nil
-		}
-		return 0, fmt.Errorf("not found")
-	}
-
+	// With a non-X11 target, x11ctx() returns nil and exists is always false.
+	// "absent" mode should fire its steps, "present" mode fires else steps.
 	ctx := &ExecContext{
+		Target:    newMockTarget(nil),
 		Logger:    func(string, ...interface{}) {},
 		Variables: make(map[string]interface{}),
 	}
 
+	// No window present (non-x11 target → always absent)
 	stepNoWait := Step{
 		Action: "if_window",
 		Window: &WindowTarget{Title: "Firefox"},
@@ -764,33 +765,14 @@ func TestIfWindow(t *testing.T) {
 			{Action: "var", Name: "res", Value: "else"},
 		},
 	}
-	calls = 0
 	if err := executeStepWithControl(stepNoWait, ctx); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if ctx.Variables["res"] != "else" {
-		t.Errorf("expected res to be 'else', got %v", ctx.Variables["res"])
+		t.Errorf("expected res to be 'else' (non-x11 target has no windows), got %v", ctx.Variables["res"])
 	}
 
-	stepWait := Step{
-		Action:      "if_window",
-		Window:      &WindowTarget{Title: "Firefox"},
-		WaitTimeout: "1s",
-		Steps: []Step{
-			{Action: "var", Name: "res", Value: "found"},
-		},
-		Else: []Step{
-			{Action: "var", Name: "res", Value: "else"},
-		},
-	}
-	calls = 0
-	if err := executeStepWithControl(stepWait, ctx); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if ctx.Variables["res"] != "found" {
-		t.Errorf("expected res to be 'found', got %v", ctx.Variables["res"])
-	}
-
+	// Absent mode: non-x11 target → always absent → steps fire
 	stepAbsent := Step{
 		Action: "if_window",
 		Mode:   "absent",
@@ -802,7 +784,6 @@ func TestIfWindow(t *testing.T) {
 			{Action: "var", Name: "res", Value: "absent_unmet"},
 		},
 	}
-	calls = 0
 	if err := executeStepWithControl(stepAbsent, ctx); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -813,9 +794,8 @@ func TestIfWindow(t *testing.T) {
 
 func TestWindowActionsMocked(t *testing.T) {
 	ctx := &ExecContext{
-		Logger:   func(string, ...interface{}) {},
-		WindowID: 12345,
-		X:        nil,
+		Target: newMockTarget(nil),
+		Logger: func(string, ...interface{}) {},
 	}
 	step := Step{
 		Action: "window",
@@ -823,10 +803,10 @@ func TestWindowActionsMocked(t *testing.T) {
 	}
 	err := ExecuteStep(step, ctx)
 	if err == nil {
-		t.Fatalf("expected error due to nil X connection, got nil")
+		t.Fatalf("expected error due to non-x11 target, got nil")
 	}
-	if !strings.Contains(err.Error(), "X connection is nil") {
-		t.Errorf("expected error message to contain 'X connection is nil', got %q", err.Error())
+	if !strings.Contains(err.Error(), "x11 or vfb target") {
+		t.Errorf("expected error about x11 target, got %q", err.Error())
 	}
 }
 

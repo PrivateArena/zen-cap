@@ -50,7 +50,26 @@ type Step struct {
 
 type Script struct {
 	Name      string            `json:"name" yaml:"name"`
+	// Target selects the backend (x11/vnc/adb/wda/vfb). Omit for default X11.
+	Target    *TargetConfig     `json:"target,omitempty" yaml:"target,omitempty"`
 	Window    *WindowTarget     `json:"window,omitempty" yaml:"window,omitempty"`
 	Steps     []Step            `json:"steps" yaml:"steps"`
 	Functions map[string][]Step `json:"functions,omitempty" yaml:"functions,omitempty"`
+}
+
+// TargetConfig is the YAML-level mirror of target.Config.
+// Defined here to avoid an import cycle: automation → target → capture.
+type TargetConfig struct {
+	Type       string  `yaml:"type,omitempty"        json:"type,omitempty"`
+	Display    string  `yaml:"display,omitempty"     json:"display,omitempty"`
+	Host       string  `yaml:"host,omitempty"        json:"host,omitempty"`
+	Port       int     `yaml:"port,omitempty"        json:"port,omitempty"`
+	Password   string  `yaml:"password,omitempty"    json:"password,omitempty"`
+	Serial     string  `yaml:"serial,omitempty"      json:"serial,omitempty"`
+	WDAHost    string  `yaml:"wda_host,omitempty"    json:"wda_host,omitempty"`
+	VFBDisplay string  `yaml:"vfb_display,omitempty" json:"vfb_display,omitempty"`
+	VFBSerial  string  `yaml:"vfb_serial,omitempty"  json:"vfb_serial,omitempty"`
+	VFBWidth   int     `yaml:"vfb_width,omitempty"   json:"vfb_width,omitempty"`
+	VFBHeight  int     `yaml:"vfb_height,omitempty"  json:"vfb_height,omitempty"`
+	Scale      float64 `yaml:"scale,omitempty"       json:"scale,omitempty"`
 }

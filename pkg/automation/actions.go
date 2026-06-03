@@ -8,24 +8,20 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/jezek/xgb/xproto"
-	"github.com/jezek/xgb/xtest"
-	"github.com/jezek/xgbutil"
 	"github.com/jezek/xgbutil/ewmh"
-	"github.com/jezek/xgbutil/keybind"
 	"github.com/jezek/xgbutil/xwindow"
 
 	"zen-cap/pkg/capture"
 	"zen-cap/pkg/config"
+	"zen-cap/pkg/target"
 )
 
 type ExecContext struct {
-	X          *xgbutil.XUtil
-	WindowID   uint32
+	Target     target.Target
 	AbortChan  chan struct{}
 	Logger     func(string, ...interface{})
 	ScriptDir  string
@@ -35,6 +31,18 @@ type ExecContext struct {
 
 	Variables  map[string]interface{}
 	Functions  map[string][]Step
+}
+
+// x11ctx returns the underlying X11Target if the current target is X11-based,
+// otherwise returns nil. Used for X11-specific operations (window management).
+func (ctx *ExecContext) x11ctx() *target.X11Target {
+	switch t := ctx.Target.(type) {
+	case *target.X11Target:
+		return t
+	case *target.VFBTarget:
+		return t.X11()
+	}
+	return nil
 }
 
 func ExecuteStep(step Step, ctx *ExecContext) error {
@@ -89,21 +97,8 @@ func runClick(step Step, ctx *ExecContext) error {
 		x = ctx.LastFoundX
 		y = ctx.LastFoundY
 	}
-
-	ctx.Logger("[Automation] Click: x=%d, y=%d, button=%s (window=%d)", x, y, step.Button, ctx.WindowID)
-
-	xu := ctx.X
-	if xu == nil {
-		var err error
-		xu, err = xgbutil.NewConn()
-		if err != nil {
-			return fmt.Errorf("failed to open X connection: %w", err)
-		}
-		defer xu.Conn().Close()
-		keybind.Initialize(xu)
-	}
-
-	return nativeClick(xu, ctx.WindowID, step.Button, x, y)
+	ctx.Logger("[Automation] Click: x=%d, y=%d, button=%s", x, y, step.Button)
+	return ctx.Target.Click(x, y, step.Button)
 }
 
 func runMove(step Step, ctx *ExecContext) error {
@@ -113,21 +108,8 @@ func runMove(step Step, ctx *ExecContext) error {
 		x = ctx.LastFoundX
 		y = ctx.LastFoundY
 	}
-
-	ctx.Logger("[Automation] Move: x=%d, y=%d, relative=%v (window=%d)", x, y, step.Relative, ctx.WindowID)
-
-	xu := ctx.X
-	if xu == nil {
-		var err error
-		xu, err = xgbutil.NewConn()
-		if err != nil {
-			return fmt.Errorf("failed to open X connection: %w", err)
-		}
-		defer xu.Conn().Close()
-		keybind.Initialize(xu)
-	}
-
-	return nativeMove(xu, ctx.WindowID, x, y, step.Relative)
+	ctx.Logger("[Automation] Move: x=%d, y=%d", x, y)
+	return ctx.Target.Move(x, y)
 }
 
 func runType(step Step, ctx *ExecContext) error {
@@ -137,245 +119,16 @@ func runType(step Step, ctx *ExecContext) error {
 			delayMs = d.Milliseconds()
 		}
 	}
-
-	ctx.Logger("[Automation] Type: %q (window=%d, delay=%dms)", step.Text, ctx.WindowID, delayMs)
-
-	xu := ctx.X
-	if xu == nil {
-		var err error
-		xu, err = xgbutil.NewConn()
-		if err != nil {
-			return fmt.Errorf("failed to open X connection: %w", err)
-		}
-		defer xu.Conn().Close()
-		keybind.Initialize(xu)
-	}
-
-	return nativeType(xu, ctx.WindowID, step.Text, delayMs)
+	ctx.Logger("[Automation] Type: %q (delay=%dms)", step.Text, delayMs)
+	return ctx.Target.Type(step.Text, delayMs)
 }
 
 func runKey(step Step, ctx *ExecContext) error {
-	ctx.Logger("[Automation] Key: %q (window=%d)", step.Keys, ctx.WindowID)
-
-	xu := ctx.X
-	if xu == nil {
-		var err error
-		xu, err = xgbutil.NewConn()
-		if err != nil {
-			return fmt.Errorf("failed to open X connection: %w", err)
-		}
-		defer xu.Conn().Close()
-		keybind.Initialize(xu)
-	}
-
-	return nativeKey(xu, ctx.WindowID, step.Keys)
+	ctx.Logger("[Automation] Key: %q", step.Keys)
+	return ctx.Target.Key(step.Keys)
 }
 
-func nativeClick(xu *xgbutil.XUtil, windowID uint32, button string, x, y int) error {
-	c := xu.Conn()
-	if err := xtest.Init(c); err != nil {
-		return fmt.Errorf("xtest init failed: %w", err)
-	}
 
-	targetX, targetY := x, y
-	if windowID != 0 {
-		geom, err := xwindow.New(xu, xproto.Window(windowID)).Geometry()
-		if err == nil {
-			targetX = geom.X() + x
-			targetY = geom.Y() + y
-		}
-	}
-
-	// Move mouse
-	xtest.FakeInput(c, xproto.MotionNotify, 0, 0, 0, int16(targetX), int16(targetY), 0)
-
-	var btnDetail byte = 1
-	switch strings.ToLower(button) {
-	case "left":
-		btnDetail = 1
-	case "middle":
-		btnDetail = 2
-	case "right":
-		btnDetail = 3
-	default:
-		if val, err := strconv.Atoi(button); err == nil {
-			btnDetail = byte(val)
-		}
-	}
-
-	xtest.FakeInput(c, xproto.ButtonPress, btnDetail, 0, 0, 0, 0, 0)
-	xtest.FakeInput(c, xproto.ButtonRelease, btnDetail, 0, 0, 0, 0, 0)
-	return nil
-}
-
-func nativeMove(xu *xgbutil.XUtil, windowID uint32, x, y int, relative bool) error {
-	c := xu.Conn()
-	if err := xtest.Init(c); err != nil {
-		return fmt.Errorf("xtest init failed: %w", err)
-	}
-
-	if windowID != 0 {
-		geom, err := xwindow.New(xu, xproto.Window(windowID)).Geometry()
-		if err == nil {
-			x = geom.X() + x
-			y = geom.Y() + y
-		}
-		relative = false
-	}
-
-	var detail byte = 0
-	if relative {
-		detail = 1
-	}
-
-	xtest.FakeInput(c, xproto.MotionNotify, detail, 0, 0, int16(x), int16(y), 0)
-	return nil
-}
-
-func nativeType(xu *xgbutil.XUtil, windowID uint32, text string, delayMs int64) error {
-	if windowID != 0 {
-		_ = ewmh.ActiveWindowReq(xu, xproto.Window(windowID))
-		time.Sleep(100 * time.Millisecond)
-	}
-
-	c := xu.Conn()
-	if err := xtest.Init(c); err != nil {
-		return fmt.Errorf("xtest init failed: %w", err)
-	}
-
-	keyMap := keybind.KeyMapGet(xu)
-	if keyMap == nil {
-		return fmt.Errorf("failed to get keyboard mapping")
-	}
-
-	setup := xproto.Setup(c)
-	minKC := setup.MinKeycode
-	maxKC := setup.MaxKeycode
-	per := keyMap.KeysymsPerKeycode
-
-	_, shiftKCs, _ := keybind.ParseString(xu, "Shift_L")
-	var shiftKC byte
-	if len(shiftKCs) > 0 {
-		shiftKC = byte(shiftKCs[0])
-	} else {
-		shiftKC = 50
-	}
-
-	for _, r := range text {
-		sym := xproto.Keysym(r)
-
-		var targetKC byte
-		var col byte
-		found := false
-		for kc := int(minKC); kc <= int(maxKC); kc++ {
-			offset := (kc - int(minKC)) * int(per)
-			for c := 0; c < int(per); c++ {
-				if keyMap.Keysyms[offset+c] == sym {
-					targetKC = byte(kc)
-					col = byte(c)
-					found = true
-					break
-				}
-			}
-			if found {
-				break
-			}
-		}
-
-		if !found {
-			continue
-		}
-
-		needShift := col%2 == 1
-		if needShift {
-			xtest.FakeInput(c, xproto.KeyPress, shiftKC, 0, 0, 0, 0, 0)
-		}
-
-		xtest.FakeInput(c, xproto.KeyPress, targetKC, 0, 0, 0, 0, 0)
-		xtest.FakeInput(c, xproto.KeyRelease, targetKC, 0, 0, 0, 0, 0)
-
-		if needShift {
-			xtest.FakeInput(c, xproto.KeyRelease, shiftKC, 0, 0, 0, 0, 0)
-		}
-
-		if delayMs > 0 {
-			time.Sleep(time.Duration(delayMs) * time.Millisecond)
-		}
-	}
-	return nil
-}
-
-func nativeKey(xu *xgbutil.XUtil, windowID uint32, keysStr string) error {
-	if windowID != 0 {
-		_ = ewmh.ActiveWindowReq(xu, xproto.Window(windowID))
-		time.Sleep(100 * time.Millisecond)
-	}
-
-	c := xu.Conn()
-	if err := xtest.Init(c); err != nil {
-		return fmt.Errorf("xtest init failed: %w", err)
-	}
-
-	norm := normalizeKeyString(keysStr)
-	mods, keycodes, err := keybind.ParseString(xu, norm)
-	if err != nil {
-		return fmt.Errorf("failed to parse key sequence %q: %w", keysStr, err)
-	}
-	if len(keycodes) == 0 {
-		return fmt.Errorf("no keycode found for key sequence %q", keysStr)
-	}
-
-	modMap := []struct {
-		mask uint16
-		name string
-	}{
-		{xproto.ModMaskControl, "Control_L"},
-		{xproto.ModMaskShift, "Shift_L"},
-		{xproto.ModMask1, "Alt_L"},
-		{xproto.ModMask4, "Super_L"},
-	}
-
-	var activeModKeycodes []byte
-	for _, m := range modMap {
-		if mods&m.mask != 0 {
-			_, kcs, err := keybind.ParseString(xu, m.name)
-			if err == nil && len(kcs) > 0 {
-				kc := byte(kcs[0])
-				activeModKeycodes = append(activeModKeycodes, kc)
-				xtest.FakeInput(c, xproto.KeyPress, kc, 0, 0, 0, 0, 0)
-			}
-		}
-	}
-
-	targetKC := byte(keycodes[0])
-	xtest.FakeInput(c, xproto.KeyPress, targetKC, 0, 0, 0, 0, 0)
-	xtest.FakeInput(c, xproto.KeyRelease, targetKC, 0, 0, 0, 0, 0)
-
-	for i := len(activeModKeycodes) - 1; i >= 0; i-- {
-		xtest.FakeInput(c, xproto.KeyRelease, activeModKeycodes[i], 0, 0, 0, 0, 0)
-	}
-
-	return nil
-}
-
-func normalizeKeyString(s string) string {
-	s = strings.ToLower(s)
-	s = strings.ReplaceAll(s, "+", "-")
-	parts := strings.Split(s, "-")
-	for i, part := range parts {
-		switch part {
-		case "ctrl", "control":
-			parts[i] = "control"
-		case "alt":
-			parts[i] = "mod1"
-		case "win", "super":
-			parts[i] = "mod4"
-		case "shift":
-			parts[i] = "shift"
-		}
-	}
-	return strings.Join(parts, "-")
-}
 
 func runWait(step Step, ctx *ExecContext) error {
 	durStr := step.Duration
@@ -508,10 +261,11 @@ func runFile(step Step, ctx *ExecContext) error {
 }
 
 func runWindow(step Step, ctx *ExecContext) error {
-	xu := ctx.X
-	if xu == nil {
-		return fmt.Errorf("X connection is nil")
+	x11 := ctx.x11ctx()
+	if x11 == nil {
+		return fmt.Errorf("window action requires an x11 or vfb target")
 	}
+	xu := x11.XUtil()
 	var winID uint32
 	var err error
 
@@ -521,7 +275,7 @@ func runWindow(step Step, ctx *ExecContext) error {
 			return err
 		}
 	} else {
-		winID = ctx.WindowID
+		winID = x11.WinID()
 	}
 	if winID == 0 {
 		return fmt.Errorf("no target window specified or resolved")
@@ -632,11 +386,7 @@ func runFindImage(step Step, ctx *ExecContext) error {
 		default:
 		}
 
-		capCfg := capture.CaptureConfig{
-			Display:  ":0.0",
-			WindowID: ctx.WindowID,
-		}
-		haystack, err := capture.CaptureScreen(capCfg)
+		haystack, err := ctx.Target.Screenshot()
 		if err != nil {
 			ctx.Logger("[Automation] Error capturing screen for search: %v", err)
 			time.Sleep(500 * time.Millisecond)
@@ -724,11 +474,7 @@ func runFindText(step Step, ctx *ExecContext) error {
 		default:
 		}
 
-		capCfg := capture.CaptureConfig{
-			Display:  ":0.0",
-			WindowID: ctx.WindowID,
-		}
-		haystack, err := capture.CaptureScreen(capCfg)
+		haystack, err := ctx.Target.Screenshot()
 		if err != nil {
 			ctx.Logger("[Automation] Error capturing screen for search: %v", err)
 			time.Sleep(500 * time.Millisecond)
@@ -820,11 +566,7 @@ func runOCR(step Step, ctx *ExecContext) error {
 		default:
 		}
 
-		capCfg := capture.CaptureConfig{
-			Display:  ":0.0",
-			WindowID: ctx.WindowID,
-		}
-		haystack, err := capture.CaptureScreen(capCfg)
+		haystack, err := ctx.Target.Screenshot()
 		if err != nil {
 			ctx.Logger("[Automation] Error capturing screen for OCR: %v", err)
 			time.Sleep(500 * time.Millisecond)

@@ -9,10 +9,14 @@ Zen-Cap features a YAML-driven, focusless desktop automation engine. Scripts are
 Every automation script represents a single YAML document with the following top-level keys:
 
 ```yaml
-# The user-facing name displayed in the X11 GUI selector
+# The user-facing name displayed in the GUI selector
 name: "Daily Game Rewards"
 
-# Optional window targeting for focusless execution
+# Optional: target backend (see Section 2). Omit for default local X11.
+target:
+  type: x11
+
+# Optional window targeting (X11/VFB targets only)
 window:
   title: "MyGame"
   class: "my-game-client"
@@ -32,7 +36,263 @@ If a `window` block is provided, Zen-Cap queries window properties via EWMH/ICCC
 
 ---
 
-## 2. Core Actions
+## 2. Target Backends
+
+The `target:` block selects the I/O backend used for screenshots and input injection. **Omitting the block defaults to `x11`**, preserving full backward compatibility with existing scripts.
+
+All backends expose the same action API — `click`, `move`, `type`, `key`, `scroll`, `find_image`, `if_found`, `if_pixel`, etc. work identically regardless of target.
+
+### Common Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | string | Backend selector: `x11`, `vnc`, `adb`, `wda`, `vfb` |
+| `scale` | float | Coordinate scale factor. Set to `0.5` if your templates were captured at half resolution. Default: `1.0` |
+
+---
+
+### `type: x11` — Local Linux Display (default)
+
+Drives the local X server via XTEST. No cursor theft; all events are injected directly into the target window.
+
+```yaml
+target:
+  type: x11
+  display: ":0"    # Optional. Defaults to $DISPLAY env var.
+```
+
+**Full example — local game automation:**
+```yaml
+name: "Local Reward Clicker"
+target:
+  type: x11
+window:
+  title: "MyGame"
+steps:
+  - action: if_found
+    type: image
+    target: "templates/reward_btn.png"
+    wait_timeout: 10s
+    steps:
+      - action: click
+        x: -1
+        y: -1
+```
+
+---
+
+### `type: vfb` — Virtual Framebuffer (headless Android via scrcpy)
+
+Launches a private Xvfb display and optionally starts scrcpy into it. The Android device window is captured and driven entirely off-screen — **no physical cursor movement, no visible window**.
+
+The display number is auto-selected (`:99`–`:199`); a socket poll ensures Xvfb is ready before scrcpy launches.
+
+```yaml
+target:
+  type: vfb
+  vfb_serial: "192.168.1.10:5555"  # ADB serial of the Android device
+  vfb_width: 540                    # Virtual display width (default: 1024)
+  vfb_height: 1140                  # Virtual display height (default: 768)
+  vfb_display: ":99"               # Optional: force a specific display number
+  scale: 0.5                        # Optional: if templates captured at 270x570
+```
+
+**Full example — headless Android shop automation:**
+```yaml
+name: "Shopee Daily Rewards"
+target:
+  type: vfb
+  vfb_serial: "192.168.1.10:5555"
+  vfb_width: 540
+  vfb_height: 1140
+steps:
+  - action: wait
+    duration: 3s
+  - action: if_found
+    type: image
+    target: "templates/collect_btn.png"
+    confidence: 0.88
+    wait_timeout: 15s
+    steps:
+      - action: click
+        x: -1
+        y: -1
+      - action: notify
+        title: "Rewards"
+        message: "Collected!"
+  - action: loop
+    count: 3
+    steps:
+      - action: key
+        keys: "back"
+      - action: wait
+        duration: 1s
+```
+
+> **Requirements:** `Xvfb` and `scrcpy` must be installed. The ADB daemon must be running (`adb start-server`).
+
+---
+
+### `type: adb` — Android (Direct ADB Wire Protocol)
+
+Speaks directly to the ADB host daemon on `localhost:5037` without requiring the `adb` binary in `PATH`. Screenshots use `screencap -p`; input uses `input tap/swipe/text/keyevent`.
+
+```yaml
+target:
+  type: adb
+  serial: "emulator-5554"   # Optional. Omit for single-device mode.
+  scale: 0.5                # Optional coordinate scale
+```
+
+**Full example — multi-step Android login:**
+```yaml
+name: "Android Auto Login"
+target:
+  type: adb
+  serial: "192.168.1.5:5555"
+  scale: 0.5
+steps:
+  - action: if_found
+    type: image
+    target: "templates/login_field.png"
+    wait_timeout: 8s
+    steps:
+      - action: click
+        x: -1
+        y: -1
+      - action: type
+        text: "myuser@example.com"
+      - action: key
+        keys: "tab"
+      - action: type
+        text: "p@ssw0rd"
+      - action: key
+        keys: "return"
+```
+
+**Supported key names for `action: key`:**
+
+| Name | Android Keycode |
+|------|----------------|
+| `return` / `enter` | `KEYCODE_ENTER` |
+| `backspace` | `KEYCODE_DEL` |
+| `back` | `KEYCODE_BACK` |
+| `home` | `KEYCODE_HOME` |
+| `escape` | `KEYCODE_ESCAPE` |
+| `tab` | `KEYCODE_TAB` |
+| `up/down/left/right` | `KEYCODE_DPAD_*` |
+| `volumeup/volumedown` | `KEYCODE_VOLUME_*` |
+
+> **Requirements:** ADB daemon must be running (`adb start-server`). Network ADB requires the device to be paired (`adb connect <ip>:5555`).
+
+---
+
+### `type: wda` — iOS (WebDriverAgent)
+
+Controls an iOS device via the WebDriverAgent HTTP server running on-device. No jailbreak required. Supports screenshot, tap, type, key, and scroll.
+
+```yaml
+target:
+  type: wda
+  wda_host: "localhost:8100"  # WDA server address (after port forwarding)
+  scale: 1.0
+```
+
+**Setup:** Start WDA on device, then forward the port:
+```bash
+# Using tidevice (recommended, no Xcode required):
+tidevice wdaproxy -B com.facebook.WebDriverAgentRunner.xctrunner --port 8100
+
+# Or with iproxy (from libimobiledevice):
+iproxy 8100 8100
+```
+
+**Full example — iOS app automation:**
+```yaml
+name: "iOS Daily Check-in"
+target:
+  type: wda
+  wda_host: "localhost:8100"
+steps:
+  - action: wait
+    duration: 2s
+  - action: if_found
+    type: image
+    target: "templates/checkin_btn.png"
+    confidence: 0.90
+    wait_timeout: 10s
+    steps:
+      - action: click
+        x: -1
+        y: -1
+      - action: wait
+        duration: 1s
+      - action: key
+        keys: "home"
+```
+
+> **Requirements:** WebDriverAgent must be installed on the device and running. Use `tidevice` or `iproxy` to forward port 8100.
+
+---
+
+### `type: vnc` — Remote Desktop (VNC/RFB)
+
+Connects to any VNC-compatible server (Windows, macOS, Linux, Android via VNC app) using pure Go RFB 3.8 protocol. Supports `None` and `VNCAuth` security. Screenshots use RAW pixel encoding for maximum performance.
+
+```yaml
+target:
+  type: vnc
+  host: "192.168.1.20"
+  port: 5900              # Default VNC port
+  password: "secret"      # Optional. Leave empty for no-auth servers.
+  scale: 1.0
+```
+
+**Full example — remote Windows machine automation:**
+```yaml
+name: "Remote PC Task"
+target:
+  type: vnc
+  host: "192.168.1.20"
+  port: 5900
+  password: "mypassword"
+steps:
+  - action: if_found
+    type: image
+    target: "templates/start_button.png"
+    wait_timeout: 10s
+    steps:
+      - action: click
+        x: -1
+        y: -1
+      - action: wait
+        duration: 500ms
+      - action: type
+        text: "notepad"
+      - action: key
+        keys: "Return"
+```
+
+> **Notes:** The remote display must have VNC enabled. For macOS, enable "Remote Management" or "Screen Sharing" in System Preferences. For Windows, use TigerVNC or RealVNC server. SSL/TLS tunneling (e.g. via SSH port forwarding) is recommended for remote targets.
+
+---
+
+### Scale Factor Reference
+
+The `scale` field handles template resolution mismatches between capture and playback:
+
+| Scenario | `scale` value |
+|----------|--------------|
+| Templates captured at full device res, playing back at full res | `1.0` (default) |
+| Templates captured at 540px width on a 1080px device | `0.5` |
+| Playing back on a 4K display but templates from 1080p | `0.5` |
+
+Internally, coordinates sent to `Click`/`Move` are divided by `scale` before delivery to the device, so your template images remain platform-independent.
+
+---
+
+
+## 3. Core Actions
 
 ### `wait`
 Pauses execution for a specified duration.
@@ -177,7 +437,7 @@ offset_y: 5                  # Optional vertical click offset
 
 ---
 
-## 3. Control Flow & Branching
+## 4. Control Flow & Branching
 
 ### `loop`
 Repeats a sequence of nested steps. Loops can be nested infinitely.
@@ -275,7 +535,7 @@ else:
 
 ---
 
-## 4. Vision Engine Mechanics
+## 5. Vision Engine Mechanics
 
 ### Image Template Matching (`type: image`)
 - Uses optimized **Sum of Absolute Differences (SAD)** pixel calculation.
@@ -291,7 +551,7 @@ else:
 
 ---
 
-## 5. Advanced Scripting Extensions
+## 6. Advanced Scripting Extensions
 
 Zen-Cap includes a powerful declarative scripting layer to handle dynamic state, conditional logic, and reusable code blocks without requiring external scripting dependencies.
 
