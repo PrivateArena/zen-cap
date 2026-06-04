@@ -123,7 +123,7 @@ func handleScreenshot() error {
 	fs := flag.NewFlagSet("screenshot", flag.ExitOnError)
 	output := fs.String("o", "screenshot.png", "Output file path")
 	region := fs.String("r", "", "Region geometry (X,Y,W,H e.g. 100,200,800,600 or 'interactive')")
-	window := fs.String("w", "", "Target window: 'active', 'list', or specific window ID (e.g. 0x40000a)")
+		window := fs.String("w", "", "Target window: 'active', 'list', 'interactive', or specific window ID (e.g. 0x40000a)")
 	screen := fs.String("s", "", "Target screen index: 'list' or screen index (e.g. 0, 1)")
 	disp := fs.String("d", ":0.0", "X11 display")
 	clipMode := fs.String("c", "", "Clipboard mode: 'image', 'path', 'ocr', 'translate', 'none' (overrides config)")
@@ -135,6 +135,7 @@ func handleScreenshot() error {
 	x, y, w, h := -1, -1, 0, 0
 	var windowID uint32
 	interactive := false
+	windowSelect := false
 
 	// List screens
 	if *screen == "list" {
@@ -155,6 +156,9 @@ func handleScreenshot() error {
 			}
 			windowID = win.ID
 			fmt.Printf("Targeting active window: %s (0x%x)\n", win.Title, win.ID)
+		} else if *window == "interactive" {
+			interactive = true
+			windowSelect = true
 		} else {
 			id, err := parseWindowID(*window)
 			if err != nil {
@@ -212,6 +216,7 @@ func handleScreenshot() error {
 		Height:          h,
 		WindowID:        windowID,
 		Interactive:     interactive,
+		WindowSelect:    windowSelect,
 		ClipboardAction: &chosenAction,
 	}
 
@@ -383,6 +388,7 @@ func handleService() error {
 	fmt.Println("Hotkeys:")
 	fmt.Printf("  %-14s -> Fullscreen Screenshot\n", cfg.Hotkeys.Screenshot)
 	fmt.Printf("  %-14s -> Interactive Region Screenshot\n", cfg.Hotkeys.RegionScreenshot)
+	fmt.Printf("  %-14s -> Interactive Window Screenshot\n", cfg.Hotkeys.WindowScreenshot)
 	fmt.Printf("  %-14s -> Toggle Fullscreen Recording\n", cfg.Hotkeys.RecordToggle)
 	fmt.Printf("  %-14s -> Clipboard Manager: Copy (0-9)\n", cfg.Hotkeys.ClipboardCopyMod+"-[0-9]")
 	fmt.Printf("  %-14s -> Clipboard Manager: Paste (0-9)\n", cfg.Hotkeys.ClipboardPasteMod+"-[0-9]")
@@ -400,6 +406,7 @@ func handleService() error {
 
 	screenshotChan := make(chan struct{}, 1)
 	regionScreenshotChan := make(chan struct{}, 1)
+	windowScreenshotChan := make(chan struct{}, 1)
 	recordChan := make(chan struct{}, 1)
 
 	// Initialize X11 connection for global hotkeys
@@ -426,6 +433,15 @@ func handleService() error {
 		default:
 		}
 	}).Connect(X, X.RootWin(), cfg.Hotkeys.RegionScreenshot, true)
+
+	// Register Window Screenshot Hotkey
+	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+		fmt.Println("Hotkey pressed: Triggering interactive window screenshot...")
+		select {
+		case windowScreenshotChan <- struct{}{}:
+		default:
+		}
+	}).Connect(X, X.RootWin(), cfg.Hotkeys.WindowScreenshot, true)
 
 	// Register Recording Hotkey
 	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
@@ -567,6 +583,9 @@ func handleService() error {
 	go func() {
 		for range screenshotChan {
 			go func() {
+				if freshCfg, _, err := config.LoadConfig(); err == nil {
+					cfg = freshCfg
+				}
 				timestamp := time.Now().Format("20060102_150405")
 				filename := filepath.Join(cfg.OutputDir, fmt.Sprintf("screenshot_%s.png", timestamp))
 				fmt.Printf("[%s] Capturing fullscreen to %s...\n", time.Now().Format("15:04:05"), filename)
@@ -602,6 +621,9 @@ func handleService() error {
 	go func() {
 		for range regionScreenshotChan {
 			go func() {
+				if freshCfg, _, err := config.LoadConfig(); err == nil {
+					cfg = freshCfg
+				}
 				timestamp := time.Now().Format("20060102_150405")
 				filename := filepath.Join(cfg.OutputDir, fmt.Sprintf("screenshot_region_%s.png", timestamp))
 				fmt.Printf("[%s] Launching interactive region screenshot to %s...\n", time.Now().Format("15:04:05"), filename)
@@ -627,6 +649,52 @@ func handleService() error {
 					return
 				}
 				fmt.Printf("Region screenshot saved successfully to %s\n", filename)
+
+				action := cfg.ClipboardMode
+				if chosenAction != "" {
+					action = chosenAction
+				}
+				absPath, err := filepath.Abs(filename)
+				if err != nil {
+					absPath = filename
+				}
+				processClipboardAction(img, absPath, action, cfg)
+			}()
+		}
+	}()
+
+	go func() {
+		for range windowScreenshotChan {
+			go func() {
+				if freshCfg, _, err := config.LoadConfig(); err == nil {
+					cfg = freshCfg
+				}
+				timestamp := time.Now().Format("20060102_150405")
+				filename := filepath.Join(cfg.OutputDir, fmt.Sprintf("screenshot_window_%s.png", timestamp))
+				fmt.Printf("[%s] Launching interactive window screenshot to %s...\n", time.Now().Format("15:04:05"), filename)
+
+				// Ensure folder exists
+				_ = os.MkdirAll(cfg.OutputDir, 0755)
+
+				var chosenAction string
+				capCfg := capture.CaptureConfig{
+					Display:         ":0.0",
+					X:               -1,
+					Y:               -1,
+					Interactive:     true,
+					WindowSelect:    true,
+					ClipboardAction: &chosenAction,
+				}
+				img, err := capture.CaptureScreen(capCfg)
+				if err != nil {
+					fmt.Printf("Error capturing window screenshot: %v\n", err)
+					return
+				}
+				if err := capture.SavePNG(img, filename); err != nil {
+					fmt.Printf("Error saving window screenshot: %v\n", err)
+					return
+				}
+				fmt.Printf("Window screenshot saved successfully to %s\n", filename)
 
 				action := cfg.ClipboardMode
 				if chosenAction != "" {

@@ -19,6 +19,7 @@ type CaptureConfig struct {
 	Height          int
 	WindowID        uint32
 	Interactive     bool
+	WindowSelect    bool
 	ClipboardAction *string // Dynamic clipboard action output pointer
 }
 
@@ -46,6 +47,9 @@ func captureScreenImpl(cfg CaptureConfig) (image.Image, error) {
 			return nil, fmt.Errorf("failed to capture base screen for interactive selection: %w", err)
 		}
 
+		if cfg.WindowSelect {
+			return InteractiveSelectWindowExt(fullImg, cfg.ClipboardAction)
+		}
 		return InteractiveSelectRegionExt(fullImg, cfg.ClipboardAction)
 	}
 

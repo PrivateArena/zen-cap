@@ -32,6 +32,7 @@ type Config struct {
 type HotkeysConfig struct {
 	Screenshot         string `json:"screenshot"`
 	RegionScreenshot   string `json:"region_screenshot"`
+	WindowScreenshot   string `json:"window_screenshot"`
 	RecordToggle       string `json:"record_toggle"`
 	ClipboardCopyMod   string `json:"clipboard_copy_mod"`   // e.g. "Control-Shift"
 	ClipboardPasteMod  string `json:"clipboard_paste_mod"`  // e.g. "Mod1-Shift"
@@ -97,6 +98,7 @@ func DefaultConfig() *Config {
 		Hotkeys: HotkeysConfig{
 			Screenshot:         "Control-Shift-s",
 			RegionScreenshot:   "Control-Shift-a",
+			WindowScreenshot:   "Shift-F2",
 			RecordToggle:       "Control-Shift-r",
 			ClipboardCopyMod:   "Control-Shift",
 			ClipboardPasteMod:  "Mod1-Shift",
@@ -122,6 +124,7 @@ func DefaultPortableConfig(binDir string) *Config {
 		Hotkeys: HotkeysConfig{
 			Screenshot:         "Control-Shift-s",
 			RegionScreenshot:   "Control-Shift-a",
+			WindowScreenshot:   "Shift-F2",
 			RecordToggle:       "Control-Shift-r",
 			ClipboardCopyMod:   "Control-Shift",
 			ClipboardPasteMod:  "Mod1-Shift",
@@ -236,6 +239,9 @@ func readConfig(path string, binDir string, isPortable bool) (*Config, error) {
 	}
 	if cfg.Hotkeys.RegionScreenshot == "" {
 		cfg.Hotkeys.RegionScreenshot = defaults.Hotkeys.RegionScreenshot
+	}
+	if cfg.Hotkeys.WindowScreenshot == "" {
+		cfg.Hotkeys.WindowScreenshot = defaults.Hotkeys.WindowScreenshot
 	}
 	if cfg.Hotkeys.RecordToggle == "" {
 		cfg.Hotkeys.RecordToggle = defaults.Hotkeys.RecordToggle

@@ -1,7 +1,11 @@
 {
   "output_dir": "/tmp/zen-cap",
   "hotkeys": {
-    "screenshot": "Control-Shift-s",
+    "screenshot": "Shift-F3",
+    "region_screenshot": "Shift-F1",
+    "window_screenshot": "Shift-F2",
+    "snippet_picker": "Mod1-w",
+    "automation_picker": "Mod1-a",
     "record_toggle": "Control-Shift-r",
     "clipboard_copy_mod": "Control-Shift",
     "clipboard_paste_mod": "Control-Mod1",
