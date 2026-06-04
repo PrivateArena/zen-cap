@@ -4,6 +4,7 @@
     "screenshot": "Shift-F3",
     "region_screenshot": "Shift-F1",
     "window_screenshot": "Shift-F2",
+    "window_class_grab": "Shift-F4",
     "snippet_picker": "Mod1-w",
     "automation_picker": "Mod1-a",
     "record_toggle": "Control-Shift-r",

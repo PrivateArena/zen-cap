@@ -43,6 +43,7 @@ func handleService() error {
 	fmt.Printf("  %-14s -> Fullscreen Screenshot\n", cfg.Hotkeys.Screenshot)
 	fmt.Printf("  %-14s -> Interactive Region Screenshot\n", cfg.Hotkeys.RegionScreenshot)
 	fmt.Printf("  %-14s -> Interactive Window Screenshot\n", cfg.Hotkeys.WindowScreenshot)
+	fmt.Printf("  %-14s -> Grab Window Class to Clipboard\n", cfg.Hotkeys.WindowClassGrab)
 	fmt.Printf("  %-14s -> Toggle Fullscreen Recording\n", cfg.Hotkeys.RecordToggle)
 	fmt.Printf("  %-14s -> Clipboard Manager: Copy (0-9)\n", cfg.Hotkeys.ClipboardCopyMod+"-[0-9]")
 	fmt.Printf("  %-14s -> Clipboard Manager: Paste (0-9)\n", cfg.Hotkeys.ClipboardPasteMod+"-[0-9]")
@@ -61,6 +62,7 @@ func handleService() error {
 	screenshotChan := make(chan struct{}, 1)
 	regionScreenshotChan := make(chan struct{}, 1)
 	windowScreenshotChan := make(chan struct{}, 1)
+	windowClassGrabChan := make(chan struct{}, 1)
 	recordChan := make(chan struct{}, 1)
 
 	// Initialize X11 connection for global hotkeys
@@ -96,6 +98,15 @@ func handleService() error {
 		default:
 		}
 	}).Connect(X, X.RootWin(), cfg.Hotkeys.WindowScreenshot, true)
+
+	// Register Window Class Grab Hotkey
+	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+		fmt.Println("Hotkey pressed: Triggering interactive window class grab...")
+		select {
+		case windowClassGrabChan <- struct{}{}:
+		default:
+		}
+	}).Connect(X, X.RootWin(), cfg.Hotkeys.WindowClassGrab, true)
 
 	// Register Recording Hotkey
 	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
@@ -359,6 +370,30 @@ func handleService() error {
 					absPath = filename
 				}
 				processClipboardAction(img, absPath, action, cfg)
+			}()
+		}
+	}()
+
+	go func() {
+		for range windowClassGrabChan {
+			go func() {
+				if freshCfg, _, err := config.LoadConfig(); err == nil {
+					cfg = freshCfg
+				}
+				fmt.Println("Launching interactive window class grab...")
+
+				wClass, err := capture.InteractiveSelectWindowClass(":0.0")
+				if err != nil {
+					fmt.Printf("Error grabbing window class: %v\n", err)
+					return
+				}
+
+				if err := capture.SpawnClipboardDaemon("--text", wClass); err != nil {
+					fmt.Printf("Error spawning clipboard daemon for window class: %v\n", err)
+				} else {
+					fmt.Printf("[Clipboard] Copied window class to clipboard: %s\n", wClass)
+					sendNotification("Zen-Cap", fmt.Sprintf("Copied window class %q to clipboard!", wClass))
+				}
 			}()
 		}
 	}()

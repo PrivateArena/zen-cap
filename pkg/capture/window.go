@@ -445,3 +445,254 @@ func clampRect(rect image.Rectangle, max image.Rectangle) image.Rectangle {
 	}
 	return r
 }
+
+// InteractiveSelectWindowClass captures the fullscreen, displays it, and
+// lets the user click on a window to select and retrieve its WM_CLASS.
+func InteractiveSelectWindowClass(displayStr string) (string, error) {
+	fullCfg := CaptureConfig{
+		Display:     displayStr,
+		Interactive: false,
+		X:           -1,
+		Y:           -1,
+		Width:       0,
+		Height:      0,
+		WindowID:    0,
+	}
+
+	fullImg, err := CaptureScreen(fullCfg)
+	if err != nil {
+		return "", fmt.Errorf("failed to capture base screen for interactive selection: %w", err)
+	}
+
+	return InteractiveSelectWindowClassExt(fullImg)
+}
+
+// InteractiveSelectWindowClassExt runs the interactive fullscreen window selection
+// loop, overlaying the captured fullscreen image, and returns the selected window's Class.
+func InteractiveSelectWindowClassExt(fullImg image.Image) (string, error) {
+	dm, err := display.NewX11DisplayManager()
+	if err != nil {
+		return "", fmt.Errorf("failed to initialize display manager: %w", err)
+	}
+	defer dm.Close()
+
+	windows, err := dm.GetWindows()
+	if err != nil {
+		return "", fmt.Errorf("failed to retrieve windows: %w", err)
+	}
+
+	xu, err := xgbutil.NewConn()
+	if err != nil {
+		return "", fmt.Errorf("failed to connect to X server: %w", err)
+	}
+	defer xu.Conn().Close()
+
+	screen := xu.Screen()
+	screenWidth := int(screen.WidthInPixels)
+	screenHeight := int(screen.HeightInPixels)
+
+	bounds := fullImg.Bounds()
+	rect := image.Rect(0, 0, screenWidth, screenHeight)
+	rgbaImg := image.NewRGBA(rect)
+	draw.Draw(rgbaImg, rect, fullImg, bounds.Min, draw.Src)
+
+	winID, err := xproto.NewWindowId(xu.Conn())
+	if err != nil {
+		return "", fmt.Errorf("failed to create window ID: %w", err)
+	}
+
+	var overrideRedirect uint32 = 1
+	var eventMask uint32 = xproto.EventMaskButtonPress |
+		xproto.EventMaskButtonRelease |
+		xproto.EventMaskButtonMotion |
+		xproto.EventMaskKeyPress |
+		xproto.EventMaskExposure
+
+	err = xproto.CreateWindowChecked(
+		xu.Conn(),
+		screen.RootDepth,
+		winID,
+		screen.Root,
+		0, 0, uint16(screenWidth), uint16(screenHeight),
+		0,
+		xproto.WindowClassInputOutput,
+		screen.RootVisual,
+		xproto.CwOverrideRedirect|xproto.CwEventMask,
+		[]uint32{overrideRedirect, eventMask},
+	).Check()
+	if err != nil {
+		return "", fmt.Errorf("failed to create fullscreen window: %w", err)
+	}
+
+	TestHookWindowID = uint32(winID)
+
+	windowNeedsDestroy := true
+	defer func() {
+		if windowNeedsDestroy {
+			xproto.DestroyWindow(xu.Conn(), winID)
+		}
+	}()
+
+	gcID, err := xproto.NewGcontextId(xu.Conn())
+	if err != nil {
+		return "", fmt.Errorf("failed to create GC ID: %w", err)
+	}
+	err = xproto.CreateGCChecked(xu.Conn(), gcID, xproto.Drawable(winID), 0, nil).Check()
+	if err != nil {
+		return "", fmt.Errorf("failed to create GC: %w", err)
+	}
+
+	bgPixmapID, err := xproto.NewPixmapId(xu.Conn())
+	if err != nil {
+		return "", fmt.Errorf("failed to create background pixmap ID: %w", err)
+	}
+	err = xproto.CreatePixmapChecked(xu.Conn(), screen.RootDepth, bgPixmapID, xproto.Drawable(winID), uint16(screenWidth), uint16(screenHeight)).Check()
+	if err != nil {
+		return "", fmt.Errorf("failed to create background pixmap: %w", err)
+	}
+	defer xproto.FreePixmap(xu.Conn(), bgPixmapID)
+
+	bufPixmapID, err := xproto.NewPixmapId(xu.Conn())
+	if err != nil {
+		return "", fmt.Errorf("failed to create buffer pixmap ID: %w", err)
+	}
+	err = xproto.CreatePixmapChecked(xu.Conn(), screen.RootDepth, bufPixmapID, xproto.Drawable(winID), uint16(screenWidth), uint16(screenHeight)).Check()
+	if err != nil {
+		return "", fmt.Errorf("failed to create buffer pixmap: %w", err)
+	}
+	defer xproto.FreePixmap(xu.Conn(), bufPixmapID)
+
+	bgraData := imageToBGRA(rgbaImg)
+	err = uploadImageChunked(xu, xproto.Drawable(bgPixmapID), gcID, screen.RootDepth, screenWidth, screenHeight, bgraData)
+	if err != nil {
+		return "", fmt.Errorf("failed to upload background image: %w", err)
+	}
+
+	cyanGCID, err := xproto.NewGcontextId(xu.Conn())
+	if err != nil {
+		return "", fmt.Errorf("failed to create cyan GC ID: %w", err)
+	}
+	var fgColor uint32 = 0x00f0ff
+	var lineWidth uint32 = 3
+	err = xproto.CreateGCChecked(xu.Conn(), cyanGCID, xproto.Drawable(winID), xproto.GcForeground|xproto.GcLineWidth, []uint32{fgColor, lineWidth}).Check()
+	if err != nil {
+		return "", fmt.Errorf("failed to create cyan GC: %w", err)
+	}
+	defer xproto.FreeGC(xu.Conn(), cyanGCID)
+
+	overlayGCID, err := xproto.NewGcontextId(xu.Conn())
+	if err != nil {
+		return "", fmt.Errorf("failed to create overlay GC ID: %w", err)
+	}
+	stipplePixmapID, err := xproto.NewPixmapId(xu.Conn())
+	if err != nil {
+		return "", fmt.Errorf("failed to create stipple pixmap ID: %w", err)
+	}
+	err = xproto.CreatePixmapChecked(xu.Conn(), 1, stipplePixmapID, xproto.Drawable(winID), 2, 2).Check()
+	if err != nil {
+		return "", fmt.Errorf("failed to create stipple pixmap: %w", err)
+	}
+	defer xproto.FreePixmap(xu.Conn(), stipplePixmapID)
+
+	bitmapGCID, err := xproto.NewGcontextId(xu.Conn())
+	if err != nil {
+		return "", fmt.Errorf("failed to create bitmap GC ID: %w", err)
+	}
+	err = xproto.CreateGCChecked(xu.Conn(), bitmapGCID, xproto.Drawable(stipplePixmapID), 0, nil).Check()
+	if err != nil {
+		return "", fmt.Errorf("failed to create bitmap GC: %w", err)
+	}
+	defer xproto.FreeGC(xu.Conn(), bitmapGCID)
+
+	xproto.ChangeGC(xu.Conn(), bitmapGCID, xproto.GcForeground, []uint32{1})
+	xproto.PolyPoint(xu.Conn(), xproto.CoordModeOrigin, xproto.Drawable(stipplePixmapID), bitmapGCID, []xproto.Point{{X: 0, Y: 0}, {X: 1, Y: 1}})
+	xproto.ChangeGC(xu.Conn(), bitmapGCID, xproto.GcForeground, []uint32{0})
+	xproto.PolyPoint(xu.Conn(), xproto.CoordModeOrigin, xproto.Drawable(stipplePixmapID), bitmapGCID, []xproto.Point{{X: 1, Y: 0}, {X: 0, Y: 1}})
+
+	err = xproto.CreateGCChecked(xu.Conn(), overlayGCID, xproto.Drawable(winID), xproto.GcForeground|xproto.GcFillStyle|xproto.GcStipple, []uint32{0x000000, uint32(xproto.FillStyleStippled), uint32(stipplePixmapID)}).Check()
+	if err != nil {
+		return "", fmt.Errorf("failed to create overlay GC: %w", err)
+	}
+	defer xproto.FreeGC(xu.Conn(), overlayGCID)
+
+	err = xproto.MapWindowChecked(xu.Conn(), winID).Check()
+	if err != nil {
+		return "", fmt.Errorf("failed to map window: %w", err)
+	}
+
+	pointerGrab, err := xproto.GrabPointer(
+		xu.Conn(),
+		false,
+		winID,
+		uint16(xproto.EventMaskButtonPress|xproto.EventMaskButtonRelease|xproto.EventMaskButtonMotion),
+		xproto.GrabModeAsync,
+		xproto.GrabModeAsync,
+		xproto.WindowNone,
+		xproto.CursorNone,
+		xproto.TimeCurrentTime,
+	).Reply()
+	if err == nil && pointerGrab.Status == xproto.GrabStatusSuccess {
+		defer xproto.UngrabPointer(xu.Conn(), xproto.TimeCurrentTime)
+	}
+
+	keyboardGrab, err := xproto.GrabKeyboard(xu.Conn(), false, winID, xproto.TimeCurrentTime, xproto.GrabModeAsync, xproto.GrabModeAsync).Reply()
+	if err == nil && keyboardGrab.Status == xproto.GrabStatusSuccess {
+		defer xproto.UngrabKeyboard(xu.Conn(), xproto.TimeCurrentTime)
+	}
+
+	keybind.Initialize(xu)
+
+	state := &windowState{
+		xu:           xu,
+		winID:        winID,
+		gcID:         gcID,
+		bgPixmapID:   bgPixmapID,
+		bufPixmapID:  bufPixmapID,
+		cyanGCID:     cyanGCID,
+		overlayGCID:  overlayGCID,
+		screenWidth:  screenWidth,
+		screenHeight: screenHeight,
+		screen:       screen,
+		rgbaImg:      rgbaImg,
+		windows:      windows,
+		hoveredIdx:   -1,
+	}
+
+	xevent.ButtonPressFun(state.handleButtonPress).Connect(xu, winID)
+	xevent.MotionNotifyFun(state.handleMotionNotify).Connect(xu, winID)
+	xevent.KeyPressFun(state.handleKeyPress).Connect(xu, winID)
+	xevent.ExposeFun(func(X *xgbutil.XUtil, ev xevent.ExposeEvent) {
+		state.redraw()
+	}).Connect(xu, winID)
+
+	// Extra safety abort binding
+	keybind.KeyPressFun(func(X *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+		state.aborted = true
+		xevent.Quit(xu)
+	}).Connect(xu, winID, "Control-Shift-x", true)
+
+	keybind.KeyPressFun(func(X *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+		state.aborted = true
+		xevent.Quit(xu)
+	}).Connect(xu, winID, "Control-Shift-X", true)
+
+	state.redraw()
+	xevent.Main(xu)
+
+	windowNeedsDestroy = false
+	xproto.DestroyWindow(xu.Conn(), winID)
+
+	if state.aborted {
+		return "", fmt.Errorf("window class selection aborted by user")
+	}
+
+	if !state.selected {
+		return "", fmt.Errorf("no window was selected")
+	}
+
+	if state.hoveredIdx == -1 {
+		return "", fmt.Errorf("no window was hovered")
+	}
+
+	return state.windows[state.hoveredIdx].Class, nil
+}

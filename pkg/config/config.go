@@ -39,6 +39,7 @@ type HotkeysConfig struct {
 	ClipboardCycleRule string `json:"clipboard_cycle_rule"` // e.g. "Control-grave"
 	SnippetPicker      string `json:"snippet_picker"`       // e.g. "Mod1-grave" (Alt+`)
 	AutomationPicker   string `json:"automation_picker"`    // e.g. "Mod1-a" (Alt+a)
+	WindowClassGrab    string `json:"window_class_grab"`    // e.g. "Shift-F4"
 }
 
 func DefaultTransformRules() []TransformRule {
@@ -105,6 +106,7 @@ func DefaultConfig() *Config {
 			ClipboardCycleRule: "Control-grave",
 			SnippetPicker:      "Mod1-grave",
 			AutomationPicker:   "Mod1-a",
+			WindowClassGrab:    "Shift-F4",
 		},
 		ClipboardMode:        "image",
 		OCRAddress:           "http://localhost:8765",
@@ -131,6 +133,7 @@ func DefaultPortableConfig(binDir string) *Config {
 			ClipboardCycleRule: "Control-grave",
 			SnippetPicker:      "Mod1-grave",
 			AutomationPicker:   "Mod1-a",
+			WindowClassGrab:    "Shift-F4",
 		},
 		ClipboardMode:        "image",
 		OCRAddress:           "http://localhost:8765",
@@ -260,6 +263,9 @@ func readConfig(path string, binDir string, isPortable bool) (*Config, error) {
 	}
 	if cfg.Hotkeys.AutomationPicker == "" {
 		cfg.Hotkeys.AutomationPicker = defaults.Hotkeys.AutomationPicker
+	}
+	if cfg.Hotkeys.WindowClassGrab == "" {
+		cfg.Hotkeys.WindowClassGrab = defaults.Hotkeys.WindowClassGrab
 	}
 	if cfg.ClipboardMode == "" {
 		cfg.ClipboardMode = defaults.ClipboardMode
