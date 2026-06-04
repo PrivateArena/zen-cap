@@ -3,7 +3,7 @@ package av
 import (
 	"fmt"
 
-	"github.com/asticode/go-astiav"
+	astiav "github.com/asticode/go-astiav"
 )
 
 type VideoEncoder struct {

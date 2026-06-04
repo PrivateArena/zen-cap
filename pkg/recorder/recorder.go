@@ -7,7 +7,7 @@ import (
 
 	"zen-cap/pkg/av"
 
-	"github.com/asticode/go-astiav"
+	astiav "github.com/asticode/go-astiav"
 )
 
 type RecorderConfig struct {
