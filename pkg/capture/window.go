@@ -696,3 +696,164 @@ func InteractiveSelectWindowClassExt(fullImg image.Image) (string, error) {
 
 	return state.windows[state.hoveredIdx].Class, nil
 }
+
+// ShowOCROverlayWindow displays the captured screen/region with OCR/translation overlays in a centered window.
+// The window blocks until the user clicks or presses a key, dismissing it instantly.
+func ShowOCROverlayWindow(img image.Image) error {
+	xu, err := xgbutil.NewConn()
+	if err != nil {
+		return fmt.Errorf("failed to connect to X server: %w", err)
+	}
+	defer xu.Conn().Close()
+
+	screen := xu.Screen()
+	screenWidth := int(screen.WidthInPixels)
+	screenHeight := int(screen.HeightInPixels)
+
+	imgBounds := img.Bounds()
+	imgWidth := imgBounds.Dx()
+	imgHeight := imgBounds.Dy()
+
+	// Center the window on the screen
+	winX := (screenWidth - imgWidth) / 2
+	winY := (screenHeight - imgHeight) / 2
+	if winX < 0 {
+		winX = 0
+	}
+	if winY < 0 {
+		winY = 0
+	}
+
+	winID, err := xproto.NewWindowId(xu.Conn())
+	if err != nil {
+		return fmt.Errorf("failed to create window ID: %w", err)
+	}
+
+	var overrideRedirect uint32 = 1
+	var eventMask uint32 = xproto.EventMaskButtonPress |
+		xproto.EventMaskKeyPress |
+		xproto.EventMaskExposure
+
+	err = xproto.CreateWindowChecked(
+		xu.Conn(),
+		screen.RootDepth,
+		winID,
+		screen.Root,
+		int16(winX), int16(winY), uint16(imgWidth), uint16(imgHeight),
+		0,
+		xproto.WindowClassInputOutput,
+		screen.RootVisual,
+		xproto.CwOverrideRedirect|xproto.CwEventMask,
+		[]uint32{overrideRedirect, eventMask},
+	).Check()
+	if err != nil {
+		return fmt.Errorf("failed to create overlay window: %w", err)
+	}
+
+	windowNeedsDestroy := true
+	defer func() {
+		if windowNeedsDestroy {
+			xproto.DestroyWindow(xu.Conn(), winID)
+		}
+	}()
+
+	gcID, err := xproto.NewGcontextId(xu.Conn())
+	if err != nil {
+		return fmt.Errorf("failed to create GC ID: %w", err)
+	}
+	err = xproto.CreateGCChecked(xu.Conn(), gcID, xproto.Drawable(winID), 0, nil).Check()
+	if err != nil {
+		return fmt.Errorf("failed to create GC: %w", err)
+	}
+
+	bgPixmapID, err := xproto.NewPixmapId(xu.Conn())
+	if err != nil {
+		return fmt.Errorf("failed to create background pixmap ID: %w", err)
+	}
+	err = xproto.CreatePixmapChecked(xu.Conn(), screen.RootDepth, bgPixmapID, xproto.Drawable(winID), uint16(imgWidth), uint16(imgHeight)).Check()
+	if err != nil {
+		return fmt.Errorf("failed to create background pixmap: %w", err)
+	}
+	defer xproto.FreePixmap(xu.Conn(), bgPixmapID)
+
+	// Ensure the image matches RGBA
+	rgbaImg, ok := img.(*image.RGBA)
+	if !ok {
+		rgbaImg = image.NewRGBA(imgBounds)
+		draw.Draw(rgbaImg, imgBounds, img, imgBounds.Min, draw.Src)
+	}
+
+	bgraData := imageToBGRA(rgbaImg)
+	err = uploadImageChunked(xu, xproto.Drawable(bgPixmapID), gcID, screen.RootDepth, imgWidth, imgHeight, bgraData)
+	if err != nil {
+		return fmt.Errorf("failed to upload image: %w", err)
+	}
+
+	err = xproto.MapWindowChecked(xu.Conn(), winID).Check()
+	if err != nil {
+		return fmt.Errorf("failed to map window: %w", err)
+	}
+
+	// Grab Pointer (mouse) and Keyboard to capture exit events instantly
+	pointerGrab, err := xproto.GrabPointer(
+		xu.Conn(),
+		false,
+		winID,
+		uint16(xproto.EventMaskButtonPress),
+		xproto.GrabModeAsync,
+		xproto.GrabModeAsync,
+		xproto.WindowNone,
+		xproto.CursorNone,
+		xproto.TimeCurrentTime,
+	).Reply()
+	if err == nil && pointerGrab.Status == xproto.GrabStatusSuccess {
+		defer xproto.UngrabPointer(xu.Conn(), xproto.TimeCurrentTime)
+	}
+
+	keyboardGrab, err := xproto.GrabKeyboard(xu.Conn(), false, winID, xproto.TimeCurrentTime, xproto.GrabModeAsync, xproto.GrabModeAsync).Reply()
+	if err == nil && keyboardGrab.Status == xproto.GrabStatusSuccess {
+		defer xproto.UngrabKeyboard(xu.Conn(), xproto.TimeCurrentTime)
+	}
+
+	keybind.Initialize(xu)
+
+	// Setup close handlers
+	closeHandler := func(X *xgbutil.XUtil, ev xevent.ButtonPressEvent) {
+		xevent.Quit(xu)
+	}
+	xevent.ButtonPressFun(closeHandler).Connect(xu, winID)
+
+	keyHandler := func(X *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+		xevent.Quit(xu)
+	}
+	xevent.KeyPressFun(keyHandler).Connect(xu, winID)
+
+	xevent.ExposeFun(func(X *xgbutil.XUtil, ev xevent.ExposeEvent) {
+		xproto.CopyArea(
+			xu.Conn(),
+			xproto.Drawable(bgPixmapID),
+			xproto.Drawable(winID),
+			gcID,
+			0, 0,
+			0, 0,
+			uint16(imgWidth), uint16(imgHeight),
+		)
+	}).Connect(xu, winID)
+
+	// Copy initial buffer
+	xproto.CopyArea(
+		xu.Conn(),
+		xproto.Drawable(bgPixmapID),
+		xproto.Drawable(winID),
+		gcID,
+		0, 0,
+		0, 0,
+		uint16(imgWidth), uint16(imgHeight),
+	)
+
+	xevent.Main(xu)
+
+	windowNeedsDestroy = false
+	xproto.DestroyWindow(xu.Conn(), winID)
+	return nil
+}

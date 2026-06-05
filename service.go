@@ -43,6 +43,9 @@ func handleService() error {
 	fmt.Printf("  %-14s -> Fullscreen Screenshot\n", cfg.Hotkeys.Screenshot)
 	fmt.Printf("  %-14s -> Interactive Region Screenshot\n", cfg.Hotkeys.RegionScreenshot)
 	fmt.Printf("  %-14s -> Interactive Window Screenshot\n", cfg.Hotkeys.WindowScreenshot)
+	fmt.Printf("  %-14s -> Fullscreen OCR / Translation Overlay\n", cfg.Hotkeys.OCRScreenshot)
+	fmt.Printf("  %-14s -> Interactive Region OCR / Translation Overlay\n", cfg.Hotkeys.OCRRegionScreenshot)
+	fmt.Printf("  %-14s -> Interactive Window OCR / Translation Overlay\n", cfg.Hotkeys.OCRWindowScreenshot)
 	fmt.Printf("  %-14s -> Grab Window Class to Clipboard\n", cfg.Hotkeys.WindowClassGrab)
 	fmt.Printf("  %-14s -> Toggle Fullscreen Recording\n", cfg.Hotkeys.RecordToggle)
 	fmt.Printf("  %-14s -> Clipboard Manager: Copy (0-9)\n", cfg.Hotkeys.ClipboardCopyMod+"-[0-9]")
@@ -62,6 +65,9 @@ func handleService() error {
 	screenshotChan := make(chan struct{}, 1)
 	regionScreenshotChan := make(chan struct{}, 1)
 	windowScreenshotChan := make(chan struct{}, 1)
+	ocrScreenshotChan := make(chan struct{}, 1)
+	ocrRegionScreenshotChan := make(chan struct{}, 1)
+	ocrWindowScreenshotChan := make(chan struct{}, 1)
 	windowClassGrabChan := make(chan struct{}, 1)
 	recordChan := make(chan struct{}, 1)
 
@@ -98,6 +104,33 @@ func handleService() error {
 		default:
 		}
 	}).Connect(X, X.RootWin(), cfg.Hotkeys.WindowScreenshot, true)
+
+	// Register Fullscreen OCR Hotkey
+	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+		fmt.Println("Hotkey pressed: Triggering fullscreen OCR/Translation overlay...")
+		select {
+		case ocrScreenshotChan <- struct{}{}:
+		default:
+		}
+	}).Connect(X, X.RootWin(), cfg.Hotkeys.OCRScreenshot, true)
+
+	// Register Region OCR Hotkey
+	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+		fmt.Println("Hotkey pressed: Triggering region OCR/Translation overlay...")
+		select {
+		case ocrRegionScreenshotChan <- struct{}{}:
+		default:
+		}
+	}).Connect(X, X.RootWin(), cfg.Hotkeys.OCRRegionScreenshot, true)
+
+	// Register Window OCR Hotkey
+	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+		fmt.Println("Hotkey pressed: Triggering window OCR/Translation overlay...")
+		select {
+		case ocrWindowScreenshotChan <- struct{}{}:
+		default:
+		}
+	}).Connect(X, X.RootWin(), cfg.Hotkeys.OCRWindowScreenshot, true)
 
 	// Register Window Class Grab Hotkey
 	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
@@ -370,6 +403,85 @@ func handleService() error {
 					absPath = filename
 				}
 				processClipboardAction(img, absPath, action, cfg)
+			}()
+		}
+	}()
+
+	go func() {
+		for range ocrScreenshotChan {
+			go func() {
+				if freshCfg, _, err := config.LoadConfig(); err == nil {
+					cfg = freshCfg
+				}
+				fmt.Println("Launching fullscreen OCR/Translation...")
+				capCfg := capture.CaptureConfig{
+					Display: ":0.0",
+					X:       -1,
+					Y:       -1,
+				}
+				img, err := capture.CaptureScreen(capCfg)
+				if err != nil {
+					fmt.Printf("Error capturing fullscreen for OCR: %v\n", err)
+					return
+				}
+				if err := capture.PerformOCROverlay(img, cfg.OCRAddress, cfg.OCRLanguage, cfg.TranslationTarget, cfg.AutoTranslate, cfg.OutputDir); err != nil {
+					fmt.Printf("OCR Overlay error: %v\n", err)
+				}
+			}()
+		}
+	}()
+
+	go func() {
+		for range ocrRegionScreenshotChan {
+			go func() {
+				if freshCfg, _, err := config.LoadConfig(); err == nil {
+					cfg = freshCfg
+				}
+				fmt.Println("Launching region OCR/Translation...")
+				var chosenAction string
+				capCfg := capture.CaptureConfig{
+					Display:         ":0.0",
+					X:               -1,
+					Y:               -1,
+					Interactive:     true,
+					ClipboardAction: &chosenAction,
+				}
+				img, err := capture.CaptureScreen(capCfg)
+				if err != nil {
+					fmt.Printf("Error capturing region for OCR: %v\n", err)
+					return
+				}
+				if err := capture.PerformOCROverlay(img, cfg.OCRAddress, cfg.OCRLanguage, cfg.TranslationTarget, cfg.AutoTranslate, cfg.OutputDir); err != nil {
+					fmt.Printf("OCR Overlay error: %v\n", err)
+				}
+			}()
+		}
+	}()
+
+	go func() {
+		for range ocrWindowScreenshotChan {
+			go func() {
+				if freshCfg, _, err := config.LoadConfig(); err == nil {
+					cfg = freshCfg
+				}
+				fmt.Println("Launching window OCR/Translation...")
+				var chosenAction string
+				capCfg := capture.CaptureConfig{
+					Display:         ":0.0",
+					X:               -1,
+					Y:               -1,
+					Interactive:     true,
+					WindowSelect:    true,
+					ClipboardAction: &chosenAction,
+				}
+				img, err := capture.CaptureScreen(capCfg)
+				if err != nil {
+					fmt.Printf("Error capturing window for OCR: %v\n", err)
+					return
+				}
+				if err := capture.PerformOCROverlay(img, cfg.OCRAddress, cfg.OCRLanguage, cfg.TranslationTarget, cfg.AutoTranslate, cfg.OutputDir); err != nil {
+					fmt.Printf("OCR Overlay error: %v\n", err)
+				}
 			}()
 		}
 	}()

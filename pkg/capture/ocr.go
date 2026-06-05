@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"image"
+	"image/color"
+	"image/draw"
 	"image/png"
 	"io"
 	"net/http"
@@ -14,11 +16,27 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"golang.org/x/image/font"
+	"golang.org/x/image/font/basicfont"
+	"golang.org/x/image/font/opentype"
+	"golang.org/x/image/math/fixed"
 )
 
+type OCRPoint struct {
+	X int `json:"X"`
+	Y int `json:"Y"`
+}
+
+type OCRBounds struct {
+	Min OCRPoint `json:"Min"`
+	Max OCRPoint `json:"Max"`
+}
+
 type OCRResult struct {
-	Text       string  `json:"Text"`
-	Confidence float32 `json:"Confidence"`
+	Text       string    `json:"Text"`
+	Confidence float32   `json:"Confidence"`
+	Bounds     OCRBounds `json:"Bounds"`
 }
 
 type recognizeResponse struct {
@@ -62,7 +80,7 @@ func EnsureOCRServer(ocrAddress string) (string, error) {
 
 	// 3. Server is down. Try to locate zen-lights binary and start it
 	fmt.Fprintf(os.Stderr, "[OCR] Server at %s is down. Attempting to start zen-lights ocr-server...\n", ocrAddress)
-	
+
 	lightsDir := "/media/jang/home/Deve/zen-lights"
 	binaryPaths := []string{
 		filepath.Join(lightsDir, "zen-lights"),
@@ -85,11 +103,11 @@ func EnsureOCRServer(ocrAddress string) (string, error) {
 	addr := ocrAddress
 	addr = strings.TrimPrefix(addr, "http://")
 	addr = strings.TrimPrefix(addr, "https://")
-	
+
 	// Start zen-lights in background
 	cmd := exec.Command(foundBinary, "ocr-server", "-addr", addr)
 	cmd.Dir = lightsDir
-	
+
 	// Open log file to store zen-lights outputs
 	logFile, err := os.OpenFile(filepath.Join(lightsDir, "ocr_server_daemon.log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err == nil {
@@ -135,7 +153,7 @@ func PerformOCR(img image.Image, ocrAddress string, lang string) (string, error)
 	}
 
 	// Construct request URL using the resolved address
-	recognizeURL := fmt.Sprintf("%s/recognize?lang=%s", strings.TrimSuffix(resolvedAddress, "/"), url.QueryEscape(lang))
+	recognizeURL := fmt.Sprintf("%s/ocr?lang=%s", strings.TrimSuffix(resolvedAddress, "/"), url.QueryEscape(lang))
 
 	// Send POST request
 	resp, err := http.Post(recognizeURL, "image/png", &buf)
@@ -218,4 +236,180 @@ func TranslateText(text string, targetLang string) (string, error) {
 	}
 
 	return translated, nil
+}
+
+func loadSystemFont(fontSize float64) (font.Face, error) {
+	fontPaths := []string{
+		"fonts/NotoSans-Regular.ttf",
+		"../fonts/NotoSans-Regular.ttf",
+		"/media/jang/home/Deve/zen-cap/fonts/NotoSans-Regular.ttf",
+		"/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+		"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+	}
+
+	var fontBytes []byte
+	var err error
+	for _, path := range fontPaths {
+		fontBytes, err = os.ReadFile(path)
+		if err == nil {
+			break
+		}
+	}
+
+	if err != nil {
+		return basicfont.Face7x13, nil
+	}
+
+	f, err := opentype.Parse(fontBytes)
+	if err != nil {
+		return basicfont.Face7x13, nil
+	}
+
+	face, err := opentype.NewFace(f, &opentype.FaceOptions{
+		Size:    fontSize,
+		DPI:     72,
+		Hinting: font.HintingNone,
+	})
+	if err != nil {
+		return basicfont.Face7x13, nil
+	}
+
+	return face, nil
+}
+
+func drawRectOutline(img draw.Image, x0, y0, x1, y1 int, col color.Color) {
+	for x := x0; x < x1; x++ {
+		img.Set(x, y0, col)
+		img.Set(x, y1-1, col)
+	}
+	for y := y0; y < y1; y++ {
+		img.Set(x0, y, col)
+		img.Set(x1-1, y, col)
+	}
+}
+
+// PerformOCRWithDetails retrieves OCR results along with bounding boxes from the recognize endpoint.
+func PerformOCRWithDetails(img image.Image, ocrAddress string, lang string) ([]OCRResult, error) {
+	resolvedAddress, err := EnsureOCRServer(ocrAddress)
+	if err != nil {
+		return nil, fmt.Errorf("OCR server check failed: %w", err)
+	}
+
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		return nil, fmt.Errorf("failed to encode PNG for OCR: %w", err)
+	}
+
+	recognizeURL := fmt.Sprintf("%s/recognize?lang=%s", strings.TrimSuffix(resolvedAddress, "/"), url.QueryEscape(lang))
+
+	resp, err := http.Post(recognizeURL, "image/png", &buf)
+	if err != nil {
+		return nil, fmt.Errorf("HTTP POST request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("OCR server returned status %s: %s", resp.Status, string(bodyBytes))
+	}
+
+	var ocrResp recognizeResponse
+	if err := json.NewDecoder(resp.Body).Decode(&ocrResp); err != nil {
+		return nil, fmt.Errorf("failed to decode OCR JSON response: %w", err)
+	}
+
+	if ocrResp.Error != "" {
+		return nil, fmt.Errorf("OCR server error: %s", ocrResp.Error)
+	}
+
+	return ocrResp.Results, nil
+}
+
+// PerformOCROverlay executes the OCR pipeline, overlays the recognized/translated text onto the image,
+// saves it as a PNG file in OutputDir, and displays it in an interactive overlay window.
+func PerformOCROverlay(img image.Image, ocrAddress, ocrLanguage, translationTarget string, autoTranslate bool, outputDir string) error {
+	results, err := PerformOCRWithDetails(img, ocrAddress, ocrLanguage)
+	if err != nil {
+		return fmt.Errorf("OCR failed: %w", err)
+	}
+
+	bounds := img.Bounds()
+	rgbaImg := image.NewRGBA(bounds)
+	draw.Draw(rgbaImg, bounds, img, bounds.Min, draw.Src)
+
+	for _, res := range results {
+		if res.Text == "" {
+			continue
+		}
+
+		text := res.Text
+		if autoTranslate {
+			translated, err := TranslateText(text, translationTarget)
+			if err == nil && translated != "" {
+				text = translated
+			}
+		}
+
+		minX, minY := res.Bounds.Min.X, res.Bounds.Min.Y
+		maxX, maxY := res.Bounds.Max.X, res.Bounds.Max.Y
+		boxW := maxX - minX
+		boxH := maxY - minY
+
+		if boxW <= 0 || boxH <= 0 {
+			continue
+		}
+
+		// Draw background box to erase original text
+		boxRect := image.Rect(minX, minY, maxX, maxY)
+		bgColor := color.RGBA{R: 20, G: 20, B: 30, A: 240} // Sleek dark mode background
+		draw.Draw(rgbaImg, boxRect, &image.Uniform{bgColor}, image.Point{}, draw.Src)
+
+		// Draw neon-cyan border outline
+		borderColor := color.RGBA{R: 0, G: 240, B: 255, A: 255}
+		drawRectOutline(rgbaImg, minX, minY, maxX, maxY, borderColor)
+
+		// Choose font size based on box height
+		fontSize := float64(boxH) * 0.70
+		if fontSize < 8 {
+			fontSize = 8
+		}
+		face, err := loadSystemFont(fontSize)
+		if err != nil {
+			face = basicfont.Face7x13
+		}
+
+		metrics := face.Metrics()
+		ascent := metrics.Ascent.Round()
+		if face == basicfont.Face7x13 {
+			ascent = 11
+		}
+
+		textX := minX + 4
+		textY := minY + ascent + (boxH-metrics.Height.Round())/2
+		if textY < minY+ascent {
+			textY = minY + ascent
+		}
+
+		d := &font.Drawer{
+			Dst:  rgbaImg,
+			Src:  image.NewUniform(color.RGBA{R: 255, G: 255, B: 255, A: 255}),
+			Face: face,
+			Dot:  fixed.P(textX, textY),
+		}
+		d.DrawString(text)
+	}
+
+	timestamp := time.Now().Format("20060102_150405")
+	filename := filepath.Join(outputDir, fmt.Sprintf("ocr_overlay_%s.png", timestamp))
+	_ = os.MkdirAll(outputDir, 0755)
+	if err := SavePNG(rgbaImg, filename); err != nil {
+		return fmt.Errorf("failed to save OCR overlay image: %w", err)
+	}
+	fmt.Printf("[OCR Overlay] Saved overlay image to %s\n", filename)
+
+	if err := ShowOCROverlayWindow(rgbaImg); err != nil {
+		return fmt.Errorf("failed to show OCR overlay window: %w", err)
+	}
+
+	return nil
 }

@@ -23,6 +23,7 @@ type Config struct {
 	OCRAddress           string          `json:"ocr_address"`        // Default: "http://localhost:8765"
 	OCRLanguage          string          `json:"ocr_language"`       // Default: "ch"
 	TranslationTarget    string          `json:"translation_target"` // Default: "en"
+	AutoTranslate        bool            `json:"auto_translate"`     // Default: false
 	ClipboardSessionFile string          `json:"clipboard_session_file"`
 	SnippetFile          string          `json:"snippet_file"`
 	AutomationDir        string          `json:"automation_dir"`
@@ -30,16 +31,19 @@ type Config struct {
 }
 
 type HotkeysConfig struct {
-	Screenshot         string `json:"screenshot"`
-	RegionScreenshot   string `json:"region_screenshot"`
-	WindowScreenshot   string `json:"window_screenshot"`
-	RecordToggle       string `json:"record_toggle"`
-	ClipboardCopyMod   string `json:"clipboard_copy_mod"`   // e.g. "Control-Shift"
-	ClipboardPasteMod  string `json:"clipboard_paste_mod"`  // e.g. "Mod1-Shift"
-	ClipboardCycleRule string `json:"clipboard_cycle_rule"` // e.g. "Control-grave"
-	SnippetPicker      string `json:"snippet_picker"`       // e.g. "Mod1-grave" (Alt+`)
-	AutomationPicker   string `json:"automation_picker"`    // e.g. "Mod1-a" (Alt+a)
-	WindowClassGrab    string `json:"window_class_grab"`    // e.g. "Shift-F4"
+	Screenshot          string `json:"screenshot"`
+	RegionScreenshot    string `json:"region_screenshot"`
+	WindowScreenshot    string `json:"window_screenshot"`
+	OCRScreenshot       string `json:"ocr_screenshot"`
+	OCRRegionScreenshot string `json:"ocr_region_screenshot"`
+	OCRWindowScreenshot string `json:"ocr_window_screenshot"`
+	RecordToggle        string `json:"record_toggle"`
+	ClipboardCopyMod    string `json:"clipboard_copy_mod"`   // e.g. "Control-Shift"
+	ClipboardPasteMod   string `json:"clipboard_paste_mod"`  // e.g. "Mod1-Shift"
+	ClipboardCycleRule  string `json:"clipboard_cycle_rule"` // e.g. "Control-grave"
+	SnippetPicker       string `json:"snippet_picker"`       // e.g. "Mod1-grave" (Alt+`)
+	AutomationPicker    string `json:"automation_picker"`    // e.g. "Mod1-a" (Alt+a)
+	WindowClassGrab     string `json:"window_class_grab"`    // e.g. "Shift-F4"
 }
 
 func DefaultTransformRules() []TransformRule {
@@ -97,21 +101,25 @@ func DefaultConfig() *Config {
 	return &Config{
 		OutputDir: defaultOutputDir,
 		Hotkeys: HotkeysConfig{
-			Screenshot:         "Control-Shift-s",
-			RegionScreenshot:   "Control-Shift-a",
-			WindowScreenshot:   "Shift-F2",
-			RecordToggle:       "Control-Shift-r",
-			ClipboardCopyMod:   "Control-Shift",
-			ClipboardPasteMod:  "Mod1-Shift",
-			ClipboardCycleRule: "Control-grave",
-			SnippetPicker:      "Mod1-grave",
-			AutomationPicker:   "Mod1-a",
-			WindowClassGrab:    "Shift-F4",
+			Screenshot:          "Control-Shift-s",
+			RegionScreenshot:    "Control-Shift-a",
+			WindowScreenshot:    "Shift-F2",
+			OCRScreenshot:       "Control-Shift-o",
+			OCRRegionScreenshot: "Control-Shift-p",
+			OCRWindowScreenshot: "Shift-F3",
+			RecordToggle:        "Control-Shift-r",
+			ClipboardCopyMod:    "Control-Shift",
+			ClipboardPasteMod:   "Mod1-Shift",
+			ClipboardCycleRule:  "Control-grave",
+			SnippetPicker:       "Mod1-grave",
+			AutomationPicker:    "Mod1-a",
+			WindowClassGrab:     "Shift-F4",
 		},
 		ClipboardMode:        "image",
 		OCRAddress:           "http://localhost:8765",
 		OCRLanguage:          "ch",
 		TranslationTarget:    "en",
+		AutoTranslate:        false,
 		ClipboardSessionFile: defaultSessionFile,
 		SnippetFile:          defaultSnippetFile,
 		AutomationDir:         defaultAutomationDir,
@@ -124,21 +132,25 @@ func DefaultPortableConfig(binDir string) *Config {
 	return &Config{
 		OutputDir: filepath.Join(binDir, "zen-cap-outputs"),
 		Hotkeys: HotkeysConfig{
-			Screenshot:         "Control-Shift-s",
-			RegionScreenshot:   "Control-Shift-a",
-			WindowScreenshot:   "Shift-F2",
-			RecordToggle:       "Control-Shift-r",
-			ClipboardCopyMod:   "Control-Shift",
-			ClipboardPasteMod:  "Mod1-Shift",
-			ClipboardCycleRule: "Control-grave",
-			SnippetPicker:      "Mod1-grave",
-			AutomationPicker:   "Mod1-a",
-			WindowClassGrab:    "Shift-F4",
+			Screenshot:          "Control-Shift-s",
+			RegionScreenshot:    "Control-Shift-a",
+			WindowScreenshot:    "Shift-F2",
+			OCRScreenshot:       "Control-Shift-o",
+			OCRRegionScreenshot: "Control-Shift-p",
+			OCRWindowScreenshot: "Shift-F3",
+			RecordToggle:        "Control-Shift-r",
+			ClipboardCopyMod:    "Control-Shift",
+			ClipboardPasteMod:   "Mod1-Shift",
+			ClipboardCycleRule:  "Control-grave",
+			SnippetPicker:       "Mod1-grave",
+			AutomationPicker:    "Mod1-a",
+			WindowClassGrab:     "Shift-F4",
 		},
 		ClipboardMode:        "image",
 		OCRAddress:           "http://localhost:8765",
 		OCRLanguage:          "ch",
 		TranslationTarget:    "en",
+		AutoTranslate:        false,
 		ClipboardSessionFile: filepath.Join(binDir, "clipboard_session.json"),
 		SnippetFile:          filepath.Join(binDir, "snippets.yaml"),
 		AutomationDir:         filepath.Join(binDir, "automations"),
@@ -245,6 +257,15 @@ func readConfig(path string, binDir string, isPortable bool) (*Config, error) {
 	}
 	if cfg.Hotkeys.WindowScreenshot == "" {
 		cfg.Hotkeys.WindowScreenshot = defaults.Hotkeys.WindowScreenshot
+	}
+	if cfg.Hotkeys.OCRScreenshot == "" {
+		cfg.Hotkeys.OCRScreenshot = defaults.Hotkeys.OCRScreenshot
+	}
+	if cfg.Hotkeys.OCRRegionScreenshot == "" {
+		cfg.Hotkeys.OCRRegionScreenshot = defaults.Hotkeys.OCRRegionScreenshot
+	}
+	if cfg.Hotkeys.OCRWindowScreenshot == "" {
+		cfg.Hotkeys.OCRWindowScreenshot = defaults.Hotkeys.OCRWindowScreenshot
 	}
 	if cfg.Hotkeys.RecordToggle == "" {
 		cfg.Hotkeys.RecordToggle = defaults.Hotkeys.RecordToggle
