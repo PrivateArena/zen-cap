@@ -43,14 +43,14 @@ type regionState struct {
 
 // InteractiveSelectRegion is a backward-compatible wrapper around InteractiveSelectRegionExt.
 func InteractiveSelectRegion(fullImg image.Image) (image.Image, error) {
-	return InteractiveSelectRegionExt(fullImg, nil)
+	return InteractiveSelectRegionExt(fullImg, nil, nil, nil, nil, nil)
 }
 
 // InteractiveSelectRegionExt captures the fullscreen, displays it in an override-redirect
 // window, lets the user drag-and-drop to select a region, and returns the cropped image bounds.
 // It also allows the user to draw annotations/doodles using the Right Mouse Button before selecting.
 // It populates outClipboardAction if a dynamic shortcut was pressed.
-func InteractiveSelectRegionExt(fullImg image.Image, outClipboardAction *string) (image.Image, error) {
+func InteractiveSelectRegionExt(fullImg image.Image, outClipboardAction *string, outX, outY, outW, outH *int) (image.Image, error) {
 	// Connect to X server
 	xu, err := xgbutil.NewConn()
 	if err != nil {
@@ -365,6 +365,19 @@ func InteractiveSelectRegionExt(fullImg image.Image, outClipboardAction *string)
 	}
 
 	fmt.Printf("[InteractiveSelectRegion] Selected bounds: x=%d, y=%d, width=%d, height=%d\n", x1, y1, w, h)
+
+	if outX != nil {
+		*outX = x1
+	}
+	if outY != nil {
+		*outY = y1
+	}
+	if outW != nil {
+		*outW = w
+	}
+	if outH != nil {
+		*outH = h
+	}
 
 	// Crop the annotated fullscreen screenshot image
 	cropped := state.notations.GetImage().SubImage(image.Rect(x1, y1, x1+w, y1+h))

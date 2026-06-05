@@ -39,7 +39,7 @@ func TestInteractiveSelectWindowAndAbort(t *testing.T) {
 
 		go func() {
 			var action string
-			img, err := InteractiveSelectWindowExt(dummyImg, &action)
+			img, err := InteractiveSelectWindowExt(dummyImg, &action, nil, nil, nil, nil, nil)
 			resChan <- result{img: img, err: err}
 		}()
 

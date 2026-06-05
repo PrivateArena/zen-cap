@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jezek/xgb/xproto"
 	"github.com/jezek/xgbutil"
 	"github.com/jezek/xgbutil/keybind"
 	"github.com/jezek/xgbutil/xevent"
@@ -47,7 +48,11 @@ func handleService() error {
 	fmt.Printf("  %-14s -> Interactive Region OCR / Translation Overlay\n", cfg.Hotkeys.OCRRegionScreenshot)
 	fmt.Printf("  %-14s -> Interactive Window OCR / Translation Overlay\n", cfg.Hotkeys.OCRWindowScreenshot)
 	fmt.Printf("  %-14s -> Grab Window Class to Clipboard\n", cfg.Hotkeys.WindowClassGrab)
-	fmt.Printf("  %-14s -> Toggle Fullscreen Recording\n", cfg.Hotkeys.RecordToggle)
+	fmt.Printf("  %-14s -> Toggle Recording (Start/Stop)\n", cfg.Hotkeys.RecordToggle)
+	fmt.Printf("  %-14s -> Mark Fullscreen for Recording\n", cfg.Hotkeys.RecordMarkFullscreen)
+	fmt.Printf("  %-14s -> Mark Region for Recording\n", cfg.Hotkeys.RecordMarkRegion)
+	fmt.Printf("  %-14s -> Mark Window for Recording\n", cfg.Hotkeys.RecordMarkWindow)
+	fmt.Printf("  %-14s -> Show/Hide Recording Area Overlay\n", cfg.Hotkeys.RecordShowArea)
 	fmt.Printf("  %-14s -> Clipboard Manager: Copy (0-9)\n", cfg.Hotkeys.ClipboardCopyMod+"-[0-9]")
 	fmt.Printf("  %-14s -> Clipboard Manager: Paste (0-9)\n", cfg.Hotkeys.ClipboardPasteMod+"-[0-9]")
 	fmt.Printf("  %-14s -> Clipboard Manager: Cycle Transform Rules\n", cfg.Hotkeys.ClipboardCycleRule)
@@ -70,6 +75,10 @@ func handleService() error {
 	ocrWindowScreenshotChan := make(chan struct{}, 1)
 	windowClassGrabChan := make(chan struct{}, 1)
 	recordChan := make(chan struct{}, 1)
+	recordMarkFullscreenChan := make(chan struct{}, 1)
+	recordMarkRegionChan := make(chan struct{}, 1)
+	recordMarkWindowChan := make(chan struct{}, 1)
+	recordShowAreaChan := make(chan struct{}, 1)
 
 	// Initialize X11 connection for global hotkeys
 	X, err := xgbutil.NewConn()
@@ -149,6 +158,42 @@ func handleService() error {
 		default:
 		}
 	}).Connect(X, X.RootWin(), cfg.Hotkeys.RecordToggle, true)
+
+	// Register Record Mark Fullscreen Hotkey
+	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+		fmt.Println("Hotkey pressed: Triggering record mark fullscreen...")
+		select {
+		case recordMarkFullscreenChan <- struct{}{}:
+		default:
+		}
+	}).Connect(X, X.RootWin(), cfg.Hotkeys.RecordMarkFullscreen, true)
+
+	// Register Record Mark Region Hotkey
+	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+		fmt.Println("Hotkey pressed: Triggering record mark region...")
+		select {
+		case recordMarkRegionChan <- struct{}{}:
+		default:
+		}
+	}).Connect(X, X.RootWin(), cfg.Hotkeys.RecordMarkRegion, true)
+
+	// Register Record Mark Window Hotkey
+	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+		fmt.Println("Hotkey pressed: Triggering record mark window...")
+		select {
+		case recordMarkWindowChan <- struct{}{}:
+		default:
+		}
+	}).Connect(X, X.RootWin(), cfg.Hotkeys.RecordMarkWindow, true)
+
+	// Register Record Show Area Hotkey
+	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+		fmt.Println("Hotkey pressed: Triggering record show/hide area...")
+		select {
+		case recordShowAreaChan <- struct{}{}:
+		default:
+		}
+	}).Connect(X, X.RootWin(), cfg.Hotkeys.RecordShowArea, true)
 
 	// Initialize Clipboard Manager
 	mgr, err := clipboard.NewManager(cfg)
@@ -245,6 +290,24 @@ func handleService() error {
 
 	var activeRec *recorder.Recorder
 	var recMu sync.Mutex
+
+	type MarkedArea struct {
+		X        int
+		Y        int
+		Width    int
+		Height   int
+		WindowID uint32
+		Type     string // "fullscreen", "region", "window"
+	}
+
+	markedArea := MarkedArea{
+		X:      -1,
+		Y:      -1,
+		Width:  -1,
+		Height: -1,
+		Type:   "fullscreen",
+	}
+	var markedAreaMu sync.Mutex
 
 	// Monitor OS signals for termination, screenshot, and recording
 	sigChan := make(chan os.Signal, 1)
@@ -510,25 +573,304 @@ func handleService() error {
 		}
 	}()
 
+	var activeBorders []xproto.Window
+	var activeBordersMu sync.Mutex
+
+	// Background loop for recordMarkFullscreenChan
+	go func() {
+		for range recordMarkFullscreenChan {
+			markedAreaMu.Lock()
+			markedArea = MarkedArea{
+				X:      -1,
+				Y:      -1,
+				Width:  -1,
+				Height: -1,
+				Type:   "fullscreen",
+			}
+			markedAreaMu.Unlock()
+			fmt.Println("[Recorder] Marked fullscreen area for recording")
+			sendNotification("Zen-Cap", "Marked fullscreen for video recording!")
+		}
+	}()
+
+	// Background loop for recordMarkRegionChan
+	go func() {
+		for range recordMarkRegionChan {
+			go func() {
+				if freshCfg, _, err := config.LoadConfig(); err == nil {
+					cfg = freshCfg
+				}
+				fmt.Println("[Recorder] Launching interactive region select to mark recording area...")
+				var action string
+				var chosenX, chosenY, chosenW, chosenH int
+				capCfg := capture.CaptureConfig{
+					Display:         ":0.0",
+					X:               -1,
+					Y:               -1,
+					Interactive:     true,
+					ClipboardAction: &action,
+					OutX:            &chosenX,
+					OutY:            &chosenY,
+					OutWidth:        &chosenW,
+					OutHeight:       &chosenH,
+				}
+				_, err := capture.CaptureScreen(capCfg)
+				if err != nil {
+					fmt.Printf("[Recorder] Error marking region: %v\n", err)
+					return
+				}
+				
+				// Ensure even dimensions for h264 compatibility
+				if chosenW % 2 != 0 {
+					chosenW--
+				}
+				if chosenH % 2 != 0 {
+					chosenH--
+				}
+
+				markedAreaMu.Lock()
+				markedArea = MarkedArea{
+					X:      chosenX,
+					Y:      chosenY,
+					Width:  chosenW,
+					Height: chosenH,
+					Type:   "region",
+				}
+				markedAreaMu.Unlock()
+
+				msg := fmt.Sprintf("Marked region %dx%d at (%d, %d) for recording!", chosenW, chosenH, chosenX, chosenY)
+				fmt.Printf("[Recorder] %s\n", msg)
+				sendNotification("Zen-Cap", msg)
+			}()
+		}
+	}()
+
+	// Background loop for recordMarkWindowChan
+	go func() {
+		for range recordMarkWindowChan {
+			go func() {
+				if freshCfg, _, err := config.LoadConfig(); err == nil {
+					cfg = freshCfg
+				}
+				fmt.Println("[Recorder] Launching interactive window select to mark recording area...")
+				var action string
+				var chosenX, chosenY, chosenW, chosenH int
+				var chosenWinID uint32
+				capCfg := capture.CaptureConfig{
+					Display:         ":0.0",
+					X:               -1,
+					Y:               -1,
+					Interactive:     true,
+					WindowSelect:    true,
+					ClipboardAction: &action,
+					OutX:            &chosenX,
+					OutY:            &chosenY,
+					OutWidth:        &chosenW,
+					OutHeight:       &chosenH,
+					OutWindowID:     &chosenWinID,
+				}
+				_, err := capture.CaptureScreen(capCfg)
+				if err != nil {
+					fmt.Printf("[Recorder] Error marking window: %v\n", err)
+					return
+				}
+
+				// Ensure even dimensions
+				if chosenW % 2 != 0 {
+					chosenW--
+				}
+				if chosenH % 2 != 0 {
+					chosenH--
+				}
+
+				markedAreaMu.Lock()
+				markedArea = MarkedArea{
+					X:        chosenX,
+					Y:        chosenY,
+					Width:    chosenW,
+					Height:   chosenH,
+					WindowID: chosenWinID,
+					Type:     "window",
+				}
+				markedAreaMu.Unlock()
+
+				msg := fmt.Sprintf("Marked window (ID 0x%x) %dx%d at (%d, %d) for recording!", chosenWinID, chosenW, chosenH, chosenX, chosenY)
+				fmt.Printf("[Recorder] %s\n", msg)
+				sendNotification("Zen-Cap", msg)
+			}()
+		}
+	}()
+
+	// Background loop for recordShowAreaChan
+	go func() {
+		for range recordShowAreaChan {
+			activeBordersMu.Lock()
+			if len(activeBorders) > 0 {
+				// Destroy existing borders
+				for _, w := range activeBorders {
+					xproto.DestroyWindow(X.Conn(), w)
+				}
+				activeBorders = nil
+				activeBordersMu.Unlock()
+				fmt.Println("[Recorder] Cleared recording area highlight overlay")
+				continue
+			}
+
+			// Get current marked area
+			markedAreaMu.Lock()
+			area := markedArea
+			markedAreaMu.Unlock()
+
+			// Resolve actual coordinates
+			screen := X.Screen()
+			screenW := int(screen.WidthInPixels)
+			screenH := int(screen.HeightInPixels)
+
+			x, y, w, h := area.X, area.Y, area.Width, area.Height
+			if area.Type == "fullscreen" || x < 0 || y < 0 || w <= 0 || h <= 0 {
+				x, y, w, h = 0, 0, screenW, screenH
+			}
+
+			fmt.Printf("[Recorder] Highlighting recording area: %dx%d at (%d, %d)\n", w, h, x, y)
+
+			// Create 4 thin border windows around the area
+			borderThickness := 3
+			borders := []struct{ x, y, width, height int }{
+				{x, y - borderThickness, w, borderThickness},
+				{x, y + h, w, borderThickness},
+				{x - borderThickness, y, borderThickness, h},
+				{x + w, y, borderThickness, h},
+			}
+
+			var created []xproto.Window
+			success := true
+
+			for _, b := range borders {
+				bx := b.x
+				by := b.y
+				bw := b.width
+				bh := b.height
+
+				if bx < 0 {
+					bw += bx
+					bx = 0
+				}
+				if by < 0 {
+					bh += by
+					by = 0
+				}
+				if bw <= 0 || bh <= 0 {
+					continue
+				}
+
+				winID, err := xproto.NewWindowId(X.Conn())
+				if err != nil {
+					success = false
+					break
+				}
+
+				var backPixel uint32 = 0x00F0FF // Neon cyan
+				var overrideRedirect uint32 = 1
+
+				err = xproto.CreateWindowChecked(
+					X.Conn(),
+					screen.RootDepth,
+					winID,
+					screen.Root,
+					int16(bx), int16(by), uint16(bw), uint16(bh),
+					0,
+					xproto.WindowClassInputOutput,
+					screen.RootVisual,
+					xproto.CwOverrideRedirect|xproto.CwBackPixel,
+					[]uint32{overrideRedirect, backPixel},
+				).Check()
+
+				if err != nil {
+					success = false
+					break
+				}
+
+				err = xproto.MapWindowChecked(X.Conn(), winID).Check()
+				if err != nil {
+					success = false
+					break
+				}
+
+				created = append(created, winID)
+			}
+
+			if !success {
+				// Rollback
+				for _, w := range created {
+					xproto.DestroyWindow(X.Conn(), w)
+				}
+				activeBorders = nil
+				fmt.Println("[Recorder] Failed to create highlight overlay windows")
+			} else {
+				activeBorders = created
+				fmt.Println("[Recorder] Recording area highlight overlay mapped")
+			}
+			activeBordersMu.Unlock()
+		}
+	}()
+
 	go func() {
 		for range recordChan {
 			recMu.Lock()
 			if activeRec == nil {
+				if freshCfg, _, err := config.LoadConfig(); err == nil {
+					cfg = freshCfg
+				}
 				timestamp := time.Now().Format("20060102_150405")
 				filename := filepath.Join(cfg.OutputDir, fmt.Sprintf("recording_%s.mp4", timestamp))
-				fmt.Printf("[%s] Starting fullscreen recording to %s...\n", time.Now().Format("15:04:05"), filename)
 
-				// Ensure folder exists (e.g. if deleted mid-run)
-				_ = os.MkdirAll(cfg.OutputDir, 0755)
+				markedAreaMu.Lock()
+				area := markedArea
+				markedAreaMu.Unlock()
 
+				var recordingMsg string
 				recCfg := recorder.RecorderConfig{
 					Display:    ":0.0",
-					X:          -1,
-					Y:          -1,
 					FPS:        30,
 					OutputPath: filename,
 					Bitrate:    4000000,
 				}
+
+				if area.Type == "fullscreen" || area.X < 0 || area.Y < 0 || area.Width <= 0 || area.Height <= 0 {
+					recCfg.X = -1
+					recCfg.Y = -1
+					recCfg.Width = -1
+					recCfg.Height = -1
+					recordingMsg = fmt.Sprintf("[%s] Starting fullscreen recording to %s...", time.Now().Format("15:04:05"), filename)
+				} else {
+					recCfg.X = area.X
+					recCfg.Y = area.Y
+					recCfg.Width = area.Width
+					recCfg.Height = area.Height
+					recCfg.WindowID = area.WindowID
+					if area.Type == "window" && area.WindowID != 0 {
+						recordingMsg = fmt.Sprintf("[%s] Starting window recording (ID: 0x%x, %dx%d at %d,%d) to %s...", time.Now().Format("15:04:05"), area.WindowID, area.Width, area.Height, area.X, area.Y, filename)
+					} else {
+						recordingMsg = fmt.Sprintf("[%s] Starting region recording (%dx%d at %d,%d) to %s...", time.Now().Format("15:04:05"), area.Width, area.Height, area.X, area.Y, filename)
+					}
+				}
+
+				// Hide preview overlay if visible
+				activeBordersMu.Lock()
+				if len(activeBorders) > 0 {
+					for _, w := range activeBorders {
+						xproto.DestroyWindow(X.Conn(), w)
+					}
+					activeBorders = nil
+					fmt.Println("[Recorder] Hidden preview overlay before starting recording")
+				}
+				activeBordersMu.Unlock()
+
+				fmt.Println(recordingMsg)
+
+				// Ensure folder exists (e.g. if deleted mid-run)
+				_ = os.MkdirAll(cfg.OutputDir, 0755)
+
 				rec := recorder.NewRecorder(recCfg)
 				if err := rec.Start(); err != nil {
 					fmt.Printf("Error starting recorder: %v\n", err)

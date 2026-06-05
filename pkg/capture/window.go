@@ -35,7 +35,7 @@ type windowState struct {
 
 // InteractiveSelectWindowExt captures the fullscreen, displays it,
 // and highlights windows under the cursor for selection.
-func InteractiveSelectWindowExt(fullImg image.Image, outClipboardAction *string) (image.Image, error) {
+func InteractiveSelectWindowExt(fullImg image.Image, outClipboardAction *string, outX, outY, outW, outH *int, outWinID *uint32) (image.Image, error) {
 	dm, err := display.NewX11DisplayManager()
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize display manager: %w", err)
@@ -262,6 +262,21 @@ func InteractiveSelectWindowExt(fullImg image.Image, outClipboardAction *string)
 
 	if state.hoveredIdx == -1 {
 		// Fallback: capture entire screen
+		if outX != nil {
+			*outX = 0
+		}
+		if outY != nil {
+			*outY = 0
+		}
+		if outW != nil {
+			*outW = screenWidth
+		}
+		if outH != nil {
+			*outH = screenHeight
+		}
+		if outWinID != nil {
+			*outWinID = 0
+		}
 		return rgbaImg, nil
 	}
 
@@ -270,6 +285,23 @@ func InteractiveSelectWindowExt(fullImg image.Image, outClipboardAction *string)
 	y1 := w.Geometry.Y
 	width := w.Geometry.Width
 	height := w.Geometry.Height
+
+	if outX != nil {
+		*outX = x1
+	}
+	if outY != nil {
+		*outY = y1
+	}
+	if outW != nil {
+		*outW = width
+	}
+	if outH != nil {
+		*outH = height
+	}
+	if outWinID != nil {
+		*outWinID = uint32(w.ID)
+	}
+
 	sub := rgbaImg.SubImage(clampRect(image.Rect(x1, y1, x1+width, y1+height), rgbaImg.Bounds()))
 	cropped := image.NewRGBA(image.Rect(0, 0, width, height))
 	draw.Draw(cropped, cropped.Bounds(), sub, sub.Bounds().Min, draw.Src)

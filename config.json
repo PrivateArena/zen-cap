@@ -11,6 +11,10 @@
     "snippet_picker": "Mod1-w",
     "automation_picker": "Mod1-a",
     "record_toggle": "Control-Shift-r",
+    "record_mark_fullscreen": "Control-Mod1-f",
+    "record_mark_region": "Control-Mod1-r",
+    "record_mark_window": "Control-Mod1-w",
+    "record_show_area": "Mod1-Shift-F4",
     "clipboard_copy_mod": "Control-Shift",
     "clipboard_paste_mod": "Control-Mod1",
     "clipboard_cycle_rule": "Control-grave"

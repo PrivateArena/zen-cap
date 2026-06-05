@@ -918,7 +918,7 @@ func TestInteractiveSelectRegionAndAbort(t *testing.T) {
 
 		go func() {
 			var action string
-			img, err := InteractiveSelectRegionExt(dummyImg, &action)
+			img, err := InteractiveSelectRegionExt(dummyImg, &action, nil, nil, nil, nil)
 			resChan <- result{img: img, action: action, err: err}
 		}()
 

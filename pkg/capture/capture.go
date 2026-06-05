@@ -21,6 +21,11 @@ type CaptureConfig struct {
 	Interactive     bool
 	WindowSelect    bool
 	ClipboardAction *string // Dynamic clipboard action output pointer
+	OutX            *int
+	OutY            *int
+	OutWidth        *int
+	OutHeight       *int
+	OutWindowID     *uint32
 }
 
 // CaptureScreen opens the display capture device, grabs one frame,
@@ -48,9 +53,9 @@ func captureScreenImpl(cfg CaptureConfig) (image.Image, error) {
 		}
 
 		if cfg.WindowSelect {
-			return InteractiveSelectWindowExt(fullImg, cfg.ClipboardAction)
+			return InteractiveSelectWindowExt(fullImg, cfg.ClipboardAction, cfg.OutX, cfg.OutY, cfg.OutWidth, cfg.OutHeight, cfg.OutWindowID)
 		}
-		return InteractiveSelectRegionExt(fullImg, cfg.ClipboardAction)
+		return InteractiveSelectRegionExt(fullImg, cfg.ClipboardAction, cfg.OutX, cfg.OutY, cfg.OutWidth, cfg.OutHeight)
 	}
 
 	devCfg := av.DeviceConfig{
