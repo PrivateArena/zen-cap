@@ -561,9 +561,26 @@ func handleService() error {
 		}
 	}()
 
+	var windowClassGrabMu sync.Mutex
+	var windowClassGrabRunning bool
+
 	go func() {
 		for range windowClassGrabChan {
+			windowClassGrabMu.Lock()
+			if windowClassGrabRunning {
+				windowClassGrabMu.Unlock()
+				continue
+			}
+			windowClassGrabRunning = true
+			windowClassGrabMu.Unlock()
+
 			go func() {
+				defer func() {
+					windowClassGrabMu.Lock()
+					windowClassGrabRunning = false
+					windowClassGrabMu.Unlock()
+				}()
+
 				if freshCfg, _, err := config.LoadConfig(); err == nil {
 					cfg = freshCfg
 				}
@@ -572,6 +589,10 @@ func handleService() error {
 				wClass, err := capture.InteractiveSelectWindowClass(":0.0")
 				if err != nil {
 					fmt.Printf("Error grabbing window class: %v\n", err)
+					return
+				}
+
+				if wClass == "" {
 					return
 				}
 
@@ -585,9 +606,26 @@ func handleService() error {
 		}
 	}()
 
+	var colorPickerMu sync.Mutex
+	var colorPickerRunning bool
+
 	go func() {
 		for range colorPickerChan {
+			colorPickerMu.Lock()
+			if colorPickerRunning {
+				colorPickerMu.Unlock()
+				continue
+			}
+			colorPickerRunning = true
+			colorPickerMu.Unlock()
+
 			go func() {
+				defer func() {
+					colorPickerMu.Lock()
+					colorPickerRunning = false
+					colorPickerMu.Unlock()
+				}()
+
 				if freshCfg, _, err := config.LoadConfig(); err == nil {
 					cfg = freshCfg
 				}
@@ -609,6 +647,10 @@ func handleService() error {
 				colorsText, err := capture.InteractiveColorPicker(img, cfg.ColorPickerFormat)
 				if err != nil {
 					fmt.Printf("Color picker error: %v\n", err)
+					return
+				}
+
+				if colorsText == "" {
 					return
 				}
 

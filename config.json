@@ -24,5 +24,6 @@
   "color_picker_format": "hex",
   "ocr_address": "http://localhost:8765",
   "ocr_language": "ch",
-  "translation_target": "en"
+  "translation_target": "en",
+  "disable_notifications": true
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -26,6 +27,7 @@ type Config struct {
 	TranslationEngine    string          `json:"translation_engine"` // "google" or "local" (default: "google")
 	AutoTranslate        bool            `json:"auto_translate"`     // Default: false
 	ColorPickerFormat    string          `json:"color_picker_format"` // "hex", "rgb", "rgba", "hsl" (default: "hex")
+	DisableNotifications bool            `json:"disable_notifications"` // Default: false
 	ClipboardSessionFile string          `json:"clipboard_session_file"`
 	SnippetFile          string          `json:"snippet_file"`
 	AutomationDir        string          `json:"automation_dir"`
@@ -134,6 +136,7 @@ func DefaultConfig() *Config {
 		TranslationTarget:    "en",
 		TranslationEngine:    "google",
 		AutoTranslate:        false,
+		DisableNotifications: false,
 		ClipboardSessionFile: defaultSessionFile,
 		SnippetFile:          defaultSnippetFile,
 		AutomationDir:         defaultAutomationDir,
@@ -172,6 +175,7 @@ func DefaultPortableConfig(binDir string) *Config {
 		TranslationTarget:    "en",
 		TranslationEngine:    "google",
 		AutoTranslate:        false,
+		DisableNotifications: false,
 		ClipboardSessionFile: filepath.Join(binDir, "clipboard_session.json"),
 		SnippetFile:          filepath.Join(binDir, "snippets.yaml"),
 		AutomationDir:         filepath.Join(binDir, "automations"),
@@ -217,6 +221,7 @@ func LoadConfig() (*Config, string, error) {
 			if err == nil {
 				// Log loaded config path to stderr for discovery transparency
 				fmt.Fprintf(os.Stderr, "[Config] Loaded from: %s\n", absPath)
+				NotificationsDisabled = cfg.DisableNotifications
 				return cfg, absPath, nil
 			}
 		}
@@ -242,11 +247,24 @@ func LoadConfig() (*Config, string, error) {
 	if err := os.MkdirAll(createDir, 0755); err == nil {
 		if err := SaveConfig(defaultCfg, createPath); err == nil {
 			fmt.Fprintf(os.Stderr, "[Config] Created default configuration file at: %s\n", createPath)
+			NotificationsDisabled = defaultCfg.DisableNotifications
 			return defaultCfg, createPath, nil
 		}
 	}
 
+	NotificationsDisabled = defaultCfg.DisableNotifications
 	return defaultCfg, "", nil
+}
+
+// NotificationsDisabled indicates if desktop notifications are globally disabled.
+var NotificationsDisabled bool
+
+// SendNotification displays a desktop notification via notify-send unless disabled.
+func SendNotification(title, message string) {
+	if NotificationsDisabled {
+		return
+	}
+	_ = exec.Command("notify-send", "-a", "Zen-Cap", title, message).Run()
 }
 
 func readConfig(path string, binDir string, isPortable bool) (*Config, error) {

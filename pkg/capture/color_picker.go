@@ -8,7 +8,6 @@ import (
 	"image/draw"
 	"log"
 	"math"
-	"os/exec"
 	"strings"
 
 	"github.com/jezek/xgb/xproto"
@@ -36,6 +35,7 @@ type pickerState struct {
 	rgbaImg      *image.RGBA
 	pickedColors []string
 	formatStr    string
+	rightPressed bool
 }
 
 // InteractiveColorPicker captures the fullscreen, displays it, lets the user Hover,
@@ -250,6 +250,7 @@ func InteractiveColorPicker(fullImg image.Image, formatStr string) (string, erro
 
 	// Register event handlers
 	xevent.ButtonPressFun(state.handleButtonPress).Connect(xu, winID)
+	xevent.ButtonReleaseFun(state.handleButtonRelease).Connect(xu, winID)
 	xevent.MotionNotifyFun(state.handleMotionNotify).Connect(xu, winID)
 	xevent.ExposeFun(func(X *xgbutil.XUtil, ev xevent.ExposeEvent) {
 		state.redraw()
@@ -388,15 +389,10 @@ func (s *pickerState) handleButtonPress(X *xgbutil.XUtil, ev xevent.ButtonPressE
 
 		s.pickedColors = append(s.pickedColors, colors...)
 		s.selected = true
+		xevent.Quit(s.xu)
 
-		// Quick user notification
-		notifyMsg := fmt.Sprintf("Added color %s to palette (Total: %d)", colors[0], len(s.pickedColors))
-		if len(colors) > 1 {
-			notifyMsg = fmt.Sprintf("Added %d colors to palette (Total: %d)", len(colors), len(s.pickedColors))
-		}
-		_ = exec.Command("notify-send", "-a", "Zen-Cap", "Color Picker", notifyMsg).Run()
-
-	} else if ev.Detail == 3 { // Right click: move picking point to cursor
+	} else if ev.Detail == 3 { // Right click: start holding/moving picking point
+		s.rightPressed = true
 		s.currX = int(ev.EventX)
 		s.currY = int(ev.EventY)
 		s.redraw()
@@ -417,9 +413,18 @@ func (s *pickerState) handleButtonPress(X *xgbutil.XUtil, ev xevent.ButtonPressE
 	}
 }
 
+func (s *pickerState) handleButtonRelease(X *xgbutil.XUtil, ev xevent.ButtonReleaseEvent) {
+	if ev.Detail == 3 { // Right click release: stop moving picking point
+		s.rightPressed = false
+	}
+}
+
 func (s *pickerState) handleMotionNotify(X *xgbutil.XUtil, ev xevent.MotionNotifyEvent) {
-	// Motion notify does not change target picking point, it only updates
-	// when right-clicked to set picking point.
+	if s.rightPressed {
+		s.currX = int(ev.EventX)
+		s.currY = int(ev.EventY)
+		s.redraw()
+	}
 }
 
 func (s *pickerState) handleKeyPress(X *xgbutil.XUtil, ev xevent.KeyPressEvent) {

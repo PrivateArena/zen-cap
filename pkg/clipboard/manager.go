@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -303,5 +302,5 @@ func (m *Manager) CycleTransform() {
 }
 
 func sendNotification(title, message string) {
-	_ = exec.Command("notify-send", "-a", "Zen-Cap", title, message).Run()
+	config.SendNotification(title, message)
 }

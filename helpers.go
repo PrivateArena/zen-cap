@@ -4,7 +4,6 @@ package main
 import (
 	"fmt"
 	"image"
-	"os/exec"
 	"strconv"
 
 	"zen-cap/pkg/capture"
@@ -168,5 +167,5 @@ func processClipboardAction(img image.Image, absPath string, action string, cfg 
 }
 
 func sendNotification(title, message string) {
-	_ = exec.Command("notify-send", "-a", "Zen-Cap", title, message).Run()
+	config.SendNotification(title, message)
 }
