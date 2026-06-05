@@ -424,7 +424,7 @@ func handleService() error {
 					fmt.Printf("Error capturing fullscreen for OCR: %v\n", err)
 					return
 				}
-				if err := capture.PerformOCROverlay(img, cfg.OCRAddress, cfg.OCRLanguage, cfg.TranslationTarget, cfg.AutoTranslate, cfg.OutputDir); err != nil {
+				if err := capture.PerformOCROverlay(img, cfg.OCRAddress, cfg.OCRLanguage, cfg.TranslationTarget, cfg.TranslationEngine, cfg.AutoTranslate, cfg.OutputDir); err != nil {
 					fmt.Printf("OCR Overlay error: %v\n", err)
 				}
 			}()
@@ -451,7 +451,7 @@ func handleService() error {
 					fmt.Printf("Error capturing region for OCR: %v\n", err)
 					return
 				}
-				if err := capture.PerformOCROverlay(img, cfg.OCRAddress, cfg.OCRLanguage, cfg.TranslationTarget, cfg.AutoTranslate, cfg.OutputDir); err != nil {
+				if err := capture.PerformOCROverlay(img, cfg.OCRAddress, cfg.OCRLanguage, cfg.TranslationTarget, cfg.TranslationEngine, cfg.AutoTranslate, cfg.OutputDir); err != nil {
 					fmt.Printf("OCR Overlay error: %v\n", err)
 				}
 			}()
@@ -479,7 +479,7 @@ func handleService() error {
 					fmt.Printf("Error capturing window for OCR: %v\n", err)
 					return
 				}
-				if err := capture.PerformOCROverlay(img, cfg.OCRAddress, cfg.OCRLanguage, cfg.TranslationTarget, cfg.AutoTranslate, cfg.OutputDir); err != nil {
+				if err := capture.PerformOCROverlay(img, cfg.OCRAddress, cfg.OCRLanguage, cfg.TranslationTarget, cfg.TranslationEngine, cfg.AutoTranslate, cfg.OutputDir); err != nil {
 					fmt.Printf("OCR Overlay error: %v\n", err)
 				}
 			}()

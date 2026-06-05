@@ -192,12 +192,58 @@ func PerformOCR(img image.Image, ocrAddress string, lang string) (string, error)
 	return strings.Join(lines, "\n"), nil
 }
 
-// TranslateText translates the given text to the target language using Google's free translation API.
-func TranslateText(text string, targetLang string) (string, error) {
+// TranslateText translates the given text using the configured translation engine ("google" or "local").
+func TranslateText(engine, ocrAddress, text, targetLang string) (string, error) {
 	if text == "" {
 		return "", nil
 	}
 
+	if engine == "local" {
+		resolvedAddress, err := EnsureOCRServer(ocrAddress)
+		if err != nil {
+			return "", fmt.Errorf("OCR server check failed: %w", err)
+		}
+
+		translateURL := fmt.Sprintf("%s/translate", strings.TrimSuffix(resolvedAddress, "/"))
+
+		requestData := map[string]string{
+			"text":   text,
+			"target": targetLang,
+		}
+		jsonData, err := json.Marshal(requestData)
+		if err != nil {
+			return "", fmt.Errorf("failed to marshal translation request: %w", err)
+		}
+
+		resp, err := http.Post(translateURL, "application/json", bytes.NewBuffer(jsonData))
+		if err != nil {
+			return "", fmt.Errorf("translation HTTP request failed: %w", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			return "", fmt.Errorf("translation returned bad status %s: %s", resp.Status, string(bodyBytes))
+		}
+
+		type translateResponse struct {
+			Translated string `json:"translated"`
+			Error      string `json:"error,omitempty"`
+		}
+
+		var transResp translateResponse
+		if err := json.NewDecoder(resp.Body).Decode(&transResp); err != nil {
+			return "", fmt.Errorf("failed to decode translation response: %w", err)
+		}
+
+		if transResp.Error != "" {
+			return "", fmt.Errorf("translation error: %s", transResp.Error)
+		}
+
+		return transResp.Translated, nil
+	}
+
+	// Default to Google Translate
 	apiURL := fmt.Sprintf("https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=%s&dt=t&q=%s",
 		targetLang, url.QueryEscape(text))
 
@@ -300,7 +346,7 @@ func PerformOCRWithDetails(img image.Image, ocrAddress string, lang string) ([]O
 		return nil, fmt.Errorf("failed to encode PNG for OCR: %w", err)
 	}
 
-	recognizeURL := fmt.Sprintf("%s/recognize?lang=%s", strings.TrimSuffix(resolvedAddress, "/"), url.QueryEscape(lang))
+	recognizeURL := fmt.Sprintf("%s/ocr?lang=%s", strings.TrimSuffix(resolvedAddress, "/"), url.QueryEscape(lang))
 
 	resp, err := http.Post(recognizeURL, "image/png", &buf)
 	if err != nil {
@@ -327,7 +373,7 @@ func PerformOCRWithDetails(img image.Image, ocrAddress string, lang string) ([]O
 
 // PerformOCROverlay executes the OCR pipeline, overlays the recognized/translated text onto the image,
 // saves it as a PNG file in OutputDir, and displays it in an interactive overlay window.
-func PerformOCROverlay(img image.Image, ocrAddress, ocrLanguage, translationTarget string, autoTranslate bool, outputDir string) error {
+func PerformOCROverlay(img image.Image, ocrAddress, ocrLanguage, translationTarget, translationEngine string, autoTranslate bool, outputDir string) error {
 	results, err := PerformOCRWithDetails(img, ocrAddress, ocrLanguage)
 	if err != nil {
 		return fmt.Errorf("OCR failed: %w", err)
@@ -344,14 +390,16 @@ func PerformOCROverlay(img image.Image, ocrAddress, ocrLanguage, translationTarg
 
 		text := res.Text
 		if autoTranslate {
-			translated, err := TranslateText(text, translationTarget)
+			translated, err := TranslateText(translationEngine, ocrAddress, text, translationTarget)
 			if err == nil && translated != "" {
 				text = translated
 			}
 		}
 
-		minX, minY := res.Bounds.Min.X, res.Bounds.Min.Y
-		maxX, maxY := res.Bounds.Max.X, res.Bounds.Max.Y
+		minX := res.Bounds.Min.X + bounds.Min.X
+		minY := res.Bounds.Min.Y + bounds.Min.Y
+		maxX := res.Bounds.Max.X + bounds.Min.X
+		maxY := res.Bounds.Max.Y + bounds.Min.Y
 		boxW := maxX - minX
 		boxH := maxY - minY
 

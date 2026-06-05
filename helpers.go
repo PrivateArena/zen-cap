@@ -152,7 +152,7 @@ func processClipboardAction(img image.Image, absPath string, action string, cfg 
 			return
 		}
 		fmt.Printf("[Translate] Translating extracted text to %s...\n", cfg.TranslationTarget)
-		translated, err := capture.TranslateText(text, cfg.TranslationTarget)
+		translated, err := capture.TranslateText(cfg.TranslationEngine, cfg.OCRAddress, text, cfg.TranslationTarget)
 		if err != nil {
 			fmt.Printf("Translation failed: %v\n", err)
 			sendNotification("Zen-Cap Translate", fmt.Sprintf("Translation failed: %v", err))

@@ -23,6 +23,7 @@ type Config struct {
 	OCRAddress           string          `json:"ocr_address"`        // Default: "http://localhost:8765"
 	OCRLanguage          string          `json:"ocr_language"`       // Default: "ch"
 	TranslationTarget    string          `json:"translation_target"` // Default: "en"
+	TranslationEngine    string          `json:"translation_engine"` // "google" or "local" (default: "google")
 	AutoTranslate        bool            `json:"auto_translate"`     // Default: false
 	ClipboardSessionFile string          `json:"clipboard_session_file"`
 	SnippetFile          string          `json:"snippet_file"`
@@ -119,6 +120,7 @@ func DefaultConfig() *Config {
 		OCRAddress:           "http://localhost:8765",
 		OCRLanguage:          "ch",
 		TranslationTarget:    "en",
+		TranslationEngine:    "google",
 		AutoTranslate:        false,
 		ClipboardSessionFile: defaultSessionFile,
 		SnippetFile:          defaultSnippetFile,
@@ -150,6 +152,7 @@ func DefaultPortableConfig(binDir string) *Config {
 		OCRAddress:           "http://localhost:8765",
 		OCRLanguage:          "ch",
 		TranslationTarget:    "en",
+		TranslationEngine:    "google",
 		AutoTranslate:        false,
 		ClipboardSessionFile: filepath.Join(binDir, "clipboard_session.json"),
 		SnippetFile:          filepath.Join(binDir, "snippets.yaml"),
@@ -299,6 +302,9 @@ func readConfig(path string, binDir string, isPortable bool) (*Config, error) {
 	}
 	if cfg.TranslationTarget == "" {
 		cfg.TranslationTarget = defaults.TranslationTarget
+	}
+	if cfg.TranslationEngine == "" {
+		cfg.TranslationEngine = defaults.TranslationEngine
 	}
 	if cfg.ClipboardSessionFile == "" {
 		cfg.ClipboardSessionFile = defaults.ClipboardSessionFile
