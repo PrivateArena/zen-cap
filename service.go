@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -48,6 +49,7 @@ func handleService() error {
 	fmt.Printf("  %-14s -> Interactive Region OCR / Translation Overlay\n", cfg.Hotkeys.OCRRegionScreenshot)
 	fmt.Printf("  %-14s -> Interactive Window OCR / Translation Overlay\n", cfg.Hotkeys.OCRWindowScreenshot)
 	fmt.Printf("  %-14s -> Grab Window Class to Clipboard\n", cfg.Hotkeys.WindowClassGrab)
+	fmt.Printf("  %-14s -> Color Picker (Grab Pixels to Clipboard)\n", cfg.Hotkeys.ColorPicker)
 	fmt.Printf("  %-14s -> Toggle Recording (Start/Stop)\n", cfg.Hotkeys.RecordToggle)
 	fmt.Printf("  %-14s -> Mark Fullscreen for Recording\n", cfg.Hotkeys.RecordMarkFullscreen)
 	fmt.Printf("  %-14s -> Mark Region for Recording\n", cfg.Hotkeys.RecordMarkRegion)
@@ -74,6 +76,7 @@ func handleService() error {
 	ocrRegionScreenshotChan := make(chan struct{}, 1)
 	ocrWindowScreenshotChan := make(chan struct{}, 1)
 	windowClassGrabChan := make(chan struct{}, 1)
+	colorPickerChan := make(chan struct{}, 1)
 	recordChan := make(chan struct{}, 1)
 	recordMarkFullscreenChan := make(chan struct{}, 1)
 	recordMarkRegionChan := make(chan struct{}, 1)
@@ -149,6 +152,15 @@ func handleService() error {
 		default:
 		}
 	}).Connect(X, X.RootWin(), cfg.Hotkeys.WindowClassGrab, true)
+
+	// Register Color Picker Hotkey
+	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+		fmt.Println("Hotkey pressed: Triggering interactive color picker...")
+		select {
+		case colorPickerChan <- struct{}{}:
+		default:
+		}
+	}).Connect(X, X.RootWin(), cfg.Hotkeys.ColorPicker, true)
 
 	// Register Recording Hotkey
 	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
@@ -568,6 +580,44 @@ func handleService() error {
 				} else {
 					fmt.Printf("[Clipboard] Copied window class to clipboard: %s\n", wClass)
 					sendNotification("Zen-Cap", fmt.Sprintf("Copied window class %q to clipboard!", wClass))
+				}
+			}()
+		}
+	}()
+
+	go func() {
+		for range colorPickerChan {
+			go func() {
+				if freshCfg, _, err := config.LoadConfig(); err == nil {
+					cfg = freshCfg
+				}
+				fmt.Println("Launching interactive color picker...")
+
+				// Capture base fullscreen screen first
+				capCfg := capture.CaptureConfig{
+					Display:     ":0.0",
+					X:           -1,
+					Y:           -1,
+					Interactive: false,
+				}
+				img, err := capture.CaptureScreen(capCfg)
+				if err != nil {
+					fmt.Printf("Error capturing fullscreen for color picker: %v\n", err)
+					return
+				}
+
+				colorsText, err := capture.InteractiveColorPicker(img, cfg.ColorPickerFormat)
+				if err != nil {
+					fmt.Printf("Color picker error: %v\n", err)
+					return
+				}
+
+				fmt.Printf("[ColorPicker] Copied colors to clipboard: %s\n", colorsText)
+				numColors := strings.Count(colorsText, "\n") + 1
+				if numColors == 1 {
+					sendNotification("Zen-Cap Color Picker", fmt.Sprintf("Copied color %s to clipboard!", colorsText))
+				} else {
+					sendNotification("Zen-Cap Color Picker", fmt.Sprintf("Copied %d colors to clipboard!", numColors))
 				}
 			}()
 		}

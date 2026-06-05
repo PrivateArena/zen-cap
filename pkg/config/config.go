@@ -25,6 +25,7 @@ type Config struct {
 	TranslationTarget    string          `json:"translation_target"` // Default: "en"
 	TranslationEngine    string          `json:"translation_engine"` // "google" or "local" (default: "google")
 	AutoTranslate        bool            `json:"auto_translate"`     // Default: false
+	ColorPickerFormat    string          `json:"color_picker_format"` // "hex", "rgb", "rgba", "hsl" (default: "hex")
 	ClipboardSessionFile string          `json:"clipboard_session_file"`
 	SnippetFile          string          `json:"snippet_file"`
 	AutomationDir        string          `json:"automation_dir"`
@@ -49,6 +50,7 @@ type HotkeysConfig struct {
 	SnippetPicker          string `json:"snippet_picker"`       // e.g. "Mod1-grave" (Alt+`)
 	AutomationPicker       string `json:"automation_picker"`    // e.g. "Mod1-a" (Alt+a)
 	WindowClassGrab        string `json:"window_class_grab"`    // e.g. "Shift-F4"
+	ColorPicker            string `json:"color_picker"`          // e.g. "Shift-F5"
 }
 
 func DefaultTransformRules() []TransformRule {
@@ -123,8 +125,10 @@ func DefaultConfig() *Config {
 			SnippetPicker:        "Mod1-grave",
 			AutomationPicker:     "Mod1-a",
 			WindowClassGrab:      "Shift-F4",
+			ColorPicker:          "Shift-F5",
 		},
 		ClipboardMode:        "image",
+		ColorPickerFormat:    "hex",
 		OCRAddress:           "http://localhost:8765",
 		OCRLanguage:          "ch",
 		TranslationTarget:    "en",
@@ -159,8 +163,10 @@ func DefaultPortableConfig(binDir string) *Config {
 			SnippetPicker:        "Mod1-grave",
 			AutomationPicker:     "Mod1-a",
 			WindowClassGrab:      "Shift-F4",
+			ColorPicker:          "Shift-F5",
 		},
 		ClipboardMode:        "image",
+		ColorPickerFormat:    "hex",
 		OCRAddress:           "http://localhost:8765",
 		OCRLanguage:          "ch",
 		TranslationTarget:    "en",
@@ -315,8 +321,14 @@ func readConfig(path string, binDir string, isPortable bool) (*Config, error) {
 	if cfg.Hotkeys.WindowClassGrab == "" {
 		cfg.Hotkeys.WindowClassGrab = defaults.Hotkeys.WindowClassGrab
 	}
+	if cfg.Hotkeys.ColorPicker == "" {
+		cfg.Hotkeys.ColorPicker = defaults.Hotkeys.ColorPicker
+	}
 	if cfg.ClipboardMode == "" {
 		cfg.ClipboardMode = defaults.ClipboardMode
+	}
+	if cfg.ColorPickerFormat == "" {
+		cfg.ColorPickerFormat = defaults.ColorPickerFormat
 	}
 	if cfg.OCRAddress == "" {
 		cfg.OCRAddress = defaults.OCRAddress

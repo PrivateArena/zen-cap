@@ -12,15 +12,17 @@ import (
 
 // Magnifier handles magnifier positioning and rendering for pixel-level feedback.
 type Magnifier struct {
-	Width  int
-	Height int
+	Width      int
+	Height     int
+	PickerSize int // if > 0, draws a border outline of this size inside the magnifier
 }
 
 // NewMagnifier initializes a standard 120x120 magnifier.
 func NewMagnifier() *Magnifier {
 	return &Magnifier{
-		Width:  120,
-		Height: 120,
+		Width:      120,
+		Height:     120,
+		PickerSize: 0,
 	}
 }
 
@@ -55,7 +57,7 @@ func (m *Magnifier) Render(
 		ly = 10
 	}
 
-	magImg := getMagnifierImage(rgbaImg, mx, my, lx, ly, screenWidth, screenHeight, dragging, startX, startY)
+	magImg := m.getMagnifierImage(rgbaImg, mx, my, lx, ly, screenWidth, screenHeight, dragging, startX, startY)
 	magBGRA := imageToBGRA(magImg)
 
 	// Upload magnifier to the buffer pixmap
@@ -74,7 +76,7 @@ func (m *Magnifier) Render(
 	)
 }
 
-func getMagnifierImage(rgbaImg *image.RGBA, mx, my, lx, ly, screenWidth, screenHeight int, dragging bool, startX, startY int) *image.RGBA {
+func (m *Magnifier) getMagnifierImage(rgbaImg *image.RGBA, mx, my, lx, ly, screenWidth, screenHeight int, dragging bool, startX, startY int) *image.RGBA {
 	mag := image.NewRGBA(image.Rect(0, 0, 120, 120))
 	pinkColor := color.RGBA{R: 255, G: 0, B: 127, A: 255}
 	cyanColor := color.RGBA{R: 0, G: 240, B: 255, A: 255}
@@ -108,8 +110,25 @@ func getMagnifierImage(rgbaImg *image.RGBA, mx, my, lx, ly, screenWidth, screenH
 					col = color.Black
 				}
 
+				// If PickerSize > 0, draw the border around the picked area
+				isOnBorder := false
+				if m.PickerSize > 0 {
+					ox := dx/4 - 15
+					oy := dy/4 - 15
+					half := m.PickerSize / 2
+					if (ox == -half && dx%4 == 0 && oy >= -half && oy <= half) ||
+						(ox == half && dx%4 == 3 && oy >= -half && oy <= half) ||
+						(oy == -half && dy%4 == 0 && ox >= -half && ox <= half) ||
+						(oy == half && dy%4 == 3 && ox >= -half && ox <= half) {
+						isOnBorder = true
+					}
+					if isOnBorder {
+						col = cyanColor
+					}
+				}
+
 				// Draw circular central crosshairs (Neon pink, length 10px in 4 directions)
-				if (rx == 0 && ry >= -10 && ry <= 10) || (ry == 0 && rx >= -10 && rx <= 10) {
+				if !isOnBorder && ((rx == 0 && ry >= -10 && ry <= 10) || (ry == 0 && rx >= -10 && rx <= 10)) {
 					col = pinkColor
 				}
 			}

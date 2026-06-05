@@ -8,6 +8,7 @@
     "ocr_region_screenshot": "Mod1-F1",
     "ocr_window_screenshot": "Mod1-F2",
     "window_class_grab": "Shift-F4",
+    "color_picker": "Shift-F5",
     "snippet_picker": "Mod1-w",
     "automation_picker": "Mod1-a",
     "record_toggle": "Control-Shift-r",
@@ -20,6 +21,7 @@
     "clipboard_cycle_rule": "Control-grave"
   },
   "clipboard_mode": "image",
+  "color_picker_format": "hex",
   "ocr_address": "http://localhost:8765",
   "ocr_language": "ch",
   "translation_target": "en"
