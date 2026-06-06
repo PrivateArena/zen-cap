@@ -284,13 +284,46 @@ func TranslateText(engine, ocrAddress, text, targetLang string) (string, error) 
 	return translated, nil
 }
 
-func loadSystemFont(fontSize float64) (font.Face, error) {
-	fontPaths := []string{
-		"fonts/NotoSans-Regular.ttf",
-		"../fonts/NotoSans-Regular.ttf",
-		"/media/jang/home/Deve/zen-cap/fonts/NotoSans-Regular.ttf",
-		"/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-		"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+func hasCJK(s string) bool {
+	for _, r := range s {
+		// CJK Unified Ideographs (Chinese)
+		if r >= 0x4E00 && r <= 0x9FFF {
+			return true
+		}
+		// Hangul Syllables (Korean)
+		if r >= 0xAC00 && r <= 0xD7AF {
+			return true
+		}
+		// Hiragana & Katakana (Japanese)
+		if (r >= 0x3040 && r <= 0x309F) || (r >= 0x30A0 && r <= 0x30FF) {
+			return true
+		}
+	}
+	return false
+}
+
+func loadSystemFont(fontSize float64, preferCJK bool) (font.Face, error) {
+	var fontPaths []string
+	if preferCJK {
+		fontPaths = []string{
+			"/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
+			"/usr/share/fonts/truetype/droid/DroidSansFallback.ttf",
+			"fonts/NotoSans-Regular.ttf",
+			"../fonts/NotoSans-Regular.ttf",
+			"/media/jang/home/Deve/zen-cap/fonts/NotoSans-Regular.ttf",
+			"/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+			"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+		}
+	} else {
+		fontPaths = []string{
+			"fonts/NotoSans-Regular.ttf",
+			"../fonts/NotoSans-Regular.ttf",
+			"/media/jang/home/Deve/zen-cap/fonts/NotoSans-Regular.ttf",
+			"/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+			"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+			"/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
+			"/usr/share/fonts/truetype/droid/DroidSansFallback.ttf",
+		}
 	}
 
 	var fontBytes []byte
@@ -407,6 +440,96 @@ func PerformOCROverlay(img image.Image, ocrAddress, ocrLanguage, translationTarg
 			continue
 		}
 
+		// Estimate text length in font-height units (characters)
+		estimatedUnits := 0.0
+		for _, r := range text {
+			if (r >= 0x4E00 && r <= 0x9FFF) || (r >= 0xAC00 && r <= 0xD7AF) || (r >= 0x3040 && r <= 0x309F) || (r >= 0x30A0 && r <= 0x30FF) {
+				estimatedUnits += 1.0 // CJK characters are square
+			} else if r == ' ' {
+				estimatedUnits += 0.35
+			} else {
+				estimatedUnits += 0.55 // Latin/other characters are usually narrower
+			}
+		}
+		if estimatedUnits < 1.0 {
+			estimatedUnits = 1.0
+		}
+
+		fontSizeByHeight := float64(boxH) * 0.85
+		fontSizeByWidth := (float64(boxW) / estimatedUnits) * 0.90 // leave 10% horizontal padding
+
+		// If DBNet under-detected the text height, allow scaling up using the width-based estimate
+		// (up to 3x the height-based estimate, clamped to 50% of the total image height)
+		fontSize := fontSizeByHeight
+		if fontSizeByWidth > fontSize {
+			maxScaleUp := fontSizeByHeight * 3.0
+			if fontSizeByWidth > maxScaleUp {
+				fontSizeByWidth = maxScaleUp
+			}
+			fontSize = fontSizeByWidth
+		}
+
+		maxAllowedFontSize := float64(bounds.Dy()) * 0.50
+		if fontSize > maxAllowedFontSize {
+			fontSize = maxAllowedFontSize
+		}
+
+		minFontSize := 16.0
+		if fontSize < minFontSize {
+			fontSize = minFontSize
+		}
+
+		// Loop to dynamically shrink font size to fit box width if it exceeds it,
+		// but do not shrink below minFontSize.
+		var face font.Face
+		var metrics font.Metrics
+		var textWidth int
+		for {
+			var err error
+			face, err = loadSystemFont(fontSize, hasCJK(text))
+			if err != nil {
+				face = basicfont.Face7x13
+			}
+
+			// Measure text width using temporary drawer
+			dMeasure := &font.Drawer{Face: face}
+			textWidth = dMeasure.MeasureString(text).Round()
+
+			if textWidth+8 <= boxW || fontSize <= minFontSize {
+				break
+			}
+
+			fontSize -= 1.0
+			if fontSize < minFontSize {
+				fontSize = minFontSize
+			}
+		}
+
+		// Now adjust bounding box dimensions based on the final font size & text width
+		metrics = face.Metrics()
+		ascent := metrics.Ascent.Round()
+		if face == basicfont.Face7x13 {
+			ascent = 11
+		}
+
+		// Ensure box is high enough for the font
+		requiredHeight := metrics.Height.Round() + 6
+		if boxH < requiredHeight {
+			centerY := (minY + maxY) / 2
+			minY = centerY - requiredHeight/2
+			maxY = centerY + requiredHeight/2
+			boxH = maxY - minY
+		}
+
+		// Ensure box is wide enough for the text + padding
+		requiredWidth := textWidth + 10
+		if boxW < requiredWidth {
+			centerX := (minX + maxX) / 2
+			minX = centerX - requiredWidth/2
+			maxX = centerX + requiredWidth/2
+			boxW = maxX - minX
+		}
+
 		// Draw background box to erase original text
 		boxRect := image.Rect(minX, minY, maxX, maxY)
 		bgColor := color.RGBA{R: 20, G: 20, B: 30, A: 240} // Sleek dark mode background
@@ -416,23 +539,7 @@ func PerformOCROverlay(img image.Image, ocrAddress, ocrLanguage, translationTarg
 		borderColor := color.RGBA{R: 0, G: 240, B: 255, A: 255}
 		drawRectOutline(rgbaImg, minX, minY, maxX, maxY, borderColor)
 
-		// Choose font size based on box height
-		fontSize := float64(boxH) * 0.70
-		if fontSize < 8 {
-			fontSize = 8
-		}
-		face, err := loadSystemFont(fontSize)
-		if err != nil {
-			face = basicfont.Face7x13
-		}
-
-		metrics := face.Metrics()
-		ascent := metrics.Ascent.Round()
-		if face == basicfont.Face7x13 {
-			ascent = 11
-		}
-
-		textX := minX + 4
+		textX := minX + 5
 		textY := minY + ascent + (boxH-metrics.Height.Round())/2
 		if textY < minY+ascent {
 			textY = minY + ascent

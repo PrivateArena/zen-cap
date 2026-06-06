@@ -7,7 +7,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 )
 
 type TransformRule struct {
@@ -23,6 +25,7 @@ type Config struct {
 	ClipboardMode        string          `json:"clipboard_mode"`     // "image", "path", "ocr", "translate", "none"
 	OCRAddress           string          `json:"ocr_address"`        // Default: "http://localhost:8765"
 	OCRLanguage          string          `json:"ocr_language"`       // Default: "ch"
+	OCRLanguages         []string        `json:"ocr_languages"`      // Default: ["en", "ja", "ko", "ch"]
 	TranslationTarget    string          `json:"translation_target"` // Default: "en"
 	TranslationEngine    string          `json:"translation_engine"` // "google" or "local" (default: "google")
 	AutoTranslate        bool            `json:"auto_translate"`     // Default: false
@@ -49,6 +52,7 @@ type HotkeysConfig struct {
 	ClipboardCopyMod       string `json:"clipboard_copy_mod"`   // e.g. "Control-Shift"
 	ClipboardPasteMod      string `json:"clipboard_paste_mod"`  // e.g. "Mod1-Shift"
 	ClipboardCycleRule     string `json:"clipboard_cycle_rule"` // e.g. "Control-grave"
+	OcrCycleModel          string `json:"ocr_cycle_model"`      // e.g. "Control-Mod1-grave"
 	SnippetPicker          string `json:"snippet_picker"`       // e.g. "Mod1-grave" (Alt+`)
 	AutomationPicker       string `json:"automation_picker"`    // e.g. "Mod1-a" (Alt+a)
 	WindowClassGrab        string `json:"window_class_grab"`    // e.g. "Shift-F4"
@@ -124,6 +128,7 @@ func DefaultConfig() *Config {
 			ClipboardCopyMod:     "Control-Shift",
 			ClipboardPasteMod:    "Mod1-Shift",
 			ClipboardCycleRule:   "Control-grave",
+			OcrCycleModel:       "Control-Mod1-grave",
 			SnippetPicker:        "Mod1-grave",
 			AutomationPicker:     "Mod1-a",
 			WindowClassGrab:      "Shift-F4",
@@ -133,6 +138,7 @@ func DefaultConfig() *Config {
 		ColorPickerFormat:    "hex",
 		OCRAddress:           "http://localhost:8765",
 		OCRLanguage:          "ch",
+		OCRLanguages:         []string{"en", "ja", "ko", "ch"},
 		TranslationTarget:    "en",
 		TranslationEngine:    "google",
 		AutoTranslate:        false,
@@ -163,6 +169,7 @@ func DefaultPortableConfig(binDir string) *Config {
 			ClipboardCopyMod:     "Control-Shift",
 			ClipboardPasteMod:    "Mod1-Shift",
 			ClipboardCycleRule:   "Control-grave",
+			OcrCycleModel:       "Control-Mod1-grave",
 			SnippetPicker:        "Mod1-grave",
 			AutomationPicker:     "Mod1-a",
 			WindowClassGrab:      "Shift-F4",
@@ -172,6 +179,7 @@ func DefaultPortableConfig(binDir string) *Config {
 		ColorPickerFormat:    "hex",
 		OCRAddress:           "http://localhost:8765",
 		OCRLanguage:          "ch",
+		OCRLanguages:         []string{"en", "ja", "ko", "ch"},
 		TranslationTarget:    "en",
 		TranslationEngine:    "google",
 		AutoTranslate:        false,
@@ -259,12 +267,34 @@ func LoadConfig() (*Config, string, error) {
 // NotificationsDisabled indicates if desktop notifications are globally disabled.
 var NotificationsDisabled bool
 
+var (
+	lastNotificationID string
+	lastNotificationMu sync.Mutex
+)
+
 // SendNotification displays a desktop notification via notify-send unless disabled.
+// It uses notify-send's -p (print-id) and -r (replace-id) to update the previous notification in-place.
 func SendNotification(title, message string) {
 	if NotificationsDisabled {
 		return
 	}
-	_ = exec.Command("notify-send", "-a", "Zen-Cap", title, message).Run()
+	lastNotificationMu.Lock()
+	defer lastNotificationMu.Unlock()
+
+	args := []string{"-a", "Zen-Cap", "-p"}
+	if lastNotificationID != "" {
+		args = append(args, "-r", lastNotificationID)
+	}
+	args = append(args, title, message)
+
+	cmd := exec.Command("notify-send", args...)
+	output, err := cmd.Output()
+	if err == nil {
+		idStr := strings.TrimSpace(string(output))
+		if _, errConv := strconv.Atoi(idStr); errConv == nil {
+			lastNotificationID = idStr
+		}
+	}
 }
 
 func readConfig(path string, binDir string, isPortable bool) (*Config, error) {
@@ -330,6 +360,9 @@ func readConfig(path string, binDir string, isPortable bool) (*Config, error) {
 	if cfg.Hotkeys.ClipboardCycleRule == "" {
 		cfg.Hotkeys.ClipboardCycleRule = defaults.Hotkeys.ClipboardCycleRule
 	}
+	if cfg.Hotkeys.OcrCycleModel == "" {
+		cfg.Hotkeys.OcrCycleModel = defaults.Hotkeys.OcrCycleModel
+	}
 	if cfg.Hotkeys.SnippetPicker == "" {
 		cfg.Hotkeys.SnippetPicker = defaults.Hotkeys.SnippetPicker
 	}
@@ -353,6 +386,9 @@ func readConfig(path string, binDir string, isPortable bool) (*Config, error) {
 	}
 	if cfg.OCRLanguage == "" {
 		cfg.OCRLanguage = defaults.OCRLanguage
+	}
+	if len(cfg.OCRLanguages) == 0 {
+		cfg.OCRLanguages = defaults.OCRLanguages
 	}
 	if cfg.TranslationTarget == "" {
 		cfg.TranslationTarget = defaults.TranslationTarget

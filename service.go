@@ -4,6 +4,8 @@ package main
 import (
 	"fmt"
 	"log"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -58,6 +60,7 @@ func handleService() error {
 	fmt.Printf("  %-14s -> Clipboard Manager: Copy (0-9)\n", cfg.Hotkeys.ClipboardCopyMod+"-[0-9]")
 	fmt.Printf("  %-14s -> Clipboard Manager: Paste (0-9)\n", cfg.Hotkeys.ClipboardPasteMod+"-[0-9]")
 	fmt.Printf("  %-14s -> Clipboard Manager: Cycle Transform Rules\n", cfg.Hotkeys.ClipboardCycleRule)
+	fmt.Printf("  %-14s -> OCR Manager: Cycle OCR Model/Language\n", cfg.Hotkeys.OcrCycleModel)
 	fmt.Printf("  %-14s -> Snippet Picker: Open GUI\n", cfg.Hotkeys.SnippetPicker)
 	fmt.Printf("  %-14s -> Snippet Editor: Open snippets.yaml\n", "Shift-"+cfg.Hotkeys.SnippetPicker)
 	fmt.Printf("  %-14s -> Automation Picker: Open GUI\n", cfg.Hotkeys.AutomationPicker)
@@ -75,6 +78,7 @@ func handleService() error {
 	ocrScreenshotChan := make(chan struct{}, 1)
 	ocrRegionScreenshotChan := make(chan struct{}, 1)
 	ocrWindowScreenshotChan := make(chan struct{}, 1)
+	ocrCycleModelChan := make(chan struct{}, 1)
 	windowClassGrabChan := make(chan struct{}, 1)
 	colorPickerChan := make(chan struct{}, 1)
 	recordChan := make(chan struct{}, 1)
@@ -143,6 +147,15 @@ func handleService() error {
 		default:
 		}
 	}).Connect(X, X.RootWin(), cfg.Hotkeys.OCRWindowScreenshot, true)
+
+	// Register OCR Model Cycle Hotkey
+	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+		fmt.Println("Hotkey pressed: Triggering OCR model cycle...")
+		select {
+		case ocrCycleModelChan <- struct{}{}:
+		default:
+		}
+	}).Connect(X, X.RootWin(), cfg.Hotkeys.OcrCycleModel, true)
 
 	// Register Window Class Grab Hotkey
 	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
@@ -557,6 +570,66 @@ func handleService() error {
 				if err := capture.PerformOCROverlay(img, cfg.OCRAddress, cfg.OCRLanguage, cfg.TranslationTarget, cfg.TranslationEngine, cfg.AutoTranslate, cfg.OutputDir); err != nil {
 					fmt.Printf("OCR Overlay error: %v\n", err)
 				}
+			}()
+		}
+	}()
+
+	go func() {
+		for range ocrCycleModelChan {
+			go func() {
+				// 1. Load latest config
+				freshCfg, cfgPath, err := config.LoadConfig()
+				if err != nil {
+					fmt.Printf("[OCR Cycle] Error loading config: %v\n", err)
+					return
+				}
+				cfg = freshCfg
+
+				if len(cfg.OCRLanguages) == 0 {
+					fmt.Println("[OCR Cycle] No OCR models/languages defined in config")
+					return
+				}
+
+				// 2. Find index of current ocr_language
+				currentIndex := -1
+				for i, lang := range cfg.OCRLanguages {
+					if lang == cfg.OCRLanguage {
+						currentIndex = i
+						break
+					}
+				}
+
+				// 3. Cycle to next
+				nextIndex := (currentIndex + 1) % len(cfg.OCRLanguages)
+				nextLang := cfg.OCRLanguages[nextIndex]
+				cfg.OCRLanguage = nextLang
+
+				// 4. Save config
+				if cfgPath != "" {
+					if err := config.SaveConfig(cfg, cfgPath); err != nil {
+						fmt.Printf("[OCR Cycle] Error saving config: %v\n", err)
+					} else {
+						fmt.Printf("[OCR Cycle] Updated config.json: ocr_language = %s\n", nextLang)
+					}
+				}
+
+				// 5. Notify the OCR server
+				resolvedAddress, err := capture.EnsureOCRServer(cfg.OCRAddress)
+				if err == nil {
+					updateURL := fmt.Sprintf("%s/ocr?model=%s", strings.TrimSuffix(resolvedAddress, "/"), url.QueryEscape(nextLang))
+					resp, err := http.Post(updateURL, "application/json", nil)
+					if err == nil {
+						resp.Body.Close()
+						fmt.Printf("[OCR Cycle] Successfully notified OCR server to switch default model to: %s\n", nextLang)
+					} else {
+						fmt.Printf("[OCR Cycle] Failed to notify OCR server: %v\n", err)
+					}
+				} else {
+					fmt.Printf("[OCR Cycle] OCR server is down or not found, updated local setting only: %v\n", err)
+				}
+
+				// 6. Send desktop notification
+				sendNotification("Zen-Cap OCR", fmt.Sprintf("Cycled OCR model to: %s", nextLang))
 			}()
 		}
 	}()

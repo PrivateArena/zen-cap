@@ -1,0 +1,1 @@
+/media/jang/home/Deve/zen-lights/TRANSLATE_SERVER_API.md
