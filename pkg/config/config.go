@@ -19,6 +19,23 @@ type TransformRule struct {
 	Replacement string `json:"replacement"` // replacement string (for "regex" type)
 }
 
+// MagnifierConfig holds configuration for the system magnifier service.
+// It is embedded directly in Config under the "magnifier" JSON key.
+type MagnifierConfig struct {
+	Enabled          bool    `json:"enabled"`
+	Display          string  `json:"display"`
+	FullscreenHotkey string  `json:"fullscreen_hotkey"`
+	LensHotkey       string  `json:"lens_hotkey"`
+	ScrollModifier   string  `json:"scroll_modifier"`
+	ZoomMin          float64 `json:"zoom_min"`
+	ZoomMax          float64 `json:"zoom_max"`
+	ZoomStep         float64 `json:"zoom_step"`
+	InitialZoom      float64 `json:"initial_zoom"`
+	LensSize         int     `json:"lens_size"`
+	LensShape        string  `json:"lens_shape"`
+	SmoothScaling    bool    `json:"smooth_scaling"`
+}
+
 type Config struct {
 	OutputDir            string          `json:"output_dir"`
 	Hotkeys              HotkeysConfig   `json:"hotkeys"`
@@ -35,6 +52,7 @@ type Config struct {
 	SnippetFile          string          `json:"snippet_file"`
 	AutomationDir        string          `json:"automation_dir"`
 	TransformRules       []TransformRule `json:"transform_rules"`
+	Magnifier            MagnifierConfig `json:"magnifier"`
 }
 
 type HotkeysConfig struct {
@@ -145,8 +163,22 @@ func DefaultConfig() *Config {
 		DisableNotifications: false,
 		ClipboardSessionFile: defaultSessionFile,
 		SnippetFile:          defaultSnippetFile,
-		AutomationDir:         defaultAutomationDir,
+		AutomationDir:        defaultAutomationDir,
 		TransformRules:       DefaultTransformRules(),
+		Magnifier: MagnifierConfig{
+			Enabled:          false,
+			Display:          ":0.0",
+			FullscreenHotkey: "super-f",
+			LensHotkey:       "super-l",
+			ScrollModifier:   "super",
+			ZoomMin:          1.5,
+			ZoomMax:          10.0,
+			ZoomStep:         0.5,
+			InitialZoom:      2.0,
+			LensSize:         420,
+			LensShape:        "circle",
+			SmoothScaling:    true,
+		},
 	}
 }
 
@@ -186,8 +218,22 @@ func DefaultPortableConfig(binDir string) *Config {
 		DisableNotifications: false,
 		ClipboardSessionFile: filepath.Join(binDir, "clipboard_session.json"),
 		SnippetFile:          filepath.Join(binDir, "snippets.yaml"),
-		AutomationDir:         filepath.Join(binDir, "automations"),
+		AutomationDir:        filepath.Join(binDir, "automations"),
 		TransformRules:       DefaultTransformRules(),
+		Magnifier: MagnifierConfig{
+			Enabled:          false,
+			Display:          ":0.0",
+			FullscreenHotkey: "super-f",
+			LensHotkey:       "super-l",
+			ScrollModifier:   "super",
+			ZoomMin:          1.5,
+			ZoomMax:          10.0,
+			ZoomStep:         0.5,
+			InitialZoom:      2.0,
+			LensSize:         420,
+			LensShape:        "circle",
+			SmoothScaling:    true,
+		},
 	}
 }
 

@@ -23,6 +23,7 @@ import (
 	"zen-cap/pkg/capture"
 	"zen-cap/pkg/clipboard"
 	"zen-cap/pkg/config"
+	"zen-cap/pkg/magnifier"
 	"zen-cap/pkg/recorder"
 )
 
@@ -40,6 +41,36 @@ func handleService() error {
 		log.Printf("Warning: Failed to create output directory %q: %v", cfg.OutputDir, err)
 	} else {
 		fmt.Printf("Outputs will be saved to: %s\n", cfg.OutputDir)
+	}
+
+	// Start the system magnifier service if enabled in config.
+	var magService *magnifier.Service
+	if cfg.Magnifier.Enabled {
+		magCfg := magnifier.Config{
+			Display:          cfg.Magnifier.Display,
+			FullscreenHotkey: cfg.Magnifier.FullscreenHotkey,
+			LensHotkey:       cfg.Magnifier.LensHotkey,
+			ScrollModifier:   cfg.Magnifier.ScrollModifier,
+			ZoomMin:          cfg.Magnifier.ZoomMin,
+			ZoomMax:          cfg.Magnifier.ZoomMax,
+			ZoomStep:         cfg.Magnifier.ZoomStep,
+			InitialZoom:      cfg.Magnifier.InitialZoom,
+			LensSize:         cfg.Magnifier.LensSize,
+			LensShapeStr:     cfg.Magnifier.LensShape,
+			SmoothScaling:    cfg.Magnifier.SmoothScaling,
+			Enabled:          true,
+		}
+		magCfg.Normalize()
+		magService = magnifier.NewService(magCfg)
+		go func() {
+			if err := magService.Start(); err != nil {
+				log.Printf("[Magnifier] Service exited: %v", err)
+			}
+		}()
+		defer magService.Stop()
+		fmt.Printf("  %-14s -> Fullscreen Magnifier (toggle)\n", cfg.Magnifier.FullscreenHotkey)
+		fmt.Printf("  %-14s -> Lens Magnifier (toggle)\n", cfg.Magnifier.LensHotkey)
+		fmt.Printf("  %-14s -> Zoom In/Out (while magnifier active)\n", cfg.Magnifier.ScrollModifier+"+Wheel")
 	}
 
 	fmt.Println("Zen-Cap hotkey service running in background...")

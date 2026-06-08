@@ -15,7 +15,7 @@
     "clipboard_copy_mod": "Control-Shift",
     "clipboard_paste_mod": "Control-Mod1",
     "clipboard_cycle_rule": "Control-grave",
-    "ocr_cycle_model": "Control-Mod1-c",
+    "ocr_cycle_model": "Mod1-grave",
     "snippet_picker": "Mod1-w",
     "automation_picker": "Mod1-a",
     "window_class_grab": "Shift-F4",
@@ -23,7 +23,7 @@
   },
   "clipboard_mode": "image",
   "ocr_address": "http://localhost:8765",
-  "ocr_language": "ch",
+  "ocr_language": "en",
   "ocr_languages": [
     "en",
     "ja",
@@ -57,5 +57,19 @@
       "pattern": "\\[[a-zA-Z0-9._-]+\\]",
       "replacement": ""
     }
-  ]
+  ],
+  "magnifier": {
+    "enabled": false,
+    "display": ":0.0",
+    "fullscreen_hotkey": "super-f",
+    "lens_hotkey": "super-l",
+    "scroll_modifier": "super",
+    "zoom_min": 1.5,
+    "zoom_max": 10.0,
+    "zoom_step": 0.5,
+    "initial_zoom": 2.0,
+    "lens_size": 420,
+    "lens_shape": "circle",
+    "smooth_scaling": true
+  }
 }
