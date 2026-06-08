@@ -36,6 +36,9 @@ func handleService() error {
 		fmt.Printf("Loaded config from: %s\n", cfgPath)
 	}
 
+	// Start local HTTP API server
+	go startAPIServer(cfg)
+
 	// Ensure OutputDir exists
 	if err := os.MkdirAll(cfg.OutputDir, 0755); err != nil {
 		log.Printf("Warning: Failed to create output directory %q: %v", cfg.OutputDir, err)

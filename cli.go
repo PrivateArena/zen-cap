@@ -14,6 +14,10 @@ import (
 )
 
 func runCLI() {
+	capture.OnSavePNG = func(path string) {
+		checkAndTriggerCollaborate(path)
+	}
+
 	if len(os.Args) < 2 {
 		printUsage()
 		os.Exit(1)

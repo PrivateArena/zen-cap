@@ -22,6 +22,7 @@
     "color_picker": "Shift-F5"
   },
   "clipboard_mode": "image",
+  "api_address": "localhost:4444",
   "ocr_address": "http://localhost:8765",
   "ocr_language": "en",
   "ocr_languages": [

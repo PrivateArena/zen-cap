@@ -41,6 +41,7 @@ type Config struct {
 	Hotkeys              HotkeysConfig   `json:"hotkeys"`
 	ClipboardMode        string          `json:"clipboard_mode"`     // "image", "path", "ocr", "translate", "none"
 	OCRAddress           string          `json:"ocr_address"`        // Default: "http://localhost:8765"
+	APIAddress           string          `json:"api_address"`        // Default: "localhost:4444"
 	OCRLanguage          string          `json:"ocr_language"`       // Default: "ch"
 	OCRLanguages         []string        `json:"ocr_languages"`      // Default: ["en", "ja", "ko", "ch"]
 	TranslationTarget    string          `json:"translation_target"` // Default: "en"
@@ -155,6 +156,7 @@ func DefaultConfig() *Config {
 		ClipboardMode:        "image",
 		ColorPickerFormat:    "hex",
 		OCRAddress:           "http://localhost:8765",
+		APIAddress:           "localhost:4444",
 		OCRLanguage:          "ch",
 		OCRLanguages:         []string{"en", "ja", "ko", "ch"},
 		TranslationTarget:    "en",
@@ -210,6 +212,7 @@ func DefaultPortableConfig(binDir string) *Config {
 		ClipboardMode:        "image",
 		ColorPickerFormat:    "hex",
 		OCRAddress:           "http://localhost:8765",
+		APIAddress:           "localhost:4444",
 		OCRLanguage:          "ch",
 		OCRLanguages:         []string{"en", "ja", "ko", "ch"},
 		TranslationTarget:    "en",
@@ -429,6 +432,9 @@ func readConfig(path string, binDir string, isPortable bool) (*Config, error) {
 	}
 	if cfg.OCRAddress == "" {
 		cfg.OCRAddress = defaults.OCRAddress
+	}
+	if cfg.APIAddress == "" {
+		cfg.APIAddress = defaults.APIAddress
 	}
 	if cfg.OCRLanguage == "" {
 		cfg.OCRLanguage = defaults.OCRLanguage

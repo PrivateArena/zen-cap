@@ -31,6 +31,7 @@ type CaptureConfig struct {
 // CaptureScreen opens the display capture device, grabs one frame,
 // converts it to RGBA, and returns it as a Go image.Image.
 var CaptureScreen func(cfg CaptureConfig) (image.Image, error)
+var OnSavePNG func(path string)
 
 func init() {
 	CaptureScreen = captureScreenImpl
@@ -125,5 +126,10 @@ func SavePNG(img image.Image, path string) error {
 	if err := png.Encode(f, img); err != nil {
 		return fmt.Errorf("failed to encode PNG: %w", err)
 	}
+
+	if OnSavePNG != nil {
+		OnSavePNG(path)
+	}
+
 	return nil
 }
