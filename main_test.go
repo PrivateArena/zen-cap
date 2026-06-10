@@ -192,3 +192,83 @@ func TestServiceSignals(t *testing.T) {
 
 	t.Logf("Service stdout/stderr output:\n%s", serviceOut.String())
 }
+
+func TestChordManager(t *testing.T) {
+	cm := NewChordManager(nil)
+
+	singleTriggered := 0
+	sameChordTriggered := 0
+	diffChordTriggered := 0
+
+	cm.Register("Control-Shift-s", func() {
+		singleTriggered++
+	})
+	cm.Register("F1 F1", func() {
+		sameChordTriggered++
+	})
+	cm.Register("F1 F2", func() {
+		diffChordTriggered++
+	})
+
+	// Test Case 1: Single key trigger
+	cm.handleKey("Control-Shift-s")
+	time.Sleep(15 * time.Millisecond) // wait for goroutine
+	if singleTriggered != 1 {
+		t.Errorf("expected single key to trigger once, got %d", singleTriggered)
+	}
+
+	// Test Case 2: Same chord (F1 F1) first press (should not trigger)
+	cm.handleKey("F1")
+	time.Sleep(15 * time.Millisecond)
+	if sameChordTriggered != 0 {
+		t.Errorf("expected F1 F1 not to trigger on first press, got %d", sameChordTriggered)
+	}
+
+	// Second press (should trigger)
+	cm.handleKey("F1")
+	time.Sleep(15 * time.Millisecond)
+	if sameChordTriggered != 1 {
+		t.Errorf("expected F1 F1 to trigger on second press, got %d", sameChordTriggered)
+	}
+
+	// Third press (should not trigger immediately again)
+	cm.handleKey("F1")
+	time.Sleep(15 * time.Millisecond)
+	if sameChordTriggered != 1 {
+		t.Errorf("expected F1 F1 not to trigger again on third press, got %d", sameChordTriggered)
+	}
+
+	// Test Case 3: Different key chord (F1 F2)
+	// Clear state to avoid overlap
+	cm.mu.Lock()
+	cm.lastPressed = make(map[string]time.Time)
+	cm.mu.Unlock()
+
+	// Press F1
+	cm.handleKey("F1")
+	// Press F2 within timeout
+	cm.handleKey("F2")
+	time.Sleep(15 * time.Millisecond)
+	if diffChordTriggered != 1 {
+		t.Errorf("expected F1 F2 to trigger when pressed in sequence, got %d", diffChordTriggered)
+	}
+
+	// Test Case 4: Different key chord (F1 F2) with timeout exceeded
+	// Clear state
+	cm.mu.Lock()
+	cm.lastPressed = make(map[string]time.Time)
+	cm.mu.Unlock()
+
+	cm.handleKey("F1")
+	// Simulate timeout by modifying the lastPressed map back in time
+	cm.mu.Lock()
+	cm.lastPressed["F1"] = time.Now().Add(-2 * time.Second)
+	cm.mu.Unlock()
+
+	cm.handleKey("F2")
+	time.Sleep(15 * time.Millisecond)
+	if diffChordTriggered != 1 {
+		t.Errorf("expected F1 F2 not to trigger after timeout, got %d", diffChordTriggered)
+	}
+}
+

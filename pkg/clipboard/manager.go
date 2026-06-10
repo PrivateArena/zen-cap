@@ -16,6 +16,7 @@ import (
 
 	"zen-cap/pkg/capture"
 	"zen-cap/pkg/config"
+	"zen-cap/pkg/snippet"
 )
 
 type ClipboardSlot struct {
@@ -32,6 +33,7 @@ type ClipboardSession struct {
 }
 
 type Manager struct {
+	cfg                  *config.Config
 	session              ClipboardSession
 	sessionPath          string
 	rules                []config.TransformRule
@@ -42,6 +44,7 @@ type Manager struct {
 // NewManager creates a new Manager instance and loads or initializes the session.
 func NewManager(cfg *config.Config) (*Manager, error) {
 	mgr := &Manager{
+		cfg:         cfg,
 		sessionPath: cfg.ClipboardSessionFile,
 		rules:       cfg.TransformRules,
 	}
@@ -222,27 +225,59 @@ func (m *Manager) PasteFromSlot(n int) {
 			text = ApplyTransform(text, rule)
 		}
 
-		if err := capture.CopyTextToClipboard(text); err != nil {
-			fmt.Printf("[ClipboardManager] Copy text to system clipboard failed: %v\n", err)
-			return
+		m.mu.RLock()
+		isTypeMode := m.cfg.SnippetMode == "type"
+		m.mu.RUnlock()
+
+		if isTypeMode {
+			fmt.Printf("[ClipboardManager] Typing restored slot %d (transform: %s) humanly.\n", n, ruleName)
+			go func() {
+				xu, err := xgbutil.NewConn()
+				if err != nil {
+					fmt.Printf("[ClipboardManager] Failed to connect to X server for typing: %v\n", err)
+					return
+				}
+				defer xu.Conn().Close()
+
+				keybind.Initialize(xu)
+				// Small delay to allow focus to return to target window if needed
+				time.Sleep(100 * time.Millisecond)
+
+				if err := snippet.TypeHumanly(xu, text); err != nil {
+					fmt.Printf("[ClipboardManager] Human-like typing failed: %v\n", err)
+				}
+			}()
+		} else {
+			if err := capture.CopyTextToClipboard(text); err != nil {
+				fmt.Printf("[ClipboardManager] Copy text to system clipboard failed: %v\n", err)
+				return
+			}
+			fmt.Printf("[ClipboardManager] Restored slot %d (transform: %s) to system clipboard.\n", n, ruleName)
+
+			// Perform auto-paste
+			go func() {
+				// Small delay to allow the OS to register the new clipboard content
+				time.Sleep(100 * time.Millisecond)
+				if err := nativePasteShortcut(); err != nil {
+					fmt.Printf("[ClipboardManager] Auto-paste via native X11 failed: %v\n", err)
+				}
+			}()
 		}
-		fmt.Printf("[ClipboardManager] Restored slot %d (transform: %s) to system clipboard.\n", n, ruleName)
 	} else if slot.Format == "image" {
 		if err := capture.CopyImageToClipboard(slot.Content); err != nil {
 			fmt.Printf("[ClipboardManager] Copy image to system clipboard failed: %v\n", err)
 			return
 		}
 		fmt.Printf("[ClipboardManager] Restored image from slot %d to system clipboard.\n", n)
-	}
 
-	// Perform auto-paste
-	go func() {
-		// Small delay to allow the OS to register the new clipboard content
-		time.Sleep(100 * time.Millisecond)
-		if err := nativePasteShortcut(); err != nil {
-			fmt.Printf("[ClipboardManager] Auto-paste via native X11 failed: %v\n", err)
-		}
-	}()
+		// Perform auto-paste
+		go func() {
+			time.Sleep(100 * time.Millisecond)
+			if err := nativePasteShortcut(); err != nil {
+				fmt.Printf("[ClipboardManager] Auto-paste via native X11 failed: %v\n", err)
+			}
+		}()
+	}
 }
 
 func nativePasteShortcut() error {

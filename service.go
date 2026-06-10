@@ -97,6 +97,7 @@ func handleService() error {
 	fmt.Printf("  %-14s -> OCR Manager: Cycle OCR Model/Language\n", cfg.Hotkeys.OcrCycleModel)
 	fmt.Printf("  %-14s -> Snippet Picker: Open GUI\n", cfg.Hotkeys.SnippetPicker)
 	fmt.Printf("  %-14s -> Snippet Editor: Open snippets.yaml\n", "Shift-"+cfg.Hotkeys.SnippetPicker)
+	fmt.Printf("  %-14s -> Snippet Mode: Cycle (Paste vs Human Typing)\n", cfg.Hotkeys.SnippetCycleMode)
 	fmt.Printf("  %-14s -> Automation Picker: Open GUI\n", cfg.Hotkeys.AutomationPicker)
 	fmt.Printf("  %-14s -> Automation Editor: Open automations.yaml\n", "Shift-"+cfg.Hotkeys.AutomationPicker)
 	fmt.Println("UNIX Signals:")
@@ -120,6 +121,7 @@ func handleService() error {
 	recordMarkRegionChan := make(chan struct{}, 1)
 	recordMarkWindowChan := make(chan struct{}, 1)
 	recordShowAreaChan := make(chan struct{}, 1)
+	snippetCycleModeChan := make(chan struct{}, 1)
 
 	// Initialize X11 connection for global hotkeys
 	X, err := xgbutil.NewConn()
@@ -128,131 +130,133 @@ func handleService() error {
 	}
 	keybind.Initialize(X)
 
+	cm := NewChordManager(X)
+
 	// Register Screenshot Hotkey
-	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+	cm.Register(cfg.Hotkeys.Screenshot, func() {
 		fmt.Println("Hotkey pressed: Triggering screenshot...")
 		select {
 		case screenshotChan <- struct{}{}:
 		default:
 		}
-	}).Connect(X, X.RootWin(), cfg.Hotkeys.Screenshot, true)
+	})
 
 	// Register Region Screenshot Hotkey
-	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+	cm.Register(cfg.Hotkeys.RegionScreenshot, func() {
 		fmt.Println("Hotkey pressed: Triggering interactive region screenshot...")
 		select {
 		case regionScreenshotChan <- struct{}{}:
 		default:
 		}
-	}).Connect(X, X.RootWin(), cfg.Hotkeys.RegionScreenshot, true)
+	})
 
 	// Register Window Screenshot Hotkey
-	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+	cm.Register(cfg.Hotkeys.WindowScreenshot, func() {
 		fmt.Println("Hotkey pressed: Triggering interactive window screenshot...")
 		select {
 		case windowScreenshotChan <- struct{}{}:
 		default:
 		}
-	}).Connect(X, X.RootWin(), cfg.Hotkeys.WindowScreenshot, true)
+	})
 
 	// Register Fullscreen OCR Hotkey
-	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+	cm.Register(cfg.Hotkeys.OCRScreenshot, func() {
 		fmt.Println("Hotkey pressed: Triggering fullscreen OCR/Translation overlay...")
 		select {
 		case ocrScreenshotChan <- struct{}{}:
 		default:
 		}
-	}).Connect(X, X.RootWin(), cfg.Hotkeys.OCRScreenshot, true)
+	})
 
 	// Register Region OCR Hotkey
-	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+	cm.Register(cfg.Hotkeys.OCRRegionScreenshot, func() {
 		fmt.Println("Hotkey pressed: Triggering region OCR/Translation overlay...")
 		select {
 		case ocrRegionScreenshotChan <- struct{}{}:
 		default:
 		}
-	}).Connect(X, X.RootWin(), cfg.Hotkeys.OCRRegionScreenshot, true)
+	})
 
 	// Register Window OCR Hotkey
-	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+	cm.Register(cfg.Hotkeys.OCRWindowScreenshot, func() {
 		fmt.Println("Hotkey pressed: Triggering window OCR/Translation overlay...")
 		select {
 		case ocrWindowScreenshotChan <- struct{}{}:
 		default:
 		}
-	}).Connect(X, X.RootWin(), cfg.Hotkeys.OCRWindowScreenshot, true)
+	})
 
 	// Register OCR Model Cycle Hotkey
-	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+	cm.Register(cfg.Hotkeys.OcrCycleModel, func() {
 		fmt.Println("Hotkey pressed: Triggering OCR model cycle...")
 		select {
 		case ocrCycleModelChan <- struct{}{}:
 		default:
 		}
-	}).Connect(X, X.RootWin(), cfg.Hotkeys.OcrCycleModel, true)
+	})
 
 	// Register Window Class Grab Hotkey
-	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+	cm.Register(cfg.Hotkeys.WindowClassGrab, func() {
 		fmt.Println("Hotkey pressed: Triggering interactive window class grab...")
 		select {
 		case windowClassGrabChan <- struct{}{}:
 		default:
 		}
-	}).Connect(X, X.RootWin(), cfg.Hotkeys.WindowClassGrab, true)
+	})
 
 	// Register Color Picker Hotkey
-	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+	cm.Register(cfg.Hotkeys.ColorPicker, func() {
 		fmt.Println("Hotkey pressed: Triggering interactive color picker...")
 		select {
 		case colorPickerChan <- struct{}{}:
 		default:
 		}
-	}).Connect(X, X.RootWin(), cfg.Hotkeys.ColorPicker, true)
+	})
 
 	// Register Recording Hotkey
-	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+	cm.Register(cfg.Hotkeys.RecordToggle, func() {
 		fmt.Println("Hotkey pressed: Triggering recording toggle...")
 		select {
 		case recordChan <- struct{}{}:
 		default:
 		}
-	}).Connect(X, X.RootWin(), cfg.Hotkeys.RecordToggle, true)
+	})
 
 	// Register Record Mark Fullscreen Hotkey
-	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+	cm.Register(cfg.Hotkeys.RecordMarkFullscreen, func() {
 		fmt.Println("Hotkey pressed: Triggering record mark fullscreen...")
 		select {
 		case recordMarkFullscreenChan <- struct{}{}:
 		default:
 		}
-	}).Connect(X, X.RootWin(), cfg.Hotkeys.RecordMarkFullscreen, true)
+	})
 
 	// Register Record Mark Region Hotkey
-	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+	cm.Register(cfg.Hotkeys.RecordMarkRegion, func() {
 		fmt.Println("Hotkey pressed: Triggering record mark region...")
 		select {
 		case recordMarkRegionChan <- struct{}{}:
 		default:
 		}
-	}).Connect(X, X.RootWin(), cfg.Hotkeys.RecordMarkRegion, true)
+	})
 
 	// Register Record Mark Window Hotkey
-	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+	cm.Register(cfg.Hotkeys.RecordMarkWindow, func() {
 		fmt.Println("Hotkey pressed: Triggering record mark window...")
 		select {
 		case recordMarkWindowChan <- struct{}{}:
 		default:
 		}
-	}).Connect(X, X.RootWin(), cfg.Hotkeys.RecordMarkWindow, true)
+	})
 
 	// Register Record Show Area Hotkey
-	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+	cm.Register(cfg.Hotkeys.RecordShowArea, func() {
 		fmt.Println("Hotkey pressed: Triggering record show/hide area...")
 		select {
 		case recordShowAreaChan <- struct{}{}:
 		default:
 		}
-	}).Connect(X, X.RootWin(), cfg.Hotkeys.RecordShowArea, true)
+	})
 
 	// Initialize Clipboard Manager
 	mgr, err := clipboard.NewManager(cfg)
@@ -264,35 +268,35 @@ func handleService() error {
 		// Register Copy Slots (0-9 and KP_0..KP_9)
 		for i := 0; i <= 9; i++ {
 			slot := i
-			handler := func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+			handler := func() {
 				go mgr.CopyToSlot(slot)
 			}
 			// Keyboard row digits
-			keybind.KeyPressFun(handler).Connect(X, X.RootWin(), fmt.Sprintf("%s-%d", cfg.Hotkeys.ClipboardCopyMod, slot), true)
+			cm.Register(fmt.Sprintf("%s-%d", cfg.Hotkeys.ClipboardCopyMod, slot), handler)
 			// Numpad digits
-			keybind.KeyPressFun(handler).Connect(X, X.RootWin(), fmt.Sprintf("%s-KP_%d", cfg.Hotkeys.ClipboardCopyMod, slot), true)
+			cm.Register(fmt.Sprintf("%s-KP_%d", cfg.Hotkeys.ClipboardCopyMod, slot), handler)
 		}
 
 		// Register Paste Slots (0-9 and KP_0..KP_9)
 		for i := 0; i <= 9; i++ {
 			slot := i
-			handler := func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+			handler := func() {
 				go mgr.PasteFromSlot(slot)
 			}
 			// Keyboard row digits
-			keybind.KeyPressFun(handler).Connect(X, X.RootWin(), fmt.Sprintf("%s-%d", cfg.Hotkeys.ClipboardPasteMod, slot), true)
+			cm.Register(fmt.Sprintf("%s-%d", cfg.Hotkeys.ClipboardPasteMod, slot), handler)
 			// Numpad digits
-			keybind.KeyPressFun(handler).Connect(X, X.RootWin(), fmt.Sprintf("%s-KP_%d", cfg.Hotkeys.ClipboardPasteMod, slot), true)
+			cm.Register(fmt.Sprintf("%s-KP_%d", cfg.Hotkeys.ClipboardPasteMod, slot), handler)
 		}
 
 		// Register Cycle Rule Hotkey
-		keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+		cm.Register(cfg.Hotkeys.ClipboardCycleRule, func() {
 			go mgr.CycleTransform()
-		}).Connect(X, X.RootWin(), cfg.Hotkeys.ClipboardCycleRule, true)
+		})
 	}
 
 	// Register Snippet Picker Hotkey
-	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+	cm.Register(cfg.Hotkeys.SnippetPicker, func() {
 		exe, err := os.Executable()
 		if err != nil {
 			exe = "zen-cap"
@@ -304,19 +308,28 @@ func handleService() error {
 		if err := cmd.Start(); err != nil {
 			fmt.Printf("[Service] Failed to start snippet-picker: %v\n", err)
 		}
-	}).Connect(X, X.RootWin(), cfg.Hotkeys.SnippetPicker, true)
+	})
 
 	// Register Snippet Editor Hotkey (Shift+Alt+`) for instant manual editing in default app
-	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+	cm.Register("Shift-"+cfg.Hotkeys.SnippetPicker, func() {
 		fmt.Printf("[Service] Opening snippet file for editing: %s\n", cfg.SnippetFile)
 		cmd := exec.Command("xdg-open", cfg.SnippetFile)
 		if err := cmd.Start(); err != nil {
 			fmt.Printf("[Service] Failed to open snippet file: %v\n", err)
 		}
-	}).Connect(X, X.RootWin(), "Shift-"+cfg.Hotkeys.SnippetPicker, true)
+	})
+
+	// Register Snippet Mode Cycle Hotkey
+	cm.Register(cfg.Hotkeys.SnippetCycleMode, func() {
+		fmt.Println("Hotkey pressed: Triggering snippet mode cycle...")
+		select {
+		case snippetCycleModeChan <- struct{}{}:
+		default:
+		}
+	})
 
 	// Register Automation Picker Hotkey
-	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+	cm.Register(cfg.Hotkeys.AutomationPicker, func() {
 		exe, err := os.Executable()
 		if err != nil {
 			exe = "zen-cap"
@@ -328,24 +341,26 @@ func handleService() error {
 		if err := cmd.Start(); err != nil {
 			fmt.Printf("[Service] Failed to start automation-picker: %v\n", err)
 		}
-	}).Connect(X, X.RootWin(), cfg.Hotkeys.AutomationPicker, true)
+	})
 
 	// Register Automation Editor Hotkey (Shift+Alt+a) for instant manual editing in default app
-	keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+	cm.Register("Shift-"+cfg.Hotkeys.AutomationPicker, func() {
 		fmt.Printf("[Service] Opening automation directory: %s\n", cfg.AutomationDir)
 		cmd := exec.Command("xdg-open", cfg.AutomationDir)
 		if err := cmd.Start(); err != nil {
 			fmt.Printf("[Service] Failed to open automation directory: %v\n", err)
 		}
-	}).Connect(X, X.RootWin(), "Shift-"+cfg.Hotkeys.AutomationPicker, true)
+	})
 
 	// Register Global Safety Kill Hotkey (Ctrl+Shift+X) - emergency exit
-	safetyKillHandler := func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+	safetyKillHandler := func() {
 		fmt.Println("CRITICAL: Global safety kill hotkey pressed! Terminating zen-cap service immediately.")
 		os.Exit(1)
 	}
-	keybind.KeyPressFun(safetyKillHandler).Connect(X, X.RootWin(), "Control-Shift-x", true)
-	keybind.KeyPressFun(safetyKillHandler).Connect(X, X.RootWin(), "Control-Shift-X", true)
+	cm.Register("Control-Shift-x", safetyKillHandler)
+	cm.Register("Control-Shift-X", safetyKillHandler)
+
+	cm.Start()
 
 	var activeRec *recorder.Recorder
 	var recMu sync.Mutex
@@ -664,6 +679,43 @@ func handleService() error {
 
 				// 6. Send desktop notification
 				sendNotification("Zen-Cap OCR", fmt.Sprintf("Cycled OCR model to: %s", nextLang))
+			}()
+		}
+	}()
+
+	go func() {
+		for range snippetCycleModeChan {
+			go func() {
+				// 1. Load latest config
+				freshCfg, cfgPath, err := config.LoadConfig()
+				if err != nil {
+					fmt.Printf("[Snippet Mode Cycle] Error loading config: %v\n", err)
+					return
+				}
+				cfg = freshCfg
+
+				// 2. Cycle mode
+				newMode := "type"
+				if cfg.SnippetMode == "type" {
+					newMode = "paste"
+				}
+				cfg.SnippetMode = newMode
+
+				// 3. Save config
+				if cfgPath != "" {
+					if err := config.SaveConfig(cfg, cfgPath); err != nil {
+						fmt.Printf("[Snippet Mode Cycle] Error saving config: %v\n", err)
+					} else {
+						fmt.Printf("[Snippet Mode Cycle] Updated config.json: snippet_mode = %s\n", newMode)
+					}
+				}
+
+				// 4. Send desktop notification
+				modeLabel := "Normal Paste"
+				if newMode == "type" {
+					modeLabel = "Human Typing"
+				}
+				sendNotification("Zen-Cap Snippets", fmt.Sprintf("Cycled snippet mode to: %s", modeLabel))
 			}()
 		}
 	}()
@@ -1095,4 +1147,101 @@ func handleService() error {
 
 	xevent.Main(X)
 	return nil
+}
+
+type bindingInfo struct {
+	parts    []string
+	callback func()
+}
+
+type ChordManager struct {
+	X           *xgbutil.XUtil
+	bindings    []bindingInfo
+	lastPressed map[string]time.Time
+	mu          sync.Mutex
+}
+
+func NewChordManager(X *xgbutil.XUtil) *ChordManager {
+	return &ChordManager{
+		X:           X,
+		lastPressed: make(map[string]time.Time),
+	}
+}
+
+func (cm *ChordManager) Register(hotkey string, callback func()) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	hotkey = strings.TrimSpace(hotkey)
+	parts := strings.Fields(hotkey)
+	if len(parts) == 0 {
+		return
+	}
+
+	cm.bindings = append(cm.bindings, bindingInfo{
+		parts:    parts,
+		callback: callback,
+	})
+}
+
+func (cm *ChordManager) Start() {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	uniqueKeys := make(map[string]bool)
+	for _, b := range cm.bindings {
+		for _, part := range b.parts {
+			uniqueKeys[part] = true
+		}
+	}
+
+	for key := range uniqueKeys {
+		k := key
+		keybind.KeyPressFun(func(xu *xgbutil.XUtil, ev xevent.KeyPressEvent) {
+			cm.handleKey(k)
+		}).Connect(cm.X, cm.X.RootWin(), k, true)
+	}
+}
+
+func (cm *ChordManager) handleKey(key string) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	now := time.Now()
+	prevTime := cm.lastPressed[key]
+	triggered := false
+
+	for _, b := range cm.bindings {
+		if len(b.parts) == 1 {
+			if b.parts[0] == key {
+				go b.callback()
+				triggered = true
+			}
+		} else if len(b.parts) == 2 {
+			prefixKey := b.parts[0]
+			triggerKey := b.parts[1]
+
+			if prefixKey == triggerKey && key == prefixKey {
+				if !prevTime.IsZero() && now.Sub(prevTime) < 800*time.Millisecond {
+					go b.callback()
+					triggered = true
+					cm.lastPressed[key] = time.Time{}
+					continue
+				}
+			} else {
+				if key == triggerKey {
+					prefixTime := cm.lastPressed[prefixKey]
+					if !prefixTime.IsZero() && now.Sub(prefixTime) < 800*time.Millisecond {
+						go b.callback()
+						triggered = true
+						cm.lastPressed[prefixKey] = time.Time{}
+					}
+				}
+			}
+		}
+	}
+
+	if !triggered || cm.lastPressed[key] != (time.Time{}) {
+		cm.lastPressed[key] = now
+	}
 }

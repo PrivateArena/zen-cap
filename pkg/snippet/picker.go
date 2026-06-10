@@ -14,6 +14,7 @@ import (
 	"github.com/jezek/xgbutil/xevent"
 
 	"zen-cap/pkg/capture"
+	"zen-cap/pkg/config"
 )
 
 type pickerState struct {
@@ -31,10 +32,11 @@ type pickerState struct {
 	aborted       bool
 	selected      bool
 	mgr           *Manager
+	cfg           *config.Config
 }
 
 // ShowPicker opens a native X11 popup window at the center of the screen to select a snippet.
-func ShowPicker(mgr *Manager) error {
+func ShowPicker(mgr *Manager, cfg *config.Config) error {
 	snippets := mgr.GetAll()
 
 	// Connect to X server
@@ -171,6 +173,7 @@ func ShowPicker(mgr *Manager) error {
 		snippets:      snippets,
 		selectedIndex: 0,
 		mgr:           mgr,
+		cfg:           cfg,
 	}
 
 	// Connect event handlers
@@ -191,8 +194,8 @@ func ShowPicker(mgr *Manager) error {
 
 	if state.selected && len(snippets) > 0 && state.selectedIndex >= 0 && state.selectedIndex < len(snippets) {
 		selectedSnip := snippets[state.selectedIndex]
-		fmt.Printf("[SnippetPicker] Selected snippet: %s. Pasting...\n", selectedSnip.Name)
-		return state.mgr.Paste(selectedSnip.Content)
+		fmt.Printf("[SnippetPicker] Selected snippet: %s. Pasting (%s mode)...\n", selectedSnip.Name, state.cfg.SnippetMode)
+		return state.mgr.Paste(selectedSnip.Content, state.cfg.SnippetMode)
 	}
 
 	return nil
@@ -221,6 +224,15 @@ func (s *pickerState) redraw() {
 
 	// Draw Premium Header (Scale 2)
 	capture.DrawStringScaled(img, "SELECT SNIPPET", 30, 20, headerColor, 2)
+
+	// Draw active snippet mode status on header
+	modeText := "MODE: PASTE"
+	modeColor := mutedColor
+	if s.cfg != nil && s.cfg.SnippetMode == "type" {
+		modeText = "MODE: TYPING"
+		modeColor = borderColor
+	}
+	capture.DrawStringScaled(img, modeText, s.width-180, 20, modeColor, 2)
 
 	// Draw Separator line
 	for x := 20; x < s.width-20; x++ {

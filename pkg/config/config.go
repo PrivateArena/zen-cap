@@ -54,6 +54,7 @@ type Config struct {
 	AutomationDir        string          `json:"automation_dir"`
 	TransformRules       []TransformRule `json:"transform_rules"`
 	Magnifier            MagnifierConfig `json:"magnifier"`
+	SnippetMode          string          `json:"snippet_mode"`          // "paste" or "type" (default: "paste")
 }
 
 type HotkeysConfig struct {
@@ -76,6 +77,7 @@ type HotkeysConfig struct {
 	AutomationPicker       string `json:"automation_picker"`    // e.g. "Mod1-a" (Alt+a)
 	WindowClassGrab        string `json:"window_class_grab"`    // e.g. "Shift-F4"
 	ColorPicker            string `json:"color_picker"`          // e.g. "Shift-F5"
+	SnippetCycleMode       string `json:"snippet_cycle_mode"`    // e.g. "Mod4-w"
 }
 
 func DefaultTransformRules() []TransformRule {
@@ -152,8 +154,10 @@ func DefaultConfig() *Config {
 			AutomationPicker:     "Mod1-a",
 			WindowClassGrab:      "Shift-F4",
 			ColorPicker:          "Shift-F5",
+			SnippetCycleMode:     "Mod4-w",
 		},
 		ClipboardMode:        "image",
+		SnippetMode:          "paste",
 		ColorPickerFormat:    "hex",
 		OCRAddress:           "http://localhost:8765",
 		APIAddress:           "localhost:4444",
@@ -208,8 +212,10 @@ func DefaultPortableConfig(binDir string) *Config {
 			AutomationPicker:     "Mod1-a",
 			WindowClassGrab:      "Shift-F4",
 			ColorPicker:          "Shift-F5",
+			SnippetCycleMode:     "Mod4-w",
 		},
 		ClipboardMode:        "image",
+		SnippetMode:          "paste",
 		ColorPickerFormat:    "hex",
 		OCRAddress:           "http://localhost:8765",
 		APIAddress:           "localhost:4444",
@@ -424,8 +430,14 @@ func readConfig(path string, binDir string, isPortable bool) (*Config, error) {
 	if cfg.Hotkeys.ColorPicker == "" {
 		cfg.Hotkeys.ColorPicker = defaults.Hotkeys.ColorPicker
 	}
+	if cfg.Hotkeys.SnippetCycleMode == "" {
+		cfg.Hotkeys.SnippetCycleMode = defaults.Hotkeys.SnippetCycleMode
+	}
 	if cfg.ClipboardMode == "" {
 		cfg.ClipboardMode = defaults.ClipboardMode
+	}
+	if cfg.SnippetMode == "" {
+		cfg.SnippetMode = defaults.SnippetMode
 	}
 	if cfg.ColorPickerFormat == "" {
 		cfg.ColorPickerFormat = defaults.ColorPickerFormat

@@ -19,11 +19,12 @@
     "snippet_picker": "Mod1-w",
     "automation_picker": "Mod1-a",
     "window_class_grab": "Shift-F4",
-    "color_picker": "Shift-F5"
+    "color_picker": "Shift-F5",
+    "snippet_cycle_mode": "Mod4-w"
   },
   "clipboard_mode": "image",
-  "api_address": "localhost:4444",
   "ocr_address": "http://localhost:8765",
+  "api_address": "localhost:4444",
   "ocr_language": "en",
   "ocr_languages": [
     "en",
@@ -66,11 +67,12 @@
     "lens_hotkey": "super-l",
     "scroll_modifier": "super",
     "zoom_min": 1.5,
-    "zoom_max": 10.0,
+    "zoom_max": 10,
     "zoom_step": 0.5,
-    "initial_zoom": 2.0,
+    "initial_zoom": 2,
     "lens_size": 420,
     "lens_shape": "circle",
     "smooth_scaling": true
-  }
+  },
+  "snippet_mode": "paste"
 }

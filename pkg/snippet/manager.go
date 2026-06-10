@@ -2,6 +2,7 @@ package snippet
 
 import (
 	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"strings"
@@ -179,8 +180,21 @@ func (m *Manager) Delete(id string) (bool, error) {
 	return true, nil
 }
 
-// Paste copies the snippet content to the clipboard and triggers auto-paste
-func (m *Manager) Paste(content string) error {
+// Paste handles either copying the snippet content to clipboard and pasting it, or typing it out like a human
+func (m *Manager) Paste(content string, mode string) error {
+	if mode == "type" {
+		xu, err := xgbutil.NewConn()
+		if err != nil {
+			return fmt.Errorf("failed to connect to X server: %w", err)
+		}
+		defer xu.Conn().Close()
+
+		keybind.Initialize(xu)
+		// Small delay to let the picker window fully unmap/destroy and restore focus
+		time.Sleep(200 * time.Millisecond)
+		return TypeHumanly(xu, content)
+	}
+
 	if err := capture.CopyTextToClipboard(content); err != nil {
 		return fmt.Errorf("failed to copy snippet to clipboard: %w", err)
 	}
@@ -224,6 +238,156 @@ func (m *Manager) Paste(content string) error {
 
 	// Release Ctrl
 	xtest.FakeInput(c, xproto.KeyRelease, ctrlKC, 0, 0, 0, 0, 0)
+
+	return nil
+}
+
+func TypeHumanly(xu *xgbutil.XUtil, text string) error {
+	c := xu.Conn()
+	if err := xtest.Init(c); err != nil {
+		return fmt.Errorf("xtest init failed: %w", err)
+	}
+
+	keyMap := keybind.KeyMapGet(xu)
+	if keyMap == nil {
+		return fmt.Errorf("failed to get keyboard mapping")
+	}
+	setup := xproto.Setup(c)
+	minKC := setup.MinKeycode
+	maxKC := setup.MaxKeycode
+	per := keyMap.KeysymsPerKeycode
+
+	_, shiftKCs, _ := keybind.ParseString(xu, "Shift_L")
+	var shiftKC byte = 50
+	if len(shiftKCs) > 0 {
+		shiftKC = byte(shiftKCs[0])
+	}
+
+	// Dynamic lookup for Backspace keycode (keysym 0xff08)
+	var backspaceKC byte
+	for kc := int(minKC); kc <= int(maxKC); kc++ {
+		offset := (kc - int(minKC)) * int(per)
+		for ci := 0; ci < int(per); ci++ {
+			if keyMap.Keysyms[offset+ci] == 0xff08 {
+				backspaceKC = byte(kc)
+				break
+			}
+		}
+		if backspaceKC != 0 {
+			break
+		}
+	}
+	if backspaceKC == 0 {
+		backspaceKC = 22 // fallback for standard US keyboard
+	}
+
+	// Local random generator to avoid global seed side effects
+	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
+
+	// Typo possibilities
+	typoPool := []rune("abcdefghijklmnopqrstuvwxyz")
+
+	for i := 0; i < len(text); i++ {
+		r := rune(text[i])
+
+		// Determine keysym to look up
+		sym := xproto.Keysym(r)
+		if r == '\n' {
+			sym = 0xff0d // XK_Return
+		} else if r == '\t' {
+			sym = 0xff09 // XK_Tab
+		}
+
+		// Human typo simulation: 2% chance for alphabetic letters
+		if ((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')) && rnd.Float64() < 0.02 {
+			typoChar := typoPool[rnd.Intn(len(typoPool))]
+			if typoChar != r {
+				typoSym := xproto.Keysym(typoChar)
+				var typoKC, typoCol byte
+				typoFound := false
+				for kc := int(minKC); kc <= int(maxKC); kc++ {
+					offset := (kc - int(minKC)) * int(per)
+					for ci := 0; ci < int(per); ci++ {
+						if keyMap.Keysyms[offset+ci] == typoSym {
+							typoKC = byte(kc)
+							typoCol = byte(ci)
+							typoFound = true
+							break
+						}
+					}
+					if typoFound {
+						break
+					}
+				}
+
+				if typoFound {
+					needShift := typoCol%2 == 1
+					if needShift {
+						xtest.FakeInput(c, xproto.KeyPress, shiftKC, 0, 0, 0, 0, 0)
+					}
+					xtest.FakeInput(c, xproto.KeyPress, typoKC, 0, 0, 0, 0, 0)
+					xtest.FakeInput(c, xproto.KeyRelease, typoKC, 0, 0, 0, 0, 0)
+					if needShift {
+						xtest.FakeInput(c, xproto.KeyRelease, shiftKC, 0, 0, 0, 0, 0)
+					}
+
+					// Realization delay (100 - 200 ms)
+					time.Sleep(time.Duration(rnd.Intn(100)+100) * time.Millisecond)
+
+					// Backspace to delete the typo
+					xtest.FakeInput(c, xproto.KeyPress, backspaceKC, 0, 0, 0, 0, 0)
+					xtest.FakeInput(c, xproto.KeyRelease, backspaceKC, 0, 0, 0, 0, 0)
+
+					// Pause before typing correct character (100 - 200 ms)
+					time.Sleep(time.Duration(rnd.Intn(100)+100) * time.Millisecond)
+				}
+			}
+		}
+
+		// Find target keycode
+		var targetKC, col byte
+		found := false
+		for kc := int(minKC); kc <= int(maxKC); kc++ {
+			offset := (kc - int(minKC)) * int(per)
+			for ci := 0; ci < int(per); ci++ {
+				if keyMap.Keysyms[offset+ci] == sym {
+					targetKC = byte(kc)
+					col = byte(ci)
+					found = true
+					break
+				}
+			}
+			if found {
+				break
+			}
+		}
+
+		if !found {
+			continue
+		}
+
+		needShift := col%2 == 1
+		if needShift {
+			xtest.FakeInput(c, xproto.KeyPress, shiftKC, 0, 0, 0, 0, 0)
+		}
+		xtest.FakeInput(c, xproto.KeyPress, targetKC, 0, 0, 0, 0, 0)
+		xtest.FakeInput(c, xproto.KeyRelease, targetKC, 0, 0, 0, 0, 0)
+		if needShift {
+			xtest.FakeInput(c, xproto.KeyRelease, shiftKC, 0, 0, 0, 0, 0)
+		}
+
+		// Fluid human delay
+		delay := rnd.Intn(50) + 35
+		if r == ' ' {
+			delay += rnd.Intn(50) + 40
+		} else if r == '.' || r == ',' || r == '?' || r == '!' || r == ';' || r == ':' {
+			delay += rnd.Intn(150) + 150
+		} else if r == '\n' {
+			delay += rnd.Intn(200) + 250
+		}
+
+		time.Sleep(time.Duration(delay) * time.Millisecond)
+	}
 
 	return nil
 }

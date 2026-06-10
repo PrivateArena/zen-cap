@@ -65,7 +65,7 @@ func runCLI() {
 		if err != nil {
 			log.Fatalf("Failed to initialize Snippet Manager: %v", err)
 		}
-		if err := snippet.ShowPicker(snipMgr); err != nil {
+		if err := snippet.ShowPicker(snipMgr, cfg); err != nil {
 			log.Fatalf("Snippet Picker failed: %v", err)
 		}
 	case "automation-picker":
