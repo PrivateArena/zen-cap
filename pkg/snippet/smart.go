@@ -5,6 +5,10 @@ package snippet
 import (
 	_ "time/tzdata"
 
+	"fmt"
+	"io"
+	"log"
+	"net/http"
 	"strings"
 	"time"
 )
@@ -12,7 +16,16 @@ import (
 // smartType enumerates all supported smart snippet kinds.
 type smartType string
 
-const SmartTypeTime smartType = "time"
+const (
+	SmartTypeTime smartType = "time"
+	SmartTypeIP   smartType = "ip"
+)
+
+var (
+	cachedIPAddress string
+	cachedIPErr     error
+	cachedIPFetched bool
+)
 
 // SmartState holds the runtime state for a smart snippet while it is selected
 // in the picker. It lives inside pickerState, not in the Snippet itself, so
@@ -33,6 +46,12 @@ type SmartState struct {
 
 	// Resolved location (non-nil). Follows locIdx unless query overrides it.
 	resolved *time.Location
+
+	// --- For SmartTypeIP ---
+	ipAddress string
+	ipErr     error
+	ipLoading bool
+	ipFetched bool
 }
 
 // presetLocations is the built-in cycle list (shown with Left/Right arrows).
@@ -146,138 +165,138 @@ var presetLocations = []struct {
 // Augments the preset list for freeform typing.
 var cityAliases = map[string]string{
 	// Countries → representative tz
-	"france":        "Europe/Paris",
-	"germany":       "Europe/Berlin",
-	"japan":         "Asia/Tokyo",
-	"china":         "Asia/Shanghai",
-	"india":         "Asia/Kolkata",
-	"australia":     "Australia/Sydney",
-	"russia":        "Europe/Moscow",
-	"usa":           "America/New_York",
-	"us":            "America/New_York",
-	"united states": "America/New_York",
-	"uk":            "Europe/London",
-	"united kingdom":"Europe/London",
-	"england":       "Europe/London",
-	"brazil":        "America/Sao_Paulo",
-	"canada":        "America/Toronto",
-	"mexico":        "America/Mexico_City",
-	"spain":         "Europe/Madrid",
-	"portugal":      "Europe/Lisbon",
-	"italy":         "Europe/Rome",
-	"netherlands":   "Europe/Amsterdam",
-	"holland":       "Europe/Amsterdam",
-	"belgium":       "Europe/Brussels",
-	"switzerland":   "Europe/Zurich",
-	"austria":       "Europe/Vienna",
-	"poland":        "Europe/Warsaw",
-	"sweden":        "Europe/Stockholm",
-	"norway":        "Europe/Oslo",
-	"denmark":       "Europe/Copenhagen",
-	"finland":       "Europe/Helsinki",
-	"greece":        "Europe/Athens",
-	"turkey":        "Europe/Istanbul",
-	"egypt":         "Africa/Cairo",
-	"nigeria":       "Africa/Lagos",
-	"kenya":         "Africa/Nairobi",
-	"southafrica":   "Africa/Johannesburg",
-	"south africa":  "Africa/Johannesburg",
-	"ethiopia":      "Africa/Addis_Ababa",
-	"morocco":       "Africa/Casablanca",
-	"uae":           "Asia/Dubai",
-	"emirates":      "Asia/Dubai",
-	"saudi":         "Asia/Riyadh",
-	"saudiarabia":   "Asia/Riyadh",
-	"saudi arabia":  "Asia/Riyadh",
-	"iran":          "Asia/Tehran",
-	"pakistan":      "Asia/Karachi",
-	"bangladesh":    "Asia/Dhaka",
-	"srilanka":      "Asia/Colombo",
-	"sri lanka":     "Asia/Colombo",
-	"nepal":         "Asia/Kathmandu",
-	"myanmar":       "Asia/Rangoon",
-	"burma":         "Asia/Rangoon",
-	"cambodia":      "Asia/Phnom_Penh",
-	"vietnam":       "Asia/Ho_Chi_Minh",
-	"philippines":   "Asia/Manila",
-	"taiwan":        "Asia/Taipei",
-	"hongkong":      "Asia/Hong_Kong",
-	"hong kong":     "Asia/Hong_Kong",
-	"singapore":     "Asia/Singapore",
-	"indonesia":     "Asia/Jakarta",
-	"malaysia":      "Asia/Kuala_Lumpur",
-	"kuala lumpur":  "Asia/Kuala_Lumpur",
-	"thailand":      "Asia/Bangkok",
-	"korea":         "Asia/Seoul",
-	"southkorea":    "Asia/Seoul",
-	"south korea":   "Asia/Seoul",
-	"mongolia":      "Asia/Ulaanbaatar",
-	"kazakhstan":    "Asia/Almaty",
-	"uzbekistan":    "Asia/Tashkent",
-	"afghanistan":   "Asia/Kabul",
-	"newzealand":    "Pacific/Auckland",
-	"new zealand":   "Pacific/Auckland",
-	"hawaii":        "Pacific/Honolulu",
-	"alaska":        "America/Anchorage",
-	"colombia":      "America/Bogota",
-	"peru":          "America/Lima",
-	"chile":         "America/Santiago",
-	"argentina":     "America/Argentina/Buenos_Aires",
-	"venezuela":     "America/Caracas",
-	"cuba":          "America/Havana",
-	"panama":        "America/Panama",
-	"costa rica":    "America/Costa_Rica",
-	"nicaragua":     "America/Managua",
-	"guatemala":     "America/Guatemala",
-	"iceland":       "Atlantic/Reykjavik",
-	"ireland":       "Europe/Dublin",
-	"ukraine":       "Europe/Kyiv",
-	"belarus":       "Europe/Minsk",
-	"romania":       "Europe/Bucharest",
-	"czech":         "Europe/Prague",
-	"czechia":       "Europe/Prague",
-	"hungary":       "Europe/Budapest",
-	"budapest":      "Europe/Budapest",
-	"croatia":       "Europe/Zagreb",
-	"zagreb":        "Europe/Zagreb",
-	"serbia":        "Europe/Belgrade",
-	"belgrade":      "Europe/Belgrade",
-	"slovakia":      "Europe/Bratislava",
-	"bratislava":    "Europe/Bratislava",
-	"luxembourg":    "Europe/Luxembourg",
-	"latvia":        "Europe/Riga",
-	"riga":          "Europe/Riga",
-	"estonia":       "Europe/Tallinn",
-	"tallinn":       "Europe/Tallinn",
-	"lithuania":     "Europe/Vilnius",
-	"vilnius":       "Europe/Vilnius",
-	"sofia":         "Europe/Sofia",
-	"bulgaria":      "Europe/Sofia",
-	"new york":      "America/New_York",
-	"los angeles":   "America/Los_Angeles",
-	"san francisco": "America/Los_Angeles",
-	"seattle":       "America/Los_Angeles",
-	"chicago":       "America/Chicago",
-	"houston":       "America/Chicago",
-	"dallas":        "America/Chicago",
-	"denver":        "America/Denver",
-	"phoenix":       "America/Phoenix",
-	"miami":         "America/New_York",
-	"atlanta":       "America/New_York",
-	"boston":        "America/New_York",
-	"washington":    "America/New_York",
-	"dc":            "America/New_York",
-	"detroit":       "America/Detroit",
-	"minneapolis":   "America/Chicago",
-	"st louis":      "America/Chicago",
-	"kansas city":   "America/Chicago",
-	"nashville":     "America/Chicago",
-	"new orleans":   "America/Chicago",
-	"memphis":       "America/Chicago",
-	"las vegas":     "America/Los_Angeles",
-	"portland":      "America/Los_Angeles",
-	"sacramento":    "America/Los_Angeles",
-	"san diego":     "America/Los_Angeles",
+	"france":         "Europe/Paris",
+	"germany":        "Europe/Berlin",
+	"japan":          "Asia/Tokyo",
+	"china":          "Asia/Shanghai",
+	"india":          "Asia/Kolkata",
+	"australia":      "Australia/Sydney",
+	"russia":         "Europe/Moscow",
+	"usa":            "America/New_York",
+	"us":             "America/New_York",
+	"united states":  "America/New_York",
+	"uk":             "Europe/London",
+	"united kingdom": "Europe/London",
+	"england":        "Europe/London",
+	"brazil":         "America/Sao_Paulo",
+	"canada":         "America/Toronto",
+	"mexico":         "America/Mexico_City",
+	"spain":          "Europe/Madrid",
+	"portugal":       "Europe/Lisbon",
+	"italy":          "Europe/Rome",
+	"netherlands":    "Europe/Amsterdam",
+	"holland":        "Europe/Amsterdam",
+	"belgium":        "Europe/Brussels",
+	"switzerland":    "Europe/Zurich",
+	"austria":        "Europe/Vienna",
+	"poland":         "Europe/Warsaw",
+	"sweden":         "Europe/Stockholm",
+	"norway":         "Europe/Oslo",
+	"denmark":        "Europe/Copenhagen",
+	"finland":        "Europe/Helsinki",
+	"greece":         "Europe/Athens",
+	"turkey":         "Europe/Istanbul",
+	"egypt":          "Africa/Cairo",
+	"nigeria":        "Africa/Lagos",
+	"kenya":          "Africa/Nairobi",
+	"southafrica":    "Africa/Johannesburg",
+	"south africa":   "Africa/Johannesburg",
+	"ethiopia":       "Africa/Addis_Ababa",
+	"morocco":        "Africa/Casablanca",
+	"uae":            "Asia/Dubai",
+	"emirates":       "Asia/Dubai",
+	"saudi":          "Asia/Riyadh",
+	"saudiarabia":    "Asia/Riyadh",
+	"saudi arabia":   "Asia/Riyadh",
+	"iran":           "Asia/Tehran",
+	"pakistan":       "Asia/Karachi",
+	"bangladesh":     "Asia/Dhaka",
+	"srilanka":       "Asia/Colombo",
+	"sri lanka":      "Asia/Colombo",
+	"nepal":          "Asia/Kathmandu",
+	"myanmar":        "Asia/Rangoon",
+	"burma":          "Asia/Rangoon",
+	"cambodia":       "Asia/Phnom_Penh",
+	"vietnam":        "Asia/Ho_Chi_Minh",
+	"philippines":    "Asia/Manila",
+	"taiwan":         "Asia/Taipei",
+	"hongkong":       "Asia/Hong_Kong",
+	"hong kong":      "Asia/Hong_Kong",
+	"singapore":      "Asia/Singapore",
+	"indonesia":      "Asia/Jakarta",
+	"malaysia":       "Asia/Kuala_Lumpur",
+	"kuala lumpur":   "Asia/Kuala_Lumpur",
+	"thailand":       "Asia/Bangkok",
+	"korea":          "Asia/Seoul",
+	"southkorea":     "Asia/Seoul",
+	"south korea":    "Asia/Seoul",
+	"mongolia":       "Asia/Ulaanbaatar",
+	"kazakhstan":     "Asia/Almaty",
+	"uzbekistan":     "Asia/Tashkent",
+	"afghanistan":    "Asia/Kabul",
+	"newzealand":     "Pacific/Auckland",
+	"new zealand":    "Pacific/Auckland",
+	"hawaii":         "Pacific/Honolulu",
+	"alaska":         "America/Anchorage",
+	"colombia":       "America/Bogota",
+	"peru":           "America/Lima",
+	"chile":          "America/Santiago",
+	"argentina":      "America/Argentina/Buenos_Aires",
+	"venezuela":      "America/Caracas",
+	"cuba":           "America/Havana",
+	"panama":         "America/Panama",
+	"costa rica":     "America/Costa_Rica",
+	"nicaragua":      "America/Managua",
+	"guatemala":      "America/Guatemala",
+	"iceland":        "Atlantic/Reykjavik",
+	"ireland":        "Europe/Dublin",
+	"ukraine":        "Europe/Kyiv",
+	"belarus":        "Europe/Minsk",
+	"romania":        "Europe/Bucharest",
+	"czech":          "Europe/Prague",
+	"czechia":        "Europe/Prague",
+	"hungary":        "Europe/Budapest",
+	"budapest":       "Europe/Budapest",
+	"croatia":        "Europe/Zagreb",
+	"zagreb":         "Europe/Zagreb",
+	"serbia":         "Europe/Belgrade",
+	"belgrade":       "Europe/Belgrade",
+	"slovakia":       "Europe/Bratislava",
+	"bratislava":     "Europe/Bratislava",
+	"luxembourg":     "Europe/Luxembourg",
+	"latvia":         "Europe/Riga",
+	"riga":           "Europe/Riga",
+	"estonia":        "Europe/Tallinn",
+	"tallinn":        "Europe/Tallinn",
+	"lithuania":      "Europe/Vilnius",
+	"vilnius":        "Europe/Vilnius",
+	"sofia":          "Europe/Sofia",
+	"bulgaria":       "Europe/Sofia",
+	"new york":       "America/New_York",
+	"los angeles":    "America/Los_Angeles",
+	"san francisco":  "America/Los_Angeles",
+	"seattle":        "America/Los_Angeles",
+	"chicago":        "America/Chicago",
+	"houston":        "America/Chicago",
+	"dallas":         "America/Chicago",
+	"denver":         "America/Denver",
+	"phoenix":        "America/Phoenix",
+	"miami":          "America/New_York",
+	"atlanta":        "America/New_York",
+	"boston":         "America/New_York",
+	"washington":     "America/New_York",
+	"dc":             "America/New_York",
+	"detroit":        "America/Detroit",
+	"minneapolis":    "America/Chicago",
+	"st louis":       "America/Chicago",
+	"kansas city":    "America/Chicago",
+	"nashville":      "America/Chicago",
+	"new orleans":    "America/Chicago",
+	"memphis":        "America/Chicago",
+	"las vegas":      "America/Los_Angeles",
+	"portland":       "America/Los_Angeles",
+	"sacramento":     "America/Los_Angeles",
+	"san diego":      "America/Los_Angeles",
 }
 
 // newSmartState creates a SmartState for SmartTypeTime.
@@ -392,9 +411,120 @@ func (s *SmartState) tryResolveQuery() {
 }
 
 // Content returns the current resolved snippet text for pasting.
-func (s *SmartState) Content() string {
-	now := time.Now().In(s.resolved)
-	return now.Format("2006-01-02 15:04:05 MST")
+func (s *SmartState) Content(format string) string {
+	if s.kind == SmartTypeTime {
+		if format == "" {
+			format = "{time}"
+		}
+		now := time.Now().In(s.resolved)
+
+		// Resolve {place}
+		place := s.LocationLabel()
+		res := strings.ReplaceAll(format, "{place}", place)
+
+		// Resolve {iana}
+		res = strings.ReplaceAll(res, "{iana}", s.resolved.String())
+
+		// Resolve {time:LAYOUT}
+		for {
+			start := strings.Index(res, "{time:")
+			if start == -1 {
+				break
+			}
+			end := strings.Index(res[start:], "}")
+			if end == -1 {
+				break
+			}
+			end = start + end
+			layout := res[start+6 : end]
+			formatted := now.Format(layout)
+			res = res[:start] + formatted + res[end+1:]
+		}
+
+		// Resolve default {time}
+		defaultTime := now.Format("2006-01-02 15:04:05 MST")
+		res = strings.ReplaceAll(res, "{time}", defaultTime)
+
+		return res
+	} else if s.kind == SmartTypeIP {
+		if format == "" {
+			format = "{ip}"
+		}
+		ipVal := s.ipAddress
+		if s.ipLoading {
+			ipVal = "Fetching IP..."
+		} else if s.ipErr != nil {
+			ipVal = fmt.Sprintf("Error: %v", s.ipErr)
+		}
+		return strings.ReplaceAll(format, "{ip}", ipVal)
+	}
+	return ""
+}
+
+// TriggerIPFetch requests the IP dynamically if not already loaded.
+func (s *SmartState) TriggerIPFetch(onDone func()) {
+	if s.ipLoading || s.ipFetched {
+		return
+	}
+	s.ipLoading = true
+	go func() {
+		defer func() {
+			s.ipLoading = false
+			s.ipFetched = true
+			cachedIPAddress = s.ipAddress
+			cachedIPErr = s.ipErr
+			cachedIPFetched = true
+			if onDone != nil {
+				onDone()
+			}
+		}()
+
+		// Plain text endpoints are immune to JSON parsing issues (like Cloudflare HTML block pages)
+		endpoints := []string{
+			"https://api.ipify.org",
+			"https://icanhazip.com",
+			"https://ifconfig.me/ip",
+		}
+
+		client := &http.Client{Timeout: 3 * time.Second}
+		var lastErr error
+
+		for _, url := range endpoints {
+			resp, err := client.Get(url)
+			if err != nil {
+				lastErr = err
+				log.Printf("[SmartSnippet] Warning: Lookup on %s failed: %v", url, err)
+				continue
+			}
+
+			bodyBytes, readErr := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if readErr != nil {
+				lastErr = readErr
+				log.Printf("[SmartSnippet] Warning: Failed to read response from %s: %v", url, readErr)
+				continue
+			}
+
+			ip := strings.TrimSpace(string(bodyBytes))
+			if ip == "" {
+				lastErr = fmt.Errorf("empty response from %s", url)
+				continue
+			}
+
+			// If it looks like HTML, it's a block page or error portal
+			if strings.HasPrefix(ip, "<") {
+				lastErr = fmt.Errorf("received HTML instead of IP from %s", url)
+				log.Printf("[SmartSnippet] Warning: %s returned HTML", url)
+				continue
+			}
+
+			s.ipAddress = ip
+			s.ipErr = nil
+			return
+		}
+
+		s.ipErr = fmt.Errorf("all IP lookups failed (last: %v)", lastErr)
+	}()
 }
 
 // LocationLabel returns the display label for the current location.

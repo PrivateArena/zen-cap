@@ -203,7 +203,13 @@ func ShowPicker(mgr *Manager, cfg *config.Config) error {
 		// For smart snippets, resolve content now (captures current time/state).
 		content := selectedSnip.Content
 		if selectedSnip.Smart != "" && state.smartState != nil {
-			content = state.smartState.Content()
+			if selectedSnip.Smart == SmartTypeIP && state.smartState.ipLoading {
+				// Block for a short duration waiting for background resolution to finish
+				for i := 0; i < 15 && state.smartState.ipLoading; i++ {
+					time.Sleep(100 * time.Millisecond)
+				}
+			}
+			content = state.smartState.Content(selectedSnip.Format)
 		}
 		return state.mgr.Paste(content, state.cfg.SnippetMode)
 	}
@@ -306,28 +312,40 @@ func (s *pickerState) redraw() {
 			}
 			panelY += 6
 
-			// Live time value
-			timeStr := s.smartState.Content()
-			capture.DrawStringScaled(img, timeStr, 30, panelY, smartColor, 2)
+			// Live value (either time or IP)
+			selectedSnip := s.snippets[s.selectedIndex]
+			valStr := s.smartState.Content(selectedSnip.Format)
+			capture.DrawStringScaled(img, valStr, 30, panelY, smartColor, 2)
 
-			// Location label
-			panelY += 22
-			locStr := "@ " + s.smartState.LocationLabel()
-			capture.DrawStringScaled(img, locStr, 30, panelY, mutedColor, 1)
+			if s.smartState.kind == SmartTypeTime {
+				// Location label
+				panelY += 22
+				locStr := "@ " + s.smartState.LocationLabel()
+				capture.DrawStringScaled(img, locStr, 30, panelY, mutedColor, 1)
 
-			// Query input line
-			panelY += 16
-			qLabel := "  > "
-			if s.smartState.query != "" {
-				qLabel += s.smartState.query + "_"
-			} else {
-				qLabel += "type location or \u2190\u2192 to cycle"
+				// Query input line
+				panelY += 16
+				qLabel := "  > "
+				if s.smartState.query != "" {
+					qLabel += s.smartState.query + "_"
+				} else {
+					qLabel += "type location or \u2190\u2192 to cycle"
+				}
+				qColor := mutedColor
+				if s.smartState.query != "" {
+					qColor = color.RGBA{R: 180, G: 230, B: 180, A: 255}
+				}
+				capture.DrawStringScaled(img, qLabel, 20, panelY, qColor, 1)
+			} else if s.smartState.kind == SmartTypeIP {
+				panelY += 22
+				statusStr := "Online Lookup (httpbin.org/ip)"
+				if s.smartState.ipLoading {
+					statusStr = "Fetching IP address..."
+				} else if s.smartState.ipErr != nil {
+					statusStr = fmt.Sprintf("Error: %v", s.smartState.ipErr)
+				}
+				capture.DrawStringScaled(img, statusStr, 30, panelY, mutedColor, 1)
 			}
-			qColor := mutedColor
-			if s.smartState.query != "" {
-				qColor = color.RGBA{R: 180, G: 230, B: 180, A: 255}
-			}
-			capture.DrawStringScaled(img, qLabel, 20, panelY, qColor, 1)
 		}
 	}
 
@@ -350,9 +368,22 @@ func (s *pickerState) syncSmartState() {
 	if s.selectedIndex >= 0 && s.selectedIndex < len(s.snippets) {
 		snip := s.snippets[s.selectedIndex]
 		if snip.Smart == SmartTypeTime {
-			if s.smartState == nil {
+			if s.smartState == nil || s.smartState.kind != SmartTypeTime {
 				s.smartState = newSmartState()
 			}
+			return
+		} else if snip.Smart == SmartTypeIP {
+			if s.smartState == nil || s.smartState.kind != SmartTypeIP {
+				s.smartState = &SmartState{
+					kind:      SmartTypeIP,
+					ipAddress: cachedIPAddress,
+					ipErr:     cachedIPErr,
+					ipFetched: cachedIPFetched,
+				}
+			}
+			s.smartState.TriggerIPFetch(func() {
+				s.redraw()
+			})
 			return
 		}
 	}
@@ -407,7 +438,7 @@ func (s *pickerState) handleKeyPress(X *xgbutil.XUtil, ev xevent.KeyPressEvent) 
 		}
 
 		// ── Smart snippet: Left/Right cycle presets ───────────────────────
-		if s.smartState != nil {
+		if s.smartState != nil && s.smartState.kind == SmartTypeTime {
 			if keyStr == "Left" {
 				s.smartState.CyclePrev()
 				s.redraw()

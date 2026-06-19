@@ -22,8 +22,8 @@ type Snippet struct {
 	ID      string    `json:"id" yaml:"-"`
 	Name    string    `json:"name" yaml:"name"`
 	Content string    `json:"content" yaml:"content"`
-	// Smart is non-empty for built-in dynamic snippets (not persisted to YAML).
-	Smart   smartType `json:"-" yaml:"-"`
+	Smart   smartType `json:"smart,omitempty" yaml:"smart,omitempty"`
+	Format  string    `json:"format,omitempty" yaml:"format,omitempty"`
 }
 
 type Manager struct {
@@ -105,6 +105,11 @@ var builtinSmartSnippets = []Snippet{
 		ID:    "__smart_time__",
 		Name:  "⚡ Current Time",
 		Smart: SmartTypeTime,
+	},
+	{
+		ID:    "__smart_ip__",
+		Name:  "⚡ My IP Address",
+		Smart: SmartTypeIP,
 	},
 }
 
