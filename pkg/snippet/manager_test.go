@@ -23,11 +23,20 @@ func TestSnippetManagerCRUD(t *testing.T) {
 
 	// Delete all seeded items to start from clean slate
 	for _, snip := range mgr.GetAll() {
-		_, _ = mgr.Delete(snip.ID)
+		if snip.Smart == "" {
+			_, _ = mgr.Delete(snip.ID)
+		}
 	}
 
-	if len(mgr.GetAll()) != 0 {
-		t.Errorf("expected 0 snippets after clearing, got %d", len(mgr.GetAll()))
+	var userSnippets []Snippet
+	for _, snip := range mgr.GetAll() {
+		if snip.Smart == "" {
+			userSnippets = append(userSnippets, snip)
+		}
+	}
+
+	if len(userSnippets) != 0 {
+		t.Errorf("expected 0 snippets after clearing, got %d", len(userSnippets))
 	}
 
 	// 2. Add Snippet
@@ -47,12 +56,18 @@ func TestSnippetManagerCRUD(t *testing.T) {
 	}
 
 	all := mgr2.GetAll()
-	if len(all) != 1 {
-		t.Errorf("expected 1 persisted snippet, got %d", len(all))
+	var userSnippets2 []Snippet
+	for _, snip := range all {
+		if snip.Smart == "" {
+			userSnippets2 = append(userSnippets2, snip)
+		}
+	}
+	if len(userSnippets2) != 1 {
+		t.Errorf("expected 1 persisted snippet, got %d", len(userSnippets2))
 	}
 
-	if all[0].Name != "Test Snippet 1" || all[0].Content != "func main() {}" {
-		t.Errorf("persisted snippet mismatch: %+v", all[0])
+	if userSnippets2[0].Name != "Test Snippet 1" || userSnippets2[0].Content != "func main() {}" {
+		t.Errorf("persisted snippet mismatch: %+v", userSnippets2[0])
 	}
 
 	// 3. Update Snippet
@@ -65,12 +80,18 @@ func TestSnippetManagerCRUD(t *testing.T) {
 	}
 
 	allUpdated := mgr.GetAll()
-	if len(allUpdated) != 1 || allUpdated[0].Name != "Snippet 1Updated" && allUpdated[0].Name != "Snippet 1 Updated" {
-		t.Errorf("update not applied or mismatch: %+v", allUpdated)
+	var userSnippetsUpdated []Snippet
+	for _, snip := range allUpdated {
+		if snip.Smart == "" {
+			userSnippetsUpdated = append(userSnippetsUpdated, snip)
+		}
+	}
+	if len(userSnippetsUpdated) != 1 || userSnippetsUpdated[0].Name != "Snippet 1Updated" && userSnippetsUpdated[0].Name != "Snippet 1 Updated" {
+		t.Errorf("update not applied or mismatch: %+v", userSnippetsUpdated)
 	}
 
 	// 4. Delete Snippet
-	deleted, err := mgr.Delete(allUpdated[0].ID)
+	deleted, err := mgr.Delete(userSnippetsUpdated[0].ID)
 	if err != nil {
 		t.Fatalf("Delete failed: %v", err)
 	}
@@ -78,7 +99,13 @@ func TestSnippetManagerCRUD(t *testing.T) {
 		t.Error("expected Delete to return true")
 	}
 
-	if len(mgr.GetAll()) != 0 {
-		t.Errorf("expected 0 snippets after delete, got %d", len(mgr.GetAll()))
+	var userSnippetsDeleted []Snippet
+	for _, snip := range mgr.GetAll() {
+		if snip.Smart == "" {
+			userSnippetsDeleted = append(userSnippetsDeleted, snip)
+		}
+	}
+	if len(userSnippetsDeleted) != 0 {
+		t.Errorf("expected 0 snippets after delete, got %d", len(userSnippetsDeleted))
 	}
 }

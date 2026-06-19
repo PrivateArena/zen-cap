@@ -36,9 +36,18 @@ type MagnifierConfig struct {
 	SmoothScaling    bool    `json:"smooth_scaling"`
 }
 
+// SnippetPickerConfig holds configuration for the snippet picker interface.
+type SnippetPickerConfig struct {
+	Width    int    `json:"width"`
+	Height   int    `json:"height"`
+	FontSize int    `json:"font_size"`
+	FontFace string `json:"font_face"`
+}
+
 type Config struct {
 	OutputDir            string          `json:"output_dir"`
 	Hotkeys              HotkeysConfig   `json:"hotkeys"`
+	SnippetPicker        SnippetPickerConfig `json:"snippet_picker"`
 	ClipboardMode        string          `json:"clipboard_mode"`     // "image", "path", "ocr", "translate", "none"
 	OCRAddress           string          `json:"ocr_address"`        // Default: "http://localhost:8765"
 	APIAddress           string          `json:"api_address"`        // Default: "localhost:4444"
@@ -185,6 +194,12 @@ func DefaultConfig() *Config {
 			LensShape:        "circle",
 			SmoothScaling:    true,
 		},
+		SnippetPicker: SnippetPickerConfig{
+			Width:    550,
+			Height:   390,
+			FontSize: 14,
+			FontFace: "",
+		},
 	}
 }
 
@@ -242,6 +257,12 @@ func DefaultPortableConfig(binDir string) *Config {
 			LensSize:         420,
 			LensShape:        "circle",
 			SmoothScaling:    true,
+		},
+		SnippetPicker: SnippetPickerConfig{
+			Width:    550,
+			Height:   390,
+			FontSize: 14,
+			FontFace: "",
 		},
 	}
 }
@@ -495,6 +516,19 @@ func readConfig(path string, binDir string, isPortable bool) (*Config, error) {
 	}
 	if len(cfg.TransformRules) == 0 {
 		cfg.TransformRules = defaults.TransformRules
+	}
+
+	if cfg.SnippetPicker.Width <= 0 {
+		cfg.SnippetPicker.Width = defaults.SnippetPicker.Width
+	}
+	if cfg.SnippetPicker.Height <= 0 {
+		cfg.SnippetPicker.Height = defaults.SnippetPicker.Height
+	}
+	if cfg.SnippetPicker.FontSize <= 0 {
+		cfg.SnippetPicker.FontSize = defaults.SnippetPicker.FontSize
+	}
+	if cfg.SnippetPicker.FontFace == "" {
+		cfg.SnippetPicker.FontFace = defaults.SnippetPicker.FontFace
 	}
 
 	return &cfg, nil

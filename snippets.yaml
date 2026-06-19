@@ -8,17 +8,17 @@
     func main() {
     	
     }
-- name: ⚡ Localized Time (Prefixed)
+- name: Localized Time (Prefixed)
   smart: time
   format: "{place}: {time:2006-01-02 15:04:05 MST}"
-- name: ⚡ Short Time
+- name: Short Time
   smart: time
   format: "({place}) {time:15:04:05}"
-- name: ⚡ Full Timezone Info
+- name: Full Timezone Info
   smart: time
   format: "Time in {place} ({iana}): {time:Mon Jan _2 15:04:05 MST 2006}"
-- name: ⚡ My Public IP (Plain)
+- name: My Public IP (Plain)
   smart: ip
-- name: ⚡ My Public IP (Formatted)
+- name: My Public IP (Formatted)
   smart: ip
   format: "My Public IP is: {ip}"

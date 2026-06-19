@@ -74,5 +74,11 @@
     "lens_shape": "circle",
     "smooth_scaling": true
   },
-  "snippet_mode": "paste"
+  "snippet_mode": "paste",
+  "snippet_picker": {
+    "width": 850,
+    "height": 690,
+    "font_size": 24,
+    "font_face": ""
+  }
 }

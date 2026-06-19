@@ -6,12 +6,17 @@ import (
 	"image/color"
 	"image/draw"
 	"log"
+	"os"
 	"time"
 
 	"github.com/jezek/xgb/xproto"
 	"github.com/jezek/xgbutil"
 	"github.com/jezek/xgbutil/keybind"
 	"github.com/jezek/xgbutil/xevent"
+
+	"golang.org/x/image/font"
+	"golang.org/x/image/font/opentype"
+	"golang.org/x/image/math/fixed"
 
 	"zen-cap/pkg/capture"
 	"zen-cap/pkg/config"
@@ -35,6 +40,8 @@ type pickerState struct {
 	cfg           *config.Config
 	// smartState is non-nil when the currently selected snippet is a smart one.
 	smartState    *SmartState
+	faceNormal    font.Face
+	faceSmall     font.Face
 }
 
 // ShowPicker opens a native X11 popup window at the center of the screen to select a snippet.
@@ -52,10 +59,11 @@ func ShowPicker(mgr *Manager, cfg *config.Config) error {
 	screenWidth := int(screen.WidthInPixels)
 	screenHeight := int(screen.HeightInPixels)
 
-	// Premium Dropdown Window dimensions
-	// Extra 90px reserved for the smart snippet info panel at the bottom.
-	width := 550
-	height := 390
+	// Premium Dropdown Window dimensions from configuration
+	width := cfg.SnippetPicker.Width
+	height := cfg.SnippetPicker.Height
+
+	faceNormal, faceSmall := loadPickerFonts(cfg)
 
 	// Create window ID
 	winID, err := xproto.NewWindowId(xu.Conn())
@@ -177,6 +185,8 @@ func ShowPicker(mgr *Manager, cfg *config.Config) error {
 		selectedIndex: 0,
 		mgr:           mgr,
 		cfg:           cfg,
+		faceNormal:    faceNormal,
+		faceSmall:     faceSmall,
 	}
 	// Initialise smartState if the first item is a smart snippet.
 	state.syncSmartState()
@@ -237,7 +247,10 @@ func (s *pickerState) redraw() {
 	drawRect(img, 2, 2, s.width-3, s.height-3, borderColor)
 	drawRect(img, 3, 3, s.width-4, s.height-4, borderColor)
 
-	capture.DrawStringScaled(img, "SELECT SNIPPET", 30, 20, headerColor, 2)
+	startY, itemHeight, maxVisible, heightNormal, heightSmall := s.layoutMetrics()
+	sepY := 20 + heightNormal + 14
+
+	s.drawText(img, "SELECT SNIPPET", 30, 20, headerColor, 2)
 
 	modeText := "MODE: PASTE"
 	modeColor := mutedColor
@@ -245,20 +258,24 @@ func (s *pickerState) redraw() {
 		modeText = "MODE: TYPING"
 		modeColor = borderColor
 	}
-	capture.DrawStringScaled(img, modeText, s.width-180, 20, modeColor, 2)
+	
+	var modeWidth int
+	if s.faceNormal != nil {
+		dMeasure := &font.Drawer{Face: s.faceNormal}
+		modeWidth = dMeasure.MeasureString(modeText).Round()
+	} else {
+		modeWidth = len(modeText) * 12
+	}
+	s.drawText(img, modeText, s.width-30-modeWidth, 20, modeColor, 2)
 
 	for x := 20; x < s.width-20; x++ {
-		img.Set(x, 48, mutedColor)
+		img.Set(x, sepY, mutedColor)
 	}
 
 	if len(s.snippets) == 0 {
-		capture.DrawStringScaled(img, "NO SNIPPETS FOUND.", 40, 120, mutedColor, 2)
-		capture.DrawStringScaled(img, "Add to snippets.yaml directly", 40, 160, mutedColor, 2)
+		s.drawText(img, "NO SNIPPETS FOUND.", 40, startY+60, mutedColor, 2)
+		s.drawText(img, "Add to snippets.yaml directly", 40, startY+100, mutedColor, 2)
 	} else {
-		startY := 60
-		itemHeight := 38
-		maxVisible := 5
-
 		scrollOffset := 0
 		if s.selectedIndex >= maxVisible {
 			scrollOffset = s.selectedIndex - maxVisible + 1
@@ -286,9 +303,32 @@ func (s *pickerState) redraw() {
 			}
 
 			displayName := fmt.Sprintf("%d. %s", snipIdx+1, snip.Name)
-			if len([]rune(displayName)) > 28 {
-				displayName = string([]rune(displayName)[:25]) + "..."
+			availableWidth := s.width - 60 // 30px padding on each side
+
+			if s.faceNormal != nil {
+				dMeasure := &font.Drawer{Face: s.faceNormal}
+				if dMeasure.MeasureString(displayName).Round() > availableWidth {
+					runes := []rune(displayName)
+					for len(runes) > 3 {
+						runes = runes[:len(runes)-1]
+						testStr := string(runes) + "..."
+						if dMeasure.MeasureString(testStr).Round() <= availableWidth {
+							displayName = testStr
+							break
+						}
+					}
+				}
+			} else {
+				maxChars := availableWidth / 12
+				if len([]rune(displayName)) > maxChars {
+					if maxChars > 3 {
+						displayName = string([]rune(displayName)[:maxChars-3]) + "..."
+					} else {
+						displayName = "..."
+					}
+				}
 			}
+
 			nameColor := textColor
 			if isActive {
 				if snip.Smart != "" {
@@ -299,7 +339,8 @@ func (s *pickerState) redraw() {
 			} else if snip.Smart != "" {
 				nameColor = color.RGBA{R: 200, G: 170, B: 50, A: 255}
 			}
-			capture.DrawStringScaled(img, displayName, 30, yPos+4, nameColor, 2)
+			textYPadding := (itemHeight - 4 - heightNormal) / 2
+			s.drawText(img, displayName, 30, yPos+textYPadding, nameColor, 2)
 		}
 
 		// ── Smart Snippet Info Panel ─────────────────────────────────────
@@ -315,16 +356,16 @@ func (s *pickerState) redraw() {
 			// Live value (either time or IP)
 			selectedSnip := s.snippets[s.selectedIndex]
 			valStr := s.smartState.Content(selectedSnip.Format)
-			capture.DrawStringScaled(img, valStr, 30, panelY, smartColor, 2)
+			s.drawText(img, valStr, 30, panelY, smartColor, 2)
 
 			if s.smartState.kind == SmartTypeTime {
 				// Location label
-				panelY += 22
+				panelY += heightNormal + 8
 				locStr := "@ " + s.smartState.LocationLabel()
-				capture.DrawStringScaled(img, locStr, 30, panelY, mutedColor, 1)
+				s.drawText(img, locStr, 30, panelY, mutedColor, 1)
 
 				// Query input line
-				panelY += 16
+				panelY += heightSmall + 9
 				qLabel := "  > "
 				if s.smartState.query != "" {
 					qLabel += s.smartState.query + "_"
@@ -335,16 +376,16 @@ func (s *pickerState) redraw() {
 				if s.smartState.query != "" {
 					qColor = color.RGBA{R: 180, G: 230, B: 180, A: 255}
 				}
-				capture.DrawStringScaled(img, qLabel, 20, panelY, qColor, 1)
+				s.drawText(img, qLabel, 20, panelY, qColor, 1)
 			} else if s.smartState.kind == SmartTypeIP {
-				panelY += 22
+				panelY += heightNormal + 8
 				statusStr := "Online Lookup (httpbin.org/ip)"
 				if s.smartState.ipLoading {
 					statusStr = "Fetching IP address..."
 				} else if s.smartState.ipErr != nil {
 					statusStr = fmt.Sprintf("Error: %v", s.smartState.ipErr)
 				}
-				capture.DrawStringScaled(img, statusStr, 30, panelY, mutedColor, 1)
+				s.drawText(img, statusStr, 30, panelY, mutedColor, 1)
 			}
 		}
 	}
@@ -476,6 +517,33 @@ func (s *pickerState) handleKeyPress(X *xgbutil.XUtil, ev xevent.KeyPressEvent) 
 	}
 }
 
+func (s *pickerState) layoutMetrics() (startY, itemHeight, maxVisible, heightNormal, heightSmall int) {
+	if s.faceNormal != nil {
+		heightNormal = s.faceNormal.Metrics().Height.Round()
+		heightSmall = s.faceSmall.Metrics().Height.Round()
+	} else {
+		heightNormal = 14
+		heightSmall = 7
+	}
+
+	sepY := 20 + heightNormal + 14
+	startY = sepY + 12
+
+	itemHeight = 38
+	if s.faceNormal != nil {
+		if heightNormal+16 > itemHeight {
+			itemHeight = heightNormal + 16
+		}
+	}
+
+	maxVisible = (s.height - startY - 140) / itemHeight
+	if maxVisible < 1 {
+		maxVisible = 1
+	}
+
+	return startY, itemHeight, maxVisible, heightNormal, heightSmall
+}
+
 func (s *pickerState) handleButtonPress(X *xgbutil.XUtil, ev xevent.ButtonPressEvent) {
 	// Right click -> abort
 	if ev.Detail == 3 {
@@ -489,11 +557,12 @@ func (s *pickerState) handleButtonPress(X *xgbutil.XUtil, ev xevent.ButtonPressE
 		x := int(ev.EventX)
 		y := int(ev.EventY)
 
-		if x >= 15 && x < s.width-15 && y >= 60 && y < 60+5*38 {
-			clickedIdx := (y - 60) / 38
+		startY, itemHeight, maxVisible, _, _ := s.layoutMetrics()
+
+		if x >= 15 && x < s.width-15 && y >= startY && y < startY+maxVisible*itemHeight {
+			clickedIdx := (y - startY) / itemHeight
 
 			scrollOffset := 0
-			maxVisible := 5
 			if s.selectedIndex >= maxVisible {
 				scrollOffset = s.selectedIndex - maxVisible + 1
 			}
@@ -517,4 +586,98 @@ func drawRect(img draw.Image, x0, y0, x1, y1 int, col color.Color) {
 		img.Set(x0, y, col)
 		img.Set(x1, y, col)
 	}
+}
+
+func loadPickerFonts(cfg *config.Config) (font.Face, font.Face) {
+	fontSize := float64(cfg.SnippetPicker.FontSize)
+	if fontSize <= 0 {
+		fontSize = 14.0
+	}
+
+	var fontBytes []byte
+	var err error
+
+	if cfg.SnippetPicker.FontFace != "" {
+		fontBytes, err = os.ReadFile(cfg.SnippetPicker.FontFace)
+		if err != nil {
+			log.Printf("[SnippetPicker] Failed to load configured font %q: %v. Falling back to system fonts.", cfg.SnippetPicker.FontFace, err)
+		}
+	}
+
+	if len(fontBytes) == 0 {
+		// Try fallback system fonts
+		fontPaths := []string{
+			"fonts/NotoSans-Regular.ttf",
+			"../fonts/NotoSans-Regular.ttf",
+			"/media/jang/home/Deve/zen-cap/fonts/NotoSans-Regular.ttf",
+			"/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+			"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+			"/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
+			"/usr/share/fonts/truetype/droid/DroidSansFallback.ttf",
+		}
+		for _, path := range fontPaths {
+			fontBytes, err = os.ReadFile(path)
+			if err == nil {
+				break
+			}
+		}
+	}
+
+	if len(fontBytes) == 0 {
+		// No font file found at all, we will return nil and use bitmap fallback
+		return nil, nil
+	}
+
+	f, err := opentype.Parse(fontBytes)
+	if err != nil {
+		log.Printf("[SnippetPicker] Failed to parse font: %v", err)
+		return nil, nil
+	}
+
+	faceNormal, err := opentype.NewFace(f, &opentype.FaceOptions{
+		Size:    fontSize,
+		DPI:     72,
+		Hinting: font.HintingNone,
+	})
+	if err != nil {
+		log.Printf("[SnippetPicker] Failed to create normal face: %v", err)
+		return nil, nil
+	}
+
+	faceSmall, err := opentype.NewFace(f, &opentype.FaceOptions{
+		Size:    fontSize * 0.75,
+		DPI:     72,
+		Hinting: font.HintingNone,
+	})
+	if err != nil {
+		log.Printf("[SnippetPicker] Failed to create small face: %v", err)
+		return faceNormal, faceNormal
+	}
+
+	return faceNormal, faceSmall
+}
+
+func (s *pickerState) drawText(img draw.Image, text string, x, y int, col color.Color, scale int) {
+	var face font.Face
+	if scale == 1 {
+		face = s.faceSmall
+	} else {
+		face = s.faceNormal
+	}
+
+	if face == nil {
+		capture.DrawStringScaled(img, text, x, y, col, scale)
+		return
+	}
+
+	metrics := face.Metrics()
+	ascent := metrics.Ascent.Round()
+
+	d := &font.Drawer{
+		Dst:  img,
+		Src:  image.NewUniform(col),
+		Face: face,
+		Dot:  fixed.P(x, y+ascent),
+	}
+	d.DrawString(text)
 }
