@@ -111,6 +111,11 @@ var builtinSmartSnippets = []Snippet{
 		Name:  "⚡ My IP Address",
 		Smart: SmartTypeIP,
 	},
+	{
+		ID:    "__smart_emoji__",
+		Name:  "⚡ Search Emoji",
+		Smart: SmartTypeEmoji,
+	},
 }
 
 // GetAll returns a copy of all loaded snippets, auto-reloading from disk to support instant external edits.

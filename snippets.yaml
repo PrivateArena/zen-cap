@@ -22,3 +22,8 @@
 - name: My Public IP (Formatted)
   smart: ip
   format: "My Public IP is: {ip}"
+- name: Search Emoji (Plain)
+  smart: emoji
+- name: Search Emoji (Described)
+  smart: emoji
+  format: "{emoji} {name}"

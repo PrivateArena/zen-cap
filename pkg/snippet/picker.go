@@ -386,6 +386,30 @@ func (s *pickerState) redraw() {
 					statusStr = fmt.Sprintf("Error: %v", s.smartState.ipErr)
 				}
 				s.drawText(img, statusStr, 30, panelY, mutedColor, 1)
+			} else if s.smartState.kind == SmartTypeEmoji {
+				panelY += heightNormal + 8
+				emojiName := "No match"
+				matchCount := 0
+				if len(s.smartState.emojiMatches) > 0 && s.smartState.emojiIdx >= 0 && s.smartState.emojiIdx < len(s.smartState.emojiMatches) {
+					emojiName = s.smartState.emojiMatches[s.smartState.emojiIdx].Name
+					matchCount = len(s.smartState.emojiMatches)
+				}
+				statusStr := fmt.Sprintf("%s (%d matches)", emojiName, matchCount)
+				s.drawText(img, statusStr, 30, panelY, mutedColor, 1)
+
+				// Query input line
+				panelY += heightSmall + 9
+				qLabel := "  > "
+				if s.smartState.query != "" {
+					qLabel += s.smartState.query + "_"
+				} else {
+					qLabel += "type emoji name/tags or \u2190\u2192 to cycle"
+				}
+				qColor := mutedColor
+				if s.smartState.query != "" {
+					qColor = color.RGBA{R: 180, G: 230, B: 180, A: 255}
+				}
+				s.drawText(img, qLabel, 20, panelY, qColor, 1)
 			}
 		}
 	}
@@ -425,6 +449,14 @@ func (s *pickerState) syncSmartState() {
 			s.smartState.TriggerIPFetch(func() {
 				s.redraw()
 			})
+			return
+		} else if snip.Smart == SmartTypeEmoji {
+			if s.smartState == nil || s.smartState.kind != SmartTypeEmoji {
+				s.smartState = &SmartState{
+					kind: SmartTypeEmoji,
+				}
+				s.smartState.resolveEmojiQuery()
+			}
 			return
 		}
 	}
@@ -478,8 +510,8 @@ func (s *pickerState) handleKeyPress(X *xgbutil.XUtil, ev xevent.KeyPressEvent) 
 			return
 		}
 
-		// ── Smart snippet: Left/Right cycle presets ───────────────────────
-		if s.smartState != nil && s.smartState.kind == SmartTypeTime {
+		// ── Smart snippet: Left/Right cycle presets / predictions ─────────
+		if s.smartState != nil && (s.smartState.kind == SmartTypeTime || s.smartState.kind == SmartTypeEmoji) {
 			if keyStr == "Left" {
 				s.smartState.CyclePrev()
 				s.redraw()
