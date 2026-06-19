@@ -19,9 +19,11 @@ import (
 )
 
 type Snippet struct {
-	ID      string `json:"id" yaml:"-"`
-	Name    string `json:"name" yaml:"name"`
-	Content string `json:"content" yaml:"content"`
+	ID      string    `json:"id" yaml:"-"`
+	Name    string    `json:"name" yaml:"name"`
+	Content string    `json:"content" yaml:"content"`
+	// Smart is non-empty for built-in dynamic snippets (not persisted to YAML).
+	Smart   smartType `json:"-" yaml:"-"`
 }
 
 type Manager struct {
@@ -97,15 +99,26 @@ func (m *Manager) saveSnippets() error {
 	return os.WriteFile(m.filePath, data, 0644)
 }
 
-// GetAll returns a copy of all loaded snippets, auto-reloading from disk to support instant external edits
+// builtinSmartSnippets are the built-in smart snippets prepended to every list.
+var builtinSmartSnippets = []Snippet{
+	{
+		ID:    "__smart_time__",
+		Name:  "⚡ Current Time",
+		Smart: SmartTypeTime,
+	},
+}
+
+// GetAll returns a copy of all loaded snippets, auto-reloading from disk to support instant external edits.
+// Built-in smart snippets are always prepended.
 func (m *Manager) GetAll() []Snippet {
 	_ = m.loadSnippets()
 
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	res := make([]Snippet, len(m.snippets))
-	copy(res, m.snippets)
+	res := make([]Snippet, 0, len(builtinSmartSnippets)+len(m.snippets))
+	res = append(res, builtinSmartSnippets...)
+	res = append(res, m.snippets...)
 	return res
 }
 

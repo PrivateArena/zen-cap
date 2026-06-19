@@ -33,6 +33,8 @@ type pickerState struct {
 	selected      bool
 	mgr           *Manager
 	cfg           *config.Config
+	// smartState is non-nil when the currently selected snippet is a smart one.
+	smartState    *SmartState
 }
 
 // ShowPicker opens a native X11 popup window at the center of the screen to select a snippet.
@@ -51,8 +53,9 @@ func ShowPicker(mgr *Manager, cfg *config.Config) error {
 	screenHeight := int(screen.HeightInPixels)
 
 	// Premium Dropdown Window dimensions
+	// Extra 90px reserved for the smart snippet info panel at the bottom.
 	width := 550
-	height := 300
+	height := 390
 
 	// Create window ID
 	winID, err := xproto.NewWindowId(xu.Conn())
@@ -175,6 +178,8 @@ func ShowPicker(mgr *Manager, cfg *config.Config) error {
 		mgr:           mgr,
 		cfg:           cfg,
 	}
+	// Initialise smartState if the first item is a smart snippet.
+	state.syncSmartState()
 
 	// Connect event handlers
 	xevent.KeyPressFun(state.handleKeyPress).Connect(xu, winID)
@@ -195,37 +200,39 @@ func ShowPicker(mgr *Manager, cfg *config.Config) error {
 	if state.selected && len(snippets) > 0 && state.selectedIndex >= 0 && state.selectedIndex < len(snippets) {
 		selectedSnip := snippets[state.selectedIndex]
 		fmt.Printf("[SnippetPicker] Selected snippet: %s. Pasting (%s mode)...\n", selectedSnip.Name, state.cfg.SnippetMode)
-		return state.mgr.Paste(selectedSnip.Content, state.cfg.SnippetMode)
+		// For smart snippets, resolve content now (captures current time/state).
+		content := selectedSnip.Content
+		if selectedSnip.Smart != "" && state.smartState != nil {
+			content = state.smartState.Content()
+		}
+		return state.mgr.Paste(content, state.cfg.SnippetMode)
 	}
 
 	return nil
 }
 
 func (s *pickerState) redraw() {
-	// 1. Draw to internal RGBA image
 	img := image.NewRGBA(image.Rect(0, 0, s.width, s.height))
 
 	// Retro Premium Theme
-	bgColor := color.RGBA{R: 26, G: 26, B: 36, A: 255}       // Charcoal Navy
-	borderColor := color.RGBA{R: 0, G: 240, B: 255, A: 255}  // Neon Cyan
-	headerColor := color.RGBA{R: 255, G: 0, B: 127, A: 255}  // Neon Pink
-	textColor := color.RGBA{R: 230, G: 230, B: 240, A: 255}  // Off White
-	mutedColor := color.RGBA{R: 120, G: 120, B: 150, A: 255} // Cool Grey
-	selectedBg := color.RGBA{R: 45, G: 55, B: 85, A: 255}    // Active Card Highlight
+	bgColor    := color.RGBA{R: 26, G: 26, B: 36, A: 255}
+	borderColor := color.RGBA{R: 0, G: 240, B: 255, A: 255}
+	headerColor := color.RGBA{R: 255, G: 0, B: 127, A: 255}
+	textColor   := color.RGBA{R: 230, G: 230, B: 240, A: 255}
+	mutedColor  := color.RGBA{R: 120, G: 120, B: 150, A: 255}
+	selectedBg  := color.RGBA{R: 45, G: 55, B: 85, A: 255}
+	smartColor  := color.RGBA{R: 255, G: 215, B: 0, A: 255} // Gold for smart snippets
 
-	// Fill background
 	draw.Draw(img, img.Bounds(), &image.Uniform{bgColor}, image.Point{}, draw.Src)
 
-	// Draw Double Border (pink outer, cyan inner)
+	// Double border
 	drawRect(img, 0, 0, s.width-1, s.height-1, headerColor)
 	drawRect(img, 1, 1, s.width-2, s.height-2, headerColor)
 	drawRect(img, 2, 2, s.width-3, s.height-3, borderColor)
 	drawRect(img, 3, 3, s.width-4, s.height-4, borderColor)
 
-	// Draw Premium Header (Scale 2)
 	capture.DrawStringScaled(img, "SELECT SNIPPET", 30, 20, headerColor, 2)
 
-	// Draw active snippet mode status on header
 	modeText := "MODE: PASTE"
 	modeColor := mutedColor
 	if s.cfg != nil && s.cfg.SnippetMode == "type" {
@@ -234,7 +241,6 @@ func (s *pickerState) redraw() {
 	}
 	capture.DrawStringScaled(img, modeText, s.width-180, 20, modeColor, 2)
 
-	// Draw Separator line
 	for x := 20; x < s.width-20; x++ {
 		img.Set(x, 48, mutedColor)
 	}
@@ -247,7 +253,6 @@ func (s *pickerState) redraw() {
 		itemHeight := 38
 		maxVisible := 5
 
-		// Scroll logic
 		scrollOffset := 0
 		if s.selectedIndex >= maxVisible {
 			scrollOffset = s.selectedIndex - maxVisible + 1
@@ -256,40 +261,73 @@ func (s *pickerState) redraw() {
 		for idx := 0; idx < maxVisible && idx+scrollOffset < len(s.snippets); idx++ {
 			snipIdx := idx + scrollOffset
 			snip := s.snippets[snipIdx]
-
 			yPos := startY + idx*itemHeight
-
-			// Highlight active item
 			isActive := snipIdx == s.selectedIndex
+
 			if isActive {
 				cardRect := image.Rect(15, yPos, s.width-15, yPos+itemHeight-4)
 				draw.Draw(img, cardRect, &image.Uniform{selectedBg}, image.Point{}, draw.Src)
-				// Left Indicator Block
 				for lx := 15; lx < 22; lx++ {
 					for ly := yPos; ly < yPos+itemHeight-4; ly++ {
 						img.Set(lx, ly, borderColor)
 					}
 				}
-				// Right Indicator Block
-				for lx := s.width - 22; lx < s.width - 15; lx++ {
+				for lx := s.width - 22; lx < s.width-15; lx++ {
 					for ly := yPos; ly < yPos+itemHeight-4; ly++ {
 						img.Set(lx, ly, borderColor)
 					}
 				}
 			}
 
-			// Format: "1. Snippet Name"
 			displayName := fmt.Sprintf("%d. %s", snipIdx+1, snip.Name)
-			if len(displayName) > 28 {
-				displayName = displayName[:25] + "..."
+			if len([]rune(displayName)) > 28 {
+				displayName = string([]rune(displayName)[:25]) + "..."
 			}
-
-			// Render name with large scale 2 font!
 			nameColor := textColor
 			if isActive {
-				nameColor = borderColor
+				if snip.Smart != "" {
+					nameColor = smartColor
+				} else {
+					nameColor = borderColor
+				}
+			} else if snip.Smart != "" {
+				nameColor = color.RGBA{R: 200, G: 170, B: 50, A: 255}
 			}
 			capture.DrawStringScaled(img, displayName, 30, yPos+4, nameColor, 2)
+		}
+
+		// ── Smart Snippet Info Panel ─────────────────────────────────────
+		if s.smartState != nil {
+			panelY := startY + maxVisible*itemHeight + 4
+
+			// Separator
+			for x := 20; x < s.width-20; x++ {
+				img.Set(x, panelY, mutedColor)
+			}
+			panelY += 6
+
+			// Live time value
+			timeStr := s.smartState.Content()
+			capture.DrawStringScaled(img, timeStr, 30, panelY, smartColor, 2)
+
+			// Location label
+			panelY += 22
+			locStr := "@ " + s.smartState.LocationLabel()
+			capture.DrawStringScaled(img, locStr, 30, panelY, mutedColor, 1)
+
+			// Query input line
+			panelY += 16
+			qLabel := "  > "
+			if s.smartState.query != "" {
+				qLabel += s.smartState.query + "_"
+			} else {
+				qLabel += "type location or \u2190\u2192 to cycle"
+			}
+			qColor := mutedColor
+			if s.smartState.query != "" {
+				qColor = color.RGBA{R: 180, G: 230, B: 180, A: 255}
+			}
+			capture.DrawStringScaled(img, qLabel, 20, panelY, qColor, 1)
 		}
 	}
 
@@ -308,34 +346,97 @@ func (s *pickerState) redraw() {
 	)
 }
 
+func (s *pickerState) syncSmartState() {
+	if s.selectedIndex >= 0 && s.selectedIndex < len(s.snippets) {
+		snip := s.snippets[s.selectedIndex]
+		if snip.Smart == SmartTypeTime {
+			if s.smartState == nil {
+				s.smartState = newSmartState()
+			}
+			return
+		}
+	}
+	s.smartState = nil
+}
+
 func (s *pickerState) handleKeyPress(X *xgbutil.XUtil, ev xevent.KeyPressEvent) {
 	mods := ev.State
 	keycode := ev.Detail
 	keyStr := keybind.LookupString(s.xu, mods, keycode)
 
-	if keyStr == "Escape" || keyStr == "q" || keyStr == "Q" {
+	if keyStr == "Escape" {
+		// If there's an active query, clear it first before aborting.
+		if s.smartState != nil && s.smartState.query != "" {
+			s.smartState.ClearQuery()
+			s.redraw()
+			return
+		}
 		s.aborted = true
 		xevent.Quit(s.xu)
 		return
 	}
 
+	if keyStr == "q" || keyStr == "Q" {
+		// Only quit if not currently typing a location query.
+		if s.smartState == nil || s.smartState.query == "" {
+			s.aborted = true
+			xevent.Quit(s.xu)
+			return
+		}
+	}
+
 	if len(s.snippets) > 0 {
-		if keyStr == "Up" || keyStr == "k" || keyStr == "K" {
+		// ── Navigation (Up/Down) ──────────────────────────────────────────
+		if keyStr == "Up" || (keyStr == "k" && (s.smartState == nil || s.smartState.query == "")) {
 			s.selectedIndex--
 			if s.selectedIndex < 0 {
 				s.selectedIndex = len(s.snippets) - 1
 			}
+			s.syncSmartState()
 			s.redraw()
 			return
 		}
-		if keyStr == "Down" || keyStr == "j" || keyStr == "J" {
+		if keyStr == "Down" || (keyStr == "j" && (s.smartState == nil || s.smartState.query == "")) {
 			s.selectedIndex++
 			if s.selectedIndex >= len(s.snippets) {
 				s.selectedIndex = 0
 			}
+			s.syncSmartState()
 			s.redraw()
 			return
 		}
+
+		// ── Smart snippet: Left/Right cycle presets ───────────────────────
+		if s.smartState != nil {
+			if keyStr == "Left" {
+				s.smartState.CyclePrev()
+				s.redraw()
+				return
+			}
+			if keyStr == "Right" {
+				s.smartState.CycleNext()
+				s.redraw()
+				return
+			}
+			// Backspace on the query buffer
+			if keyStr == "BackSpace" {
+				s.smartState.BackspaceQuery()
+				s.redraw()
+				return
+			}
+			// Printable chars go into the location query buffer
+			if len([]rune(keyStr)) == 1 {
+				r := []rune(keyStr)[0]
+				// Accept letters, digits, spaces, dots and slashes (for IANA paths)
+				if r >= 32 && r < 127 {
+					s.smartState.AppendQuery(r)
+					s.redraw()
+					return
+				}
+			}
+		}
+
+		// ── Confirm ───────────────────────────────────────────────────────
 		if keyStr == "Return" || keyStr == "Enter" {
 			s.selected = true
 			xevent.Quit(s.xu)
