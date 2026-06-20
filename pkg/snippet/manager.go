@@ -223,6 +223,10 @@ func (m *Manager) Paste(content string, mode string, prevFocusWin xproto.Window)
 	// We wait a brief moment for the focus transition to complete and settle on the client window.
 	time.Sleep(500 * time.Millisecond)
 
+	// Release any active modifier keys (like Alt from the Alt+W hotkey, Super, Shift, etc.)
+	// that might be "stuck" in the X server state or target window state due to active grabs.
+	releaseModifiers(xu)
+
 	if mode == "type" {
 		return TypeHumanly(xu, content)
 	}
@@ -263,8 +267,38 @@ func (m *Manager) Paste(content string, mode string, prevFocusWin xproto.Window)
 	xtest.FakeInput(c, xproto.KeyRelease, vKC, 0, 0, 0, 0, 0)
 	xtest.FakeInput(c, xproto.KeyRelease, ctrlKC, 0, 0, 0, 0, 0)
 
+	// Keep the process alive slightly longer so the target window has time
+	// to request and process the clipboard selection before we exit.
+	time.Sleep(150 * time.Millisecond)
+
 	return nil
 }
+
+// releaseModifiers sends KeyRelease events for all standard X11 modifier keys.
+// When a grabbed hotkey (like Alt+W) is pressed, the key release event might be
+// swallowed or lost by the grab, leaving the target app thinking the modifier
+// is still held down, which corrupts subsequent Ctrl+V or keyboard inputs.
+func releaseModifiers(xu *xgbutil.XUtil) {
+	c := xu.Conn()
+	if err := xtest.Init(c); err != nil {
+		return
+	}
+	modifiers := []string{
+		"Alt_L", "Alt_R",
+		"Super_L", "Super_R",
+		"Shift_L", "Shift_R",
+		"Control_L", "Control_R",
+		"Meta_L", "Meta_R",
+	}
+	for _, mod := range modifiers {
+		if _, kcs, err := keybind.ParseString(xu, mod); err == nil {
+			for _, kc := range kcs {
+				xtest.FakeInput(c, xproto.KeyRelease, byte(kc), 0, 0, 0, 0, 0)
+			}
+		}
+	}
+}
+
 
 func TypeHumanly(xu *xgbutil.XUtil, text string) error {
 	c := xu.Conn()

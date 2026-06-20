@@ -791,13 +791,13 @@ func loadPickerFonts(cfg *config.Config) (font.Face, font.Face) {
 		return nil, nil
 	}
 
-	f, err := opentype.Parse(fontBytes)
+	fNormal, err := opentype.Parse(fontBytes)
 	if err != nil {
-		log.Printf("[SnippetPicker] Failed to parse font: %v", err)
+		log.Printf("[SnippetPicker] Failed to parse normal font: %v", err)
 		return nil, nil
 	}
 
-	faceNormal, err := opentype.NewFace(f, &opentype.FaceOptions{
+	faceNormal, err := opentype.NewFace(fNormal, &opentype.FaceOptions{
 		Size:    fontSize,
 		DPI:     72,
 		Hinting: font.HintingNone,
@@ -807,7 +807,13 @@ func loadPickerFonts(cfg *config.Config) (font.Face, font.Face) {
 		return nil, nil
 	}
 
-	faceSmall, err := opentype.NewFace(f, &opentype.FaceOptions{
+	fSmall, err := opentype.Parse(fontBytes)
+	if err != nil {
+		log.Printf("[SnippetPicker] Failed to parse small font: %v", err)
+		return faceNormal, faceNormal
+	}
+
+	faceSmall, err := opentype.NewFace(fSmall, &opentype.FaceOptions{
 		Size:    fontSize * 0.75,
 		DPI:     72,
 		Hinting: font.HintingNone,
@@ -821,6 +827,15 @@ func loadPickerFonts(cfg *config.Config) (font.Face, font.Face) {
 }
 
 func (s *pickerState) drawText(img draw.Image, text string, x, y int, col color.Color, scale int) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[SnippetPicker] Recovered from font draw panic: %v. Falling back to bitmap font.", r)
+			s.faceNormal = nil
+			s.faceSmall = nil
+			capture.DrawStringScaled(img, text, x, y, col, scale)
+		}
+	}()
+
 	var face font.Face
 	if scale == 1 {
 		face = s.faceSmall
