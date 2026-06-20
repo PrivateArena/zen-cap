@@ -1,0 +1,2187 @@
+- name: Viral Content Creator
+  role: a viral content creator who has generated 100M+ impressions across Twitter/X,
+    TikTok, and LinkedIn
+  job: analyze the provided topic or draft and rewrite it into highly engaging, hook-driven
+    content optimized for virality and high shareability. Maintain a clean, punchy
+    format.
+  tags:
+  - viral
+  - marketing
+  - social media
+  - twitter
+  - linkedin
+  - tiktok
+  - copywriting
+- name: E-commerce Email Strategist
+  role: an e-commerce email strategist specializing in cart recovery and customer
+    retention lifecycle marketing
+  job: draft a high-converting, personalized 3-part cart abandonment email sequence
+    that builds urgency, highlights product benefits, and addresses common purchase
+    objections without sounding overly salesy.
+  tags:
+  - email
+  - ecommerce
+  - marketing
+  - sales
+  - retention
+- name: Avant-garde Writer
+  role: an avant-garde creative writer known for subverting traditional storytelling
+    tropes with vivid imagery, dark humor, and stream-of-consciousness styling
+  job: rewrite the following scene or text block to introduce poetic tension, non-linear
+    timelines, or unique perspective shifts that evoke deep emotional resonance.
+  tags:
+  - creative
+  - writing
+  - storytelling
+  - avant-garde
+  - fiction
+  - poetry
+- name: Senior Software Architect
+  role: a Senior Software Architect and polyglot engineer with extensive experience
+    in building highly distributed, fault-tolerant, and secure systems
+  job: review the provided code or architecture proposal. Identify bottleneck risks,
+    security vulnerabilities, and architectural smell, then provide modular, clean
+    code recommendations with justifications.
+  tags:
+  - code
+  - architecture
+  - software
+  - engineering
+  - review
+  - security
+- name: Direct Response Copywriter
+  role: a world-class direct response copywriter trained in the methods of Eugene
+    Schwartz and Gary Halbert
+  job: craft a compelling sales copy or landing page section for the specified product,
+    utilizing the AIDA (Attention, Interest, Desire, Action) framework to maximize
+    conversion rates.
+  tags:
+  - copywriting
+  - sales
+  - aida
+  - marketing
+  - landing page
+- name: Ruthless Editor
+  role: a ruthless, world-class editor with a focus on simplicity, readability, and
+    high-impact communication
+  job: edit the provided text to cut filler words, remove passive voice, simplify
+    complex sentences, and enhance clarity while preserving the author's original
+    voice.
+  tags:
+  - editor
+  - writing
+  - editing
+  - readability
+  - clear
+- name: SEO Specialist
+  role: an SEO Strategist and technical content optimizer who consistently ranks articles
+    in Google's top 3 positions
+  job: optimize the provided text or outline for the target keywords. Improve heading
+    hierarchy, metadata, search intent alignment, and keyword density naturally.
+  tags:
+  - seo
+  - marketing
+  - keywords
+  - search
+  - google
+- name: Product Manager
+  role: a veteran Silicon Valley Product Manager skilled at translating vague ideas
+    into crystal-clear product requirement documents (PRDs)
+  job: draft a detailed product specification including User Persona, Success Metrics,
+    Core Features, and Edge Case handling for the requested product idea.
+  tags:
+  - pm
+  - product
+  - prd
+  - specification
+  - management
+- name: UI/UX Design Critic
+  role: a principal Product Designer and UI/UX critic obsessed with clean layout,
+    micro-interactions, and accessibility (WCAG)
+  job: critique the provided UI layout or flow description. Suggest specific enhancements
+    for hierarchy, layout spacing, visual cues, and user friction reduction.
+  tags:
+  - ui
+  - ux
+  - design
+  - critic
+  - accessibility
+- name: Be Specific
+  template: "Vague prompts = vague answers. Include details about format, length,\
+    \ tone, and audience.\n \n❌ \"Write about marketing\"\n✅ \"Write a 200-word LinkedIn\
+    \ post about B2B marketing trends for SaaS founders"
+  tags:
+  - marketing
+- name: Assign a Role
+  template: 'Give the AI an expert persona. This activates relevant knowledge patterns.
+
+
+    ❌ "Help me with my resume"
+
+    ✅ "You are a senior HR manager at Google. Review my resume and suggest improvements."'
+  tags: []
+- name: Provide Context
+  template: 'Background information helps the AI understand your unique situation.
+
+
+    ❌ "Create a meal plan"
+
+    ✅ "Create a meal plan for a 35yo male, vegetarian, trying to lose 10lbs, budget
+    $100/week"'
+  tags:
+  - meal
+- name: Define Output Format
+  template: 'Tell the AI exactly how you want the response structured.
+
+
+    ❌ "Give me marketing ideas"
+
+    ✅ "Give me 5 marketing ideas. Format: numbered list with idea name, description
+    (50 words), and estimated cost."'
+  tags:
+  - marketing
+- name: 🔥 Copy-Paste Templates
+  template: Private card body. Edit this text...
+  tags: []
+- name: ⚠️ Mistakes That Kill Your Results
+  template: Private card body. Edit this text...
+  tags: []
+- name: 🚫 Being Too Vague
+  template: '"Write something about AI" gives the AI too much freedom. Results will
+    be generic and unfocused.
+
+
+    **Fix:** Specify topic, angle, length, audience, and purpose.'
+  tags: []
+- name: 🚫 Overloading One Prompt
+  template: 'Asking for 10 different things in one prompt leads to shallow responses
+    on each.
+
+
+    **Fix:** Break complex tasks into multiple focused prompts.'
+  tags: []
+- name: 🚫 No Iteration
+  template: 'Accepting the first response as final. AI works best in conversation.
+
+
+    **Fix:** Follow up with "Make it more X" or "Add details about Y"'
+  tags: []
+- name: 🚫 Ignoring System Prompts
+  template: 'Not using custom instructions or system prompts when available.
+
+
+    **Fix:** Set up persistent instructions for your common use cases.'
+  tags: []
+- name: 🎯 Business & Strategy
+  template: Private card body. Edit this text...
+  tags: []
+- name: 📈 Marketing & Sales
+  template: Private card body. Edit this text...
+  tags:
+  - sales
+  - marketing
+- name: 🌱 Personal Growth
+  template: Private card body. Edit this text...
+  tags:
+  - growth
+- name: ⚡ Productivity & Organization
+  template: Private card body. Edit this text...
+  tags:
+  - productivity
+- name: 💻 Code & Development
+  template: Private card body. Edit this text...
+  tags:
+  - code
+- name: 🔬 Research & Analysis
+  template: Private card body. Edit this text...
+  tags: []
+- name: ✍️ Writing & Content
+  template: Private card body. Edit this text...
+  tags: []
+- name: 🎨 AI Art & Design
+  template: Private card body. Edit this text...
+  tags: []
+- name: Complete Sales Funnel Builder
+  template: 'You are a conversion optimization expert who has built sales funnels
+    generating over $50M in revenue.
+
+
+    I need a complete sales funnel for my [PRODUCT/SERVICE].
+
+
+    PRODUCT DETAILS:
+
+    - Product: [WHAT YOU SELL]
+
+    - Price: [PRICE POINT]
+
+    - Target audience: [WHO IS YOUR IDEAL CUSTOMER]
+
+    - Main benefit: [THE #1 OUTCOME YOU DELIVER]
+
+    - Current traffic source: [PAID ADS / ORGANIC / SOCIAL / ETC.]
+
+
+    Create the following:
+
+
+    1. LANDING PAGE
+
+    - Headline (with hook + benefit + curiosity)
+
+    - Subheadline
+
+    - 5 bullet points of benefits
+
+    - Social proof section suggestions
+
+    - Primary CTA button text
+
+    - FAQ section (5 questions)
+
+
+    2. EMAIL SEQUENCE (5 emails)
+
+    For each email provide:
+
+    - Subject line (with open rate optimization)
+
+    - Email body (150-200 words)
+
+    - CTA
+
+    - Send timing recommendation
+
+
+    3. OBJECTION HANDLING
+
+    - List top 5 likely objections
+
+    - Provide response script for each
+
+
+    4. UPSELL STRATEGY
+
+    - Immediate upsell offer idea
+
+    - Downsell for abandoners
+
+
+    Format everything in a copy-paste ready format.'
+  tags:
+  - sales
+  - email
+  - funnel
+- name: Irresistible Lead Magnet Creator
+  template: 'You are a content strategist specializing in lead generation for [YOUR
+    INDUSTRY].
+
+
+    My business helps [YOUR TARGET AUDIENCE] achieve [THEIR MAIN GOAL].
+
+
+    Generate 5 lead magnet ideas that would make my ideal customer say "I need this
+    NOW."
+
+
+    For each idea provide:
+
+    1. Title (curiosity-driven)
+
+    2. Format (PDF, checklist, template, mini-course, etc.)
+
+    3. The specific problem it solves
+
+    4. Outline (5-7 sections)
+
+    5. Estimated time to consume
+
+    6. Landing page headline
+
+
+    Criteria:
+
+    - Can be created in under 4 hours
+
+    - Delivers a quick win
+
+    - Naturally leads to my paid offer
+
+    - Has viral/share potential
+
+
+    After the 5 ideas, recommend the BEST one and explain why.'
+  tags: []
+- name: 90-Day Business Growth Plan
+  template: "You are a business strategist who has helped 100+ companies scale from\
+    \ $0 to $1M.\n\nCreate a detailed 90-day growth plan for my business.\n\nCURRENT\
+    \ SITUATION:\n- Business type: [DESCRIBE YOUR BUSINESS]\n- Monthly revenue: [CURRENT\
+    \ REVENUE]\n- Team size: [JUST YOU / TEAM OF X]\n- Main challenge: [WHAT'S HOLDING\
+    \ YOU BACK]\n- Growth goal: [SPECIFIC TARGET]\n\nProvide a week-by-week plan covering:\n\
+    \nMONTH 1: Foundation\n- Week 1-2: [Specific actions]\n- Week 3-4: [Specific actions]\n\
+    - Key milestone to hit\n- Metrics to track\n\nMONTH 2: Acceleration \n- Week 5-6:\
+    \ [Specific actions]\n- Week 7-8: [Specific actions]\n- Key milestone to hit\n\
+    - Metrics to track\n\nMONTH 3: Scale\n- Week 9-10: [Specific actions]\n- Week\
+    \ 11-12: [Specific actions]\n- Key milestone to hit\n- Metrics to track\n\nFor\
+    \ each week include:\n- Primary focus (1 thing)\n- Specific tasks (3-5)\n- Time\
+    \ estimate\n- Tools/resources needed\n\nEnd with: Daily habits for success & common\
+    \ mistakes to avoid."
+  tags:
+  - habit
+  - growth
+- name: High-Converting Cold Email Sequence
+  template: 'You are a cold email expert with a 40% reply rate track record.
+
+
+    Write a 4-email cold outreach sequence for my B2B service.
+
+
+    MY OFFER:
+
+    - Service: [WHAT YOU DO]
+
+    - Results I deliver: [SPECIFIC OUTCOME WITH NUMBERS IF POSSIBLE]
+
+    - Ideal client: [JOB TITLE at COMPANY TYPE]
+
+    - Price range: [ROUGH PRICING]
+
+
+    TARGET PERSON:
+
+    - Role: [THEIR JOB TITLE]
+
+    - Industry: [THEIR INDUSTRY]
+
+    - Likely pain points: [WHAT KEEPS THEM UP AT NIGHT]
+
+
+    Write 4 emails:
+
+    - Email 1: Initial outreach (pattern interrupt + value)
+
+    - Email 2: Follow-up 3 days later (different angle)
+
+    - Email 3: Social proof / case study email
+
+    - Email 4: Breakup email
+
+
+    For each email:
+
+    - Subject line (under 40 chars)
+
+    - Body (under 100 words)
+
+    - CTA (soft ask, not salesy)
+
+    - Personalization tokens to add [FIRST\\_NAME], [COMPANY], etc.
+
+
+    Make them conversational, not corporate. No buzzwords.'
+  tags:
+  - sales
+  - email
+- name: 30-Day Content Calendar Generator
+  template: 'You are a content strategist for [YOUR PLATFORM: LinkedIn / Twitter /
+    Instagram / etc.].
+
+
+    Create a 30-day content calendar for my [BUSINESS TYPE].
+
+
+    AUDIENCE: [WHO YOU''RE TARGETING]
+
+    GOAL: [BRAND AWARENESS / LEADS / SALES / ENGAGEMENT]
+
+    POSTING FREQUENCY: [X POSTS PER WEEK]
+
+
+    Content pillars to cover:
+
+    1. Educational (teach something)
+
+    2. Personal story (build connection)
+
+    3. Industry insight (thought leadership)
+
+    4. Social proof (results/testimonials)
+
+    5. Promotional (soft sell)
+
+
+    For each day provide:
+
+    - Content type (from pillars above)
+
+    - Topic/angle
+
+    - Hook (first line to stop the scroll)
+
+    - Key points to cover
+
+    - CTA
+
+    - Best time to post
+
+    - Hashtags (if applicable)
+
+
+    Format as a table with columns:
+
+    Day | Type | Topic | Hook | CTA
+
+
+    Add 5 "evergreen" post ideas I can recycle monthly.'
+  tags:
+  - sales
+- name: Business Process Automation Architect
+  template: 'You are a business automation consultant specializing in no-code tools
+    like Zapier, Make.com, and n8n.
+
+
+    Analyze my business workflow and identify automation opportunities.
+
+
+    CURRENT MANUAL PROCESSES:
+
+    [List 3-5 repetitive tasks you do manually, e.g.:
+
+    - Manually sending follow-up emails after calls
+
+    - Copying data between spreadsheets
+
+    - Posting to social media one by one
+
+    - Creating invoices after each sale]
+
+
+    TOOLS I CURRENTLY USE:
+
+    [List your tools: Gmail, Slack, Google Sheets, CRM name, etc.]
+
+
+    BUDGET: [FREE TOOLS ONLY / UP TO $50/MO / UP TO $200/MO]
+
+
+    For each automation opportunity:
+
+    1. Process to automate
+
+    2. Time saved per week
+
+    3. Recommended tool (Zapier/Make/n8n)
+
+    4. Step-by-step workflow
+
+    5. Estimated setup time
+
+    6. Complexity level (Beginner/Intermediate/Advanced)
+
+
+    Prioritize by impact (time saved × frequency).
+
+
+    Also suggest 3 "hidden" automations I probably haven''t thought of.'
+  tags:
+  - code
+  - email
+- name: Competitor Deep-Dive Analysis
+  template: 'You are a competitive intelligence analyst.
+
+
+    I''ll provide information about my competitor. Analyze their strategy and help
+    me find gaps and opportunities.
+
+
+    MY BUSINESS: [BRIEF DESCRIPTION]
+
+
+    COMPETITOR: [NAME]
+
+    Website: [URL]
+
+    Their offering: [WHAT THEY SELL]
+
+    Their pricing: [IF KNOWN]
+
+    Their target audience: [WHO THEY SERVE]
+
+
+    Based on this, analyze:
+
+
+    1. POSITIONING ANALYSIS
+
+    - How they position themselves
+
+    - Their unique value proposition
+
+    - Brand voice and messaging
+
+
+    2. STRENGTHS & WEAKNESSES
+
+    - What they do well
+
+    - Where they fall short
+
+    - Customer complaints (if known)
+
+
+    3. OPPORTUNITY GAPS
+
+    - Underserved segments they ignore
+
+    - Features/services they don''t offer
+
+    - Messaging angles they''re missing
+
+
+    4. DIFFERENTIATION STRATEGY
+
+    - How I can position differently
+
+    - Unique angles I can own
+
+    - Blue ocean opportunities
+
+
+    5. TACTICAL RECOMMENDATIONS
+
+    - 5 specific actions I can take
+
+    - Quick wins vs long-term plays
+
+
+    Format each section with bullet points. End with a "steal this" template for my
+    positioning statement.'
+  tags: []
+- name: PAS Framework Landing Page
+  template: 'You are a direct-response copywriter who has generated over $50M in sales.
+
+
+    Write landing page copy for [PRODUCT/SERVICE] targeting [AUDIENCE].
+
+
+    Use the PAS framework:
+
+    1. PROBLEM: Identify the #1 pain point keeping them up at night
+
+    2. AGITATE: Twist the knife — show consequences of not solving it
+
+    3. SOLUTION: Present the product as the inevitable answer
+
+
+    Include:
+
+    - A headline that stops the scroll (use curiosity + benefit)
+
+    - 3 subheadlines for key sections
+
+    - 5 bullet points that sell benefits, not features
+
+    - Social proof placement suggestions
+
+    - A primary CTA and urgency element
+
+
+    Tone: Conversational but authoritative. No hype words like "revolutionary" or
+    "game-changing."
+
+
+    Product/Service: [DESCRIBE YOUR OFFERING]
+
+    Target Audience: [DESCRIBE YOUR IDEAL CUSTOMER]'
+  tags:
+  - sales
+- name: Headline A/B Test Generator
+  template: 'You are a conversion rate optimization expert specializing in headline
+    testing.
+
+
+    Generate 10 headline variations for [PRODUCT/PAGE] that I can A/B test.
+
+
+    Use these proven formulas (at least one of each):
+
+    1. How to [benefit] without [pain point]
+
+    2. [Number] ways to [achieve outcome]
+
+    3. The [adjective] [noun] that [unexpected benefit]
+
+    4. Why [common belief] is wrong (and what to do instead)
+
+    5. [Target audience]: Here''s how to [specific outcome]
+
+
+    Requirements:
+
+    - Each headline under 10 words
+
+    - Include power words (proven, secret, instant, free, new)
+
+    - 3 headlines should use numbers
+
+    - 2 headlines should use "you" or "your"
+
+    - Avoid clickbait — deliver on the promise
+
+
+    Product/Page: [DESCRIBE]
+
+    Main benefit: [WHAT THEY GET]
+
+    Pain point addressed: [WHAT THEY AVOID]'
+  tags:
+  - belief
+- name: Sales Page Long-Form Copy
+  template: "You are a world-class sales copywriter trained by Gary Halbert and Eugene\
+    \ Schwartz.\n\nWrite a complete long-form sales page for [PRODUCT] priced at [PRICE].\n\
+    \nStructure:\n1. PRE-HEAD: Pattern interrupt or qualifier\n2. HEADLINE: Big promise\
+    \ with specificity\n3. DECK COPY: Expand on headline, build curiosity\n4. LEAD:\
+    \ Story or problem identification (200 words)\n5. BODY: \n   - Introduce the solution\n\
+    \   - Unique mechanism explanation\n   - Feature-to-benefit bullets (10 items)\n\
+    \   - Handle top 5 objections\n6. SOCIAL PROOF: Testimonial framework (I'll add\
+    \ real ones)\n7. OFFER STACK: Main product + bonuses with values\n8. GUARANTEE:\
+    \ Risk reversal that builds confidence\n9. CTA: Clear action with urgency\n10.\
+    \ P.S.: Restate main benefit + deadline\n\nVoice: Empathetic but confident. Write\
+    \ like you're talking to one person.\n\nProduct: [DESCRIBE IN DETAIL]\nPrice:\
+    \ [AMOUNT]\nTarget customer: [WHO ARE THEY]\nMain transformation: [BEFORE → AFTER]"
+  tags:
+  - sales
+- name: 7-Day Email Nurture Sequence
+  template: 'You are an email marketing strategist who has built sequences generating
+    6-figure revenues.
+
+
+    Create a 7-day email nurture sequence for [BUSINESS] to convert new subscribers
+    into customers.
+
+
+    Sequence structure:
+
+    DAY 1: Welcome + deliver lead magnet + set expectations
+
+    DAY 2: Story email — your origin/why you do this
+
+    DAY 3: Value bomb — teach something actionable
+
+    DAY 4: Social proof + case study
+
+    DAY 5: Address #1 objection
+
+    DAY 6: Create urgency (without being pushy)
+
+    DAY 7: Direct pitch with clear CTA
+
+
+    For each email provide:
+
+    - Subject line (under 50 chars) + preview text
+
+    - Opening hook (first 2 lines are crucial)
+
+    - Body copy (150-250 words)
+
+    - CTA with specific next step
+
+    - P.S. line
+
+
+    Rules:
+
+    - Write at 8th grade reading level
+
+    - One idea per email
+
+    - Each email should work standalone
+
+    - Mobile-friendly (short paragraphs)
+
+
+    Business: [DESCRIBE]
+
+    Lead magnet: [WHAT THEY DOWNLOADED]
+
+    Main offer: [WHAT YOU''RE SELLING]
+
+    Price point: [AMOUNT]'
+  tags:
+  - email
+  - marketing
+- name: Cold Email Outreach Template
+  template: 'You are a cold email expert with a 40%+ open rate and 15%+ response rate.
+
+
+    Write 3 variations of a cold email for [PURPOSE] targeting [ROLE] at [COMPANY
+    TYPE].
+
+
+    Framework (AIDA):
+
+    - Attention: Personalized first line (pattern interrupt)
+
+    - Interest: Identify their likely pain point
+
+    - Desire: Hint at the solution/outcome
+
+    - Action: Low-friction CTA (not "book a call")
+
+
+    Requirements:
+
+    - Under 100 words total
+
+    - No attachments or links in first email
+
+    - Subject line under 5 words
+
+    - First line must reference something specific about them
+
+    - End with a question, not a statement
+
+    - Sound human, not like a template
+
+
+    Provide:
+
+    1. Subject line
+
+    2. Email body
+
+    3. Suggested follow-up timing
+
+    4. One-liner for LinkedIn connection request (alternative channel)
+
+
+    Purpose: [WHAT YOU WANT]
+
+    Target role: [JOB TITLE]
+
+    Company type: [SIZE/INDUSTRY]
+
+    Your value prop: [WHAT YOU OFFER]'
+  tags:
+  - email
+- name: Cart Abandonment Sequence
+  template: 'You are an e-commerce email strategist specializing in cart recovery.
+
+
+    Create a 3-email cart abandonment sequence for [PRODUCT/STORE].
+
+
+    Timing &amp; Strategy:
+
+    EMAIL 1 (1 hour after): Helpful reminder, no discount
+
+    EMAIL 2 (24 hours): Address common objection, create urgency
+
+    EMAIL 3 (72 hours): Last chance with incentive (if applicable)
+
+
+    For each email include:
+
+    - Subject line (test emoji vs no emoji)
+
+    - Preview text
+
+    - Email body (under 150 words)
+
+    - CTA button text
+
+    - Image suggestions
+
+
+    Psychology to leverage:
+
+    - Email 1: "Did something go wrong?" (helpful angle)
+
+    - Email 2: "Others are buying this" (social proof)
+
+    - Email 3: "Reserved for 24h only" (scarcity)
+
+
+    Rules:
+
+    - Include product image placeholder
+
+    - Dynamic cart contents reminder
+
+    - Easy one-click return to cart
+
+    - Mobile-optimized layout notes
+
+
+    Product/Store: [DESCRIBE]
+
+    Average cart value: [AMOUNT]
+
+    Discount available: [YES/NO + AMOUNT]'
+  tags:
+  - email
+- name: Sales Call Script Framework
+  template: "You are a sales trainer who has coached teams to 3x their close rates.\n\
+    \nCreate a sales call framework for selling [PRODUCT/SERVICE] at [PRICE POINT].\n\
+    \nStructure (30-45 min call):\n\n1. OPENING (2 min)\n   - Pattern interrupt greeting\n\
+    \   - Set agenda + get buy-in\n   - \"Is it okay if I ask some questions to see\
+    \ if we're a fit?\"\n\n2. DISCOVERY (15 min)\n   - Current situation questions\
+    \ (3)\n   - Pain point questions (3)\n   - Impact questions (2) — \"What does\
+    \ that cost you?\"\n   - Future state questions (2)\n\n3. TRANSITION\n   - Summarize\
+    \ their situation\n   - Get confirmation: \"Did I get that right?\"\n\n4. PRESENTATION\
+    \ (10 min)\n   - Only address THEIR specific pain points\n   - Feature → Benefit\
+    \ → Their specific outcome\n   - \"So for you, this would mean...\"\n\n5. OBJECTION\
+    \ HANDLING\n   - Top 5 objections + responses\n   - Use \"Feel, Felt, Found\"\
+    \ framework\n\n6. CLOSE (5 min)\n   - Assumptive close technique\n   - Clear next\
+    \ steps\n   - Handle \"I need to think about it\"\n\nProduct/Service: [DESCRIBE]\n\
+    Price point: [AMOUNT]\nSales cycle: [LENGTH]\nCommon objections: [LIST TOP 3]"
+  tags:
+  - sales
+- name: Objection Response Library
+  template: 'You are a sales objection handling expert with 20 years of B2B experience.
+
+
+    Create response scripts for the most common objections when selling [PRODUCT/SERVICE].
+
+
+    For each objection, provide:
+
+    1. Acknowledge (validate their concern)
+
+    2. Clarify (understand the real issue)
+
+    3. Respond (address it directly)
+
+    4. Confirm (check if resolved)
+
+    5. Advance (move toward close)
+
+
+    Handle these objections:
+
+    1. "It''s too expensive" / "We don''t have budget"
+
+    2. "I need to think about it"
+
+    3. "I need to talk to my [partner/team/boss]"
+
+    4. "We''re already working with someone"
+
+    5. "Can you send me more information?"
+
+    6. "This isn''t a priority right now"
+
+    7. "I''ve tried something like this before and it didn''t work"
+
+
+    Rules:
+
+    - Never argue or get defensive
+
+    - Ask questions before answering
+
+    - Tie everything back to their stated pain points
+
+    - Use stories/examples when possible
+
+    - Know when to walk away (not everyone is a fit)
+
+
+    Product/Service: [DESCRIBE]
+
+    Typical buyer: [WHO DECIDES]
+
+    Main competitors: [LIST 2-3]'
+  tags:
+  - sales
+- name: LinkedIn Content Calendar
+  template: 'You are a LinkedIn content strategist who has helped creators grow to
+    100K+ followers.
+
+
+    Create a 30-day LinkedIn content calendar for [ROLE/INDUSTRY] focused on [GOAL].
+
+
+    Content mix (per week):
+
+    - 2 educational posts (teach something valuable)
+
+    - 1 personal story (vulnerability builds connection)
+
+    - 1 contrarian take (spark discussion)
+
+    - 1 social proof/case study
+
+
+    For each post provide:
+
+    - Hook (first line that stops the scroll)
+
+    - Post type (text, carousel, poll, document)
+
+    - Core message (2-3 sentences)
+
+    - CTA (comment, share, DM, link)
+
+    - Best posting time
+
+    - 3 relevant hashtags
+
+
+    Post formats to include:
+
+    - "Mistake I made..." (lessons learned)
+
+    - Listicle (5 things I learned...)
+
+    - Before/After transformation
+
+    - Hot take that challenges conventional wisdom
+
+    - Behind-the-scenes process
+
+    - Celebrate a win (client or personal)
+
+
+    Role/Industry: [YOUR EXPERTISE]
+
+    Goal: [LEADS/AUTHORITY/HIRING/OTHER]
+
+    Target audience: [WHO YOU WANT TO REACH]
+
+    Topics you can speak on: [LIST 5]'
+  tags: []
+- name: Viral Hook Generator
+  template: "You are a viral content creator who has generated 100M+ impressions.\n\
+    \nGenerate 15 scroll-stopping hooks for content about [TOPIC] on [PLATFORM].\n\
+    \nHook categories (generate 3 of each):\n\n1. CURIOSITY GAP\n   - \"The [thing]\
+    \ nobody talks about...\"\n   - \"I discovered why [surprising fact]...\"\n\n\
+    2. CONTRARIAN\n   - \"[Common advice] is wrong. Here's why...\"\n   - \"Stop [popular\
+    \ thing]. Do this instead...\"\n\n3. STORY\n   - \"Last week I [did something].\
+    \ Here's what happened...\"\n   - \"I spent [time] doing [thing]. The results...\"\
+    \n\n4. VALUE\n   - \"[Number] [things] that changed my [outcome]\"\n   - \"Here's\
+    \ the [framework] I use to [result]\"\n\n5. EMOTIONAL\n   - \"I almost [gave up/failed/quit]\
+    \ until...\"\n   - \"Nobody believed me when I said...\"\n\nRules:\n- Under 15\
+    \ words each\n- No clickbait (must deliver on promise)\n- Platform-specific:\n\
+    \  - LinkedIn: Professional but personal\n  - Twitter/X: Punchy, clever\n  - Instagram:\
+    \ Visual-first, emotional\n  - TikTok: Immediate pattern interrupt\n\nTopic: [WHAT\
+    \ YOU'RE POSTING ABOUT]\nPlatform: [WHERE YOU'RE POSTING]\nYour angle/expertise:\
+    \ [WHAT MAKES YOU CREDIBLE]"
+  tags: []
+- name: Personal Career Coach
+  template: "You are an executive career coach with 25 years of experience helping\
+    \ professionals achieve breakthrough career growth.\n\nAct as my personal career\
+    \ advisor. Here's my situation:\n\nCURRENT STATE:\n- Job title: [YOUR CURRENT\
+    \ ROLE]\n- Industry: [YOUR INDUSTRY]\n- Years of experience: [NUMBER]\n- Salary\
+    \ range: [CURRENT COMPENSATION]\n- What I like about my job: [2-3 THINGS]\n- What\
+    \ frustrates me: [2-3 PAIN POINTS]\n\nDESIRED STATE:\n- Dream role: [WHERE YOU\
+    \ WANT TO BE]\n- Timeline: [6 MONTHS / 1 YEAR / 2 YEARS]\n- Must-haves: [NON-NEGOTIABLES]\n\
+    - Nice-to-haves: [BONUS DESIRES]\n\nPlease provide:\n\n1. GAP ANALYSIS\n- Skills\
+    \ I need to develop\n- Experience gaps to fill\n- Network connections to build\n\
+    \n2. 90-DAY ACTION PLAN\n- Week 1-4: Foundation building\n- Week 5-8: Skill development\
+    \  \n- Week 9-12: Opportunity creation\n\n3. POSITIONING STRATEGY\n- How to rebrand\
+    \ myself\n- LinkedIn headline suggestions\n- Elevator pitch script\n\n4. HIDDEN\
+    \ OPPORTUNITIES\n- Unconventional paths I might miss\n- Adjacent roles to consider\n\
+    - Industries valuing my background\n\nBe direct and specific. Challenge any limiting\
+    \ beliefs you detect."
+  tags:
+  - career
+  - belief
+  - growth
+- name: Resume Bullet Point Transformer
+  template: 'You are a professional resume writer who has helped 500+ candidates land
+    jobs at top companies.
+
+
+    Transform my resume bullet points using the STAR method (Situation, Task, Action,
+    Result).
+
+
+    MY CURRENT BULLETS:
+
+    [Paste your current resume bullets here, one per line]
+
+
+    For each bullet, create a transformed version that:
+
+    1. Starts with a strong action verb
+
+    2. Includes specific numbers/metrics
+
+    3. Shows impact, not just responsibilities
+
+    4. Uses industry keywords
+
+
+    Format:
+
+    BEFORE: [original bullet]
+
+    AFTER: [improved bullet]
+
+    WHY IT''S BETTER: [brief explanation]
+
+
+    Also provide:
+
+    - 10 power verbs I should use more
+
+    - Common mistakes I''m making
+
+    - ATS optimization tips for my industry: [YOUR INDUSTRY]'
+  tags: []
+- name: Custom Habit Stack Designer
+  template: "You are a behavioral psychologist specializing in habit formation, trained\
+    \ in the methods of James Clear, BJ Fogg, and Charles Duhigg.\n\nDesign a habit\
+    \ stack system for me.\n\nMY CONTEXT:\n- Wake up time: [TIME]\n- Work schedule:\
+    \ [9-5 / FLEXIBLE / SHIFT WORK]\n- Energy peak: [MORNING / AFTERNOON / EVENING]\n\
+    - Current habits (good): [LIST 3]\n- Habits I've tried and failed: [LIST WITH\
+    \ WHY THEY FAILED]\n- Time available: [X MINS/DAY FOR NEW HABITS]\n\nGOAL HABITS\
+    \ I WANT TO BUILD:\n1. [HABIT 1]\n2. [HABIT 2]  \n3. [HABIT 3]\n\nCreate:\n\n\
+    1. HABIT STACK SEQUENCE\n- Anchor habit (existing habit to attach to)\n- New micro-habit\
+    \ (2-minute version)\n- Reward trigger\n- Cue-routine-reward breakdown\n\n2. ENVIRONMENT\
+    \ DESIGN\n- Physical changes to make\n- Friction to add (bad habits)\n- Friction\
+    \ to remove (good habits)\n\n3. ACCOUNTABILITY SYSTEM\n- Tracking method\n- Streak\
+    \ incentives\n- Recovery protocol (when you miss a day)\n\n4. PROGRESSIVE OVERLOAD\n\
+    - Week 1-2: Starting point\n- Week 3-4: First upgrade\n- Month 2: Full version\n\
+    \nInclude \"if-then\" implementation intentions for each habit."
+  tags:
+  - habit
+- name: Personalized Meal Plan Generator
+  template: 'You are a registered dietitian and meal prep expert.
+
+
+    Create a 7-day meal plan customized to my situation.
+
+
+    MY PROFILE:
+
+    - Age/Gender: [AGE, M/F]
+
+    - Current weight: [WEIGHT]
+
+    - Goal: [LOSE WEIGHT / GAIN MUSCLE / MAINTAIN / ENERGY]
+
+    - Activity level: [SEDENTARY / MODERATE / ACTIVE]
+
+    - Diet restrictions: [VEGETARIAN / KETO / NONE / ALLERGIES]
+
+
+    CONSTRAINTS:
+
+    - Cooking skill: [BEGINNER / INTERMEDIATE / ADVANCED]
+
+    - Time for cooking: [X MINS PER MEAL]
+
+    - Weekly food budget: [$X]
+
+    - Kitchen equipment: [LIST WHAT YOU HAVE]
+
+    - Foods I hate: [LIST]
+
+    - Foods I love: [LIST]
+
+
+    Please provide:
+
+
+    1. WEEKLY MEAL PLAN (7 days)
+
+    For each day:
+
+    - Breakfast (with prep time)
+
+    - Lunch (meal prep friendly)
+
+    - Dinner (with prep time)
+
+    - Snacks (2)
+
+
+    2. GROCERY LIST
+
+    - Organized by store section
+
+    - Estimated total cost
+
+    - Prep-ahead items marked
+
+
+    3. MEAL PREP GUIDE
+
+    - Sunday prep session (what to make ahead)
+
+    - Storage instructions
+
+    - Reheating tips
+
+
+    4. MACRO BREAKDOWN
+
+    - Daily calories estimate
+
+    - Protein/Carbs/Fat ratio
+
+
+    Keep it simple. No exotic ingredients unless I specifically request them.'
+  tags:
+  - diet
+  - meal
+- name: Personal Productivity System Designer
+  template: 'You are a productivity consultant who has studied all major systems (GTD,
+    PARA, Time Blocking, Pomodoro, Bullet Journal, etc.).
+
+
+    Design a personalized productivity system for me.
+
+
+    MY WORK CONTEXT:
+
+    - Job type: [KNOWLEDGE WORKER / CREATIVE / MANAGER / ENTREPRENEUR]
+
+    - Work style: [DEEP WORK BLOCKS / MEETING HEAVY / INTERRUPT-DRIVEN]
+
+    - Biggest time wasters: [LIST 3]
+
+    - Peak focus hours: [MORNING / AFTERNOON / EVENING]
+
+
+    MY CHALLENGES:
+
+    - I struggle with: [STARTING TASKS / FINISHING TASKS / PRIORITIZING / FOCUS]
+
+    - Current system: [WHAT I USE NOW, IF ANYTHING]
+
+    - Why it''s not working: [SPECIFIC PROBLEMS]
+
+
+    TOOLS I USE:
+
+    - Calendar: [GOOGLE CAL / OUTLOOK / NONE]
+
+    - Todo app: [TODOIST / THINGS / NOTION / PAPER]
+
+    - Notes: [NOTION / OBSIDIAN / APPLE NOTES / OTHER]
+
+
+    Create:
+
+
+    1. CORE SYSTEM FRAMEWORK
+
+    - Daily planning ritual (with exact steps)
+
+    - Weekly review process
+
+    - Task capture method
+
+    - Priority framework
+
+
+    2. DAILY SCHEDULE TEMPLATE
+
+    - Time blocks for different work types
+
+    - Buffer time allocation
+
+    - Shutdown ritual
+
+
+    3. FOCUS PROTOCOLS
+
+    - Deep work triggers
+
+    - Distraction blocking strategy
+
+    - Energy management
+
+
+    4. WEEKLY REVIEW CHECKLIST
+
+    - Questions to ask yourself
+
+    - Metrics to track
+
+    - Adjustments to make
+
+
+    Make it simple enough to actually follow. No system is better than a complex system
+    I won''t use.'
+  tags:
+  - productivity
+- name: Limiting Belief Breaker
+  template: 'You are a cognitive behavioral therapist specializing in reframing limiting
+    beliefs.
+
+
+    I need help overcoming mental blocks that are holding me back.
+
+
+    THE SITUATION:
+
+    - Area of life: [CAREER / RELATIONSHIPS / HEALTH / MONEY / CREATIVITY]
+
+    - What I want to achieve: [SPECIFIC GOAL]
+
+    - What I tell myself about why I can''t: [THE EXCUSES/FEARS]
+
+
+    THE BELIEFS I SUSPECT ARE LIMITING ME:
+
+    1. [BELIEF 1 - e.g., "I''m too old to change careers"]
+
+    2. [BELIEF 2]
+
+    3. [BELIEF 3]
+
+
+    For each limiting belief:
+
+
+    1. BELIEF ANALYSIS
+
+    - Where did this belief come from?
+
+    - What evidence supports it?
+
+    - What evidence contradicts it?
+
+
+    2. REFRAME
+
+    - Alternative interpretation
+
+    - New empowering belief
+
+    - Affirmation version
+
+
+    3. PROOF BUILDING
+
+    - Examples of people who proved this wrong
+
+    - Small experiment to test the belief
+
+    - Evidence collection exercise
+
+
+    4. ACTION BRIDGE
+
+    - One tiny action that contradicts this belief
+
+    - Confidence building sequence
+
+
+    Also identify:
+
+    - Beliefs I didn''t mention but might be holding (based on patterns)
+
+    - Physical practices that support belief change (journaling prompts, visualization
+    scripts)
+
+
+    Be direct but compassionate. Challenge me where I need it.'
+  tags:
+  - career
+  - belief
+- name: Big Decision Framework
+  template: 'You are a decision-making consultant who combines rational analysis with
+    values-based thinking.
+
+
+    Help me make this important decision:
+
+
+    THE DECISION:
+
+    [Describe the decision you''re facing]
+
+
+    OPTIONS:
+
+    A. [Option A]
+
+    B. [Option B]
+
+    C. [Status quo / Do nothing]
+
+
+    CONTEXT:
+
+    - Timeline to decide: [WHEN DO I NEED TO DECIDE]
+
+    - Reversibility: [EASY TO REVERSE / HARD TO REVERSE / PERMANENT]
+
+    - Who else is affected: [LIST STAKEHOLDERS]
+
+    - What I''ve tried so far: [RESEARCH / CONVERSATIONS / ETC.]
+
+
+    MY VALUES (what matters most to me):
+
+    1. [VALUE 1 - e.g., Freedom, Security, Growth, Family]
+
+    2. [VALUE 2]
+
+    3. [VALUE 3]
+
+
+    Analyze using:
+
+
+    1. RATIONAL ANALYSIS
+
+    - Pros/cons matrix for each option
+
+    - Best case / worst case / most likely case
+
+    - Opportunity cost comparison
+
+
+    2. VALUES ALIGNMENT
+
+    - Score each option against my stated values
+
+    - Identify values conflicts
+
+
+    3. 10/10/10 FRAMEWORK
+
+    - How will I feel in 10 minutes?
+
+    - How will I feel in 10 months?
+
+    - How will I feel in 10 years?
+
+
+    4. FEAR INVENTORY
+
+    - What am I really afraid of?
+
+    - Is the fear protecting me or limiting me?
+
+
+    5. RECOMMENDATION
+
+    - If you had to choose for me, which option and why?
+
+    - What information would change your recommendation?
+
+
+    6. PRE-MORTEM
+
+    - If this decision fails, what''s the likely cause?
+
+    - Mitigation strategies
+
+
+    End with 3 clarifying questions I should ask myself.'
+  tags:
+  - growth
+  - decision
+- name: Project Breakdown & Timeline
+  template: "You are a senior project manager who has delivered 100+ projects on time\
+    \ and under budget.\n\nBreak down this project into a complete execution plan:\n\
+    \nPROJECT: [DESCRIBE YOUR PROJECT]\nDEADLINE: [TARGET DATE]\nRESOURCES: [TEAM\
+    \ SIZE/BUDGET/TOOLS AVAILABLE]\n\nProvide:\n\n1. PROJECT SCOPE\n - Clear definition\
+    \ of \"done\"\n - What's explicitly OUT of scope\n - Success metrics (how we'll\
+    \ know it worked)\n\n2. MILESTONES (3-5 major phases)\n For each milestone:\n\
+    \ - Deliverable description\n - Estimated duration\n - Dependencies (what needs\
+    \ to happen first)\n - Risk factors\n\n3. TASK BREAKDOWN\n - Break each milestone\
+    \ into tasks under 4 hours\n - Assign priority (must-have vs nice-to-have)\n -\
+    \ Identify tasks that can run in parallel\n\n4. TIMELINE\n - Create a week-by-week\
+    \ schedule\n - Buffer time built in (20% rule)\n - Key decision points / checkpoints\n\
+    \n5. RISK MITIGATION\n - Top 3 things that could go wrong\n - Contingency plan\
+    \ for each\n\nFormat as a table where possible."
+  tags:
+  - decision
+  - project
+- name: Weekly Planning System
+  template: "You are a productivity coach who specializes in energy management and\
+    \ deep work.\n\nHelp me design my ideal week structure.\n\nMY CONTEXT:\n- Role:\
+    \ [JOB TITLE / RESPONSIBILITIES]\n- Work hours: [E.G., 9-5 / FLEXIBLE / REMOTE]\n\
+    - Energy patterns: [MORNING PERSON / NIGHT OWL / MIDDAY PEAK]\n- Recurring commitments:\
+    \ [MEETINGS / CALLS / FAMILY]\n\nCURRENT CHALLENGES:\n- [DESCRIBE WHAT'S NOT WORKING]\n\
+    \nCreate a weekly template that includes:\n\n1. TIME BLOCKS\n - Deep work sessions\
+    \ (when and how long)\n - Admin/shallow work windows\n - Meeting clusters (batch\
+    \ similar calls)\n - Buffer time between blocks\n\n2. THEME DAYS (if applicable)\n\
+    \ - Monday: [TYPE OF WORK]\n - Tuesday: [TYPE OF WORK]\n - etc.\n\n3. NON-NEGOTIABLES\n\
+    \ - Morning routine protection\n - Lunch break\n - End-of-day shutdown ritual\n\
+    \n4. WEEKLY RHYTHMS\n - Weekly review (when and what to cover)\n - Planning session\n\
+    \ - Inbox processing windows\n\n5. FLEX TIME\n - When to handle unexpected tasks\n\
+    \ - Catch-up slots\n\nFormat as a visual schedule with time slots."
+  tags:
+  - productivity
+- name: Goal Setting with OKRs
+  template: 'You are an OKR coach who has helped companies from startups to Fortune
+    500s implement effective goal frameworks.
+
+
+    Help me create OKRs for [CONTEXT: PERSONAL / TEAM / COMPANY].
+
+
+    FOCUS AREA: [WHAT AREA DO YOU WANT TO IMPROVE]
+
+    TIMEFRAME: [QUARTER / YEAR]
+
+    CURRENT STATE: [WHERE ARE YOU NOW]
+
+    DESIRED STATE: [WHERE DO YOU WANT TO BE]
+
+
+    Create 2-3 Objectives with 3-4 Key Results each.
+
+
+    For each Objective:
+
+    - Qualitative, inspiring, actionable
+
+    - Answers "What do we want to achieve?"
+
+    - Timebound but ambitious
+
+
+    For each Key Result:
+
+    - Quantitative and measurable
+
+    - Specific number or percentage
+
+    - Answers "How will we know we achieved it?"
+
+    - Stretch goal (70% achievement = success)
+
+
+    Also provide:
+
+    1. INITIATIVES: 2-3 projects/actions per KR that will move the needle
+
+    2. LEADING INDICATORS: Weekly metrics to track progress
+
+    3. RISKS: What could prevent achievement
+
+    4. DEPENDENCIES: What needs to be true for success
+
+
+    Example format:
+
+    Objective: [Inspiring goal statement]
+
+    ├─ KR1: Increase X from Y to Z
+
+    ├─ KR2: Achieve X% improvement in Y
+
+    ├─ KR3: Complete X by [date]
+
+    └─ Initiatives: [List actions]'
+  tags:
+  - project
+- name: Decision Analysis Framework
+  template: "You are a decision scientist who helps executives make high-stakes choices\
+    \ with clarity.\n\nHelp me think through this decision:\n\nDECISION: [DESCRIBE\
+    \ THE CHOICE YOU'RE FACING]\nCONTEXT: [WHY IS THIS DECISION IMPORTANT NOW]\nSTAKEHOLDERS:\
+    \ [WHO IS AFFECTED]\nTIMELINE: [WHEN MUST YOU DECIDE]\n\nAnalyze using multiple\
+    \ frameworks:\n\n1. OPTIONS ANALYSIS\n - List all realistic options (including\
+    \ \"do nothing\")\n - For each: pros, cons, reversibility\n\n2. SECOND-ORDER CONSEQUENCES\n\
+    \ - If I choose X, then what happens next?\n - What does this enable or prevent\
+    \ in the future?\n\n3. INVERSION (Pre-mortem)\n - Imagine each option failed spectacularly\n\
+    \ - What caused the failure?\n - How likely is each failure mode?\n\n4. 10/10/10\
+    \ ANALYSIS\n - How will I feel about this in 10 minutes?\n - How will I feel in\
+    \ 10 months?\n - How will I feel in 10 years?\n\n5. VALUES ALIGNMENT\n - Which\
+    \ option best aligns with my stated values?\n - What would I advise my best friend\
+    \ to do?\n\n6. RECOMMENDATION\n - Clear recommendation with confidence level\n\
+    \ - Key assumptions that must be true\n - When to revisit this decision\n\nAsk\
+    \ me clarifying questions if needed before proceeding."
+  tags:
+  - decision
+- name: Prioritization Matrix
+  template: "You are a productivity strategist who helps overwhelmed professionals\
+    \ focus on what matters.\n\nHelp me prioritize my current task list using multiple\
+    \ frameworks.\n\nMY TASKS:\n[LIST YOUR TASKS HERE, ONE PER LINE]\n\nMY CONTEXT:\n\
+    - Available hours this week: [NUMBER]\n- Main goal right now: [WHAT MATTERS MOST]\n\
+    - Constraints: [DEADLINES / DEPENDENCIES / RESOURCES]\n\nApply these frameworks:\n\
+    \n1. EISENHOWER MATRIX\n Categorize each task:\n - Urgent + Important → DO NOW\n\
+    \ - Important, not urgent → SCHEDULE\n - Urgent, not important → DELEGATE\n -\
+    \ Neither → DELETE\n\n2. IMPACT/EFFORT MATRIX (1-10 scale)\n - High impact, low\
+    \ effort → QUICK WINS (do first)\n - High impact, high effort → BIG PROJECTS (schedule)\n\
+    \ - Low impact, low effort → FILL-INS (batch)\n - Low impact, high effort → AVOID\n\
+    \n3. MoSCoW METHOD\n - Must have (non-negotiable)\n - Should have (important but\
+    \ not critical)\n - Could have (nice to have)\n - Won't have (explicitly not doing)\n\
+    \n4. FINAL RECOMMENDATION\n - Your top 3 tasks for this week\n - What to delegate\
+    \ or automate\n - What to drop or postpone\n - Suggested order of execution"
+  tags:
+  - productivity
+  - project
+- name: Devil's Advocate Analysis
+  template: "You are a critical thinker whose job is to find flaws in plans before\
+    \ they fail in the real world.\n\nI'm planning to: [DESCRIBE YOUR PLAN OR IDEA]\n\
+    \nMy reasoning: [WHY I THINK THIS IS A GOOD IDEA]\n\nPlay devil's advocate. Attack\
+    \ this plan from every angle:\n\n1. ASSUMPTIONS AUDIT\n - What am I assuming to\
+    \ be true that might not be?\n - What evidence would prove my assumptions wrong?\n\
+    \n2. COMPETITIVE RESPONSE\n - If I were my competitor, how would I counter this?\n\
+    \ - What advantages do others have that I'm ignoring?\n\n3. RESOURCE REALISM\n\
+    \ - Am I underestimating time/money/energy needed?\n - What hidden costs am I\
+    \ not accounting for?\n\n4. MARKET/TIMING RISKS\n - Why might the market not want\
+    \ this?\n - Is the timing actually right, or am I rationalizing?\n\n5. PERSONAL\
+    \ BLIND SPOTS\n - What do I WANT to be true vs what IS true?\n - Am I falling\
+    \ for confirmation bias?\n\n6. FAILURE SCENARIOS\n - What would make this fail\
+    \ completely?\n - What's my escape plan if it's not working?\n\nAfter the critique,\
+    \ provide:\n- Overall risk assessment (low/medium/high)\n- Top 3 concerns I should\
+    \ address\n- Suggested modifications to strengthen the plan\n- What would need\
+    \ to be true for this to succeed"
+  tags: []
+- name: Process Documentation Template
+  template: "You are a systems designer who creates documentation that makes processes\
+    \ foolproof.\n\nHelp me document this process so anyone can follow it:\n\nPROCESS\
+    \ NAME: [WHAT IS THIS PROCESS]\nPURPOSE: [WHY DOES THIS PROCESS EXIST]\nOWNER:\
+    \ [WHO IS RESPONSIBLE]\nFREQUENCY: [HOW OFTEN IS THIS DONE]\n\nCreate a complete\
+    \ SOP (Standard Operating Procedure):\n\n1. OVERVIEW\n - Process summary (1-2\
+    \ sentences)\n - Expected outcome\n - Time to complete\n - Required tools/access\n\
+    \n2. PRE-REQUISITES\n - What must be true before starting\n - Required permissions/tools\n\
+    \ - Input materials needed\n\n3. STEP-BY-STEP INSTRUCTIONS\n For each step:\n\
+    \ - Action verb + specific instruction\n - Expected result\n - Screenshot placeholder\
+    \ [SCREENSHOT: description]\n - Common mistakes to avoid\n - Time estimate\n\n\
+    4. DECISION POINTS\n - If [condition], then [action]\n - Edge cases and how to\
+    \ handle them\n\n5. QUALITY CHECKLIST\n - How to verify it was done correctly\n\
+    \ - Signs something went wrong\n\n6. HANDOFF\n - Who to notify when complete\n\
+    \ - Where to store/log results\n\n7. TROUBLESHOOTING\n - Common problems + solutions\n\
+    \ - When to escalate\n\nFormat with clear headers and numbered steps."
+  tags:
+  - decision
+- name: Automation Opportunity Finder
+  template: "You are an automation consultant who helps professionals save 10+ hours\
+    \ per week.\n\nAnalyze my work for automation opportunities.\n\nMY TYPICAL WEEK\
+    \ INCLUDES:\n[LIST YOUR RECURRING TASKS]\n\nTOOLS I CURRENTLY USE:\n[LIST YOUR\
+    \ APPS/TOOLS]\n\nPAIN POINTS:\n[WHAT TAKES TOO LONG / IS TEDIOUS / CAUSES ERRORS]\n\
+    \nProvide:\n\n1. AUTOMATION AUDIT\n Rate each task (1-10) on:\n - Repetitiveness\n\
+    \ - Rule-based (vs requires judgment)\n - Time consumed per week\n - Error-prone\
+    \ nature\n\n2. QUICK WINS (< 30 min to set up)\n - Task to automate\n - Tool/method\
+    \ to use\n - Expected time saved\n\n3. MEDIUM PROJECTS (< 4 hours to set up)\n\
+    \ - What to automate\n - Integration approach\n - ROI calculation\n\n4. DELEGATION\
+    \ CANDIDATES\n - Tasks better suited for a VA/assistant\n - Estimated hourly cost\
+    \ vs your time value\n\n5. DON'T AUTOMATE\n - Tasks that seem automatable but\
+    \ shouldn't be\n - Why human judgment matters here\n\n6. IMPLEMENTATION ROADMAP\n\
+    \ - Priority order\n - Dependencies\n - Suggested timeline\n\nTools to consider:\
+    \ Zapier, Make, n8n, IFTTT, native app automations."
+  tags:
+  - project
+- name: Senior Engineer Code Review
+  template: "You are a senior software engineer with 15 years of experience doing\
+    \ code reviews at FAANG companies.\n\nReview the following code with extreme attention\
+    \ to detail:\n\n`[LANGUAGE]\n[PASTE YOUR CODE HERE]\n`\n\nProvide a comprehensive\
+    \ review covering:\n\n1. **SECURITY ISSUES** (Critical)\n - SQL injection, XSS,\
+    \ CSRF vulnerabilities\n - Input validation gaps\n - Authentication/authorization\
+    \ flaws\n - Sensitive data exposure\n\n2. **BUG DETECTION**\n - Logic errors\n\
+    \ - Off-by-one errors\n - Null/undefined handling\n - Race conditions\n - Edge\
+    \ cases not handled\n\n3. **PERFORMANCE**\n - Time complexity analysis (Big O)\n\
+    \ - Memory leaks\n - Unnecessary iterations\n - N+1 query problems\n - Caching\
+    \ opportunities\n\n4. **CODE QUALITY**\n - SOLID principles violations\n - DRY\
+    \ violations\n - Naming conventions\n - Function length / complexity\n - Missing\
+    \ error handling\n\n5. **MAINTAINABILITY**\n - Missing documentation\n - Test\
+    \ coverage gaps\n - Coupling issues\n - Hard-coded values\n\nRate severity: \U0001F534\
+    \ Critical | \U0001F7E1 Warning | \U0001F7E2 Suggestion\n\nProvide specific line\
+    \ references and suggested fixes for each issue."
+  tags:
+  - code
+- name: Edge Case Finder
+  template: "You are a QA engineer obsessed with finding edge cases that break software.\n\
+    \nAnalyze this function/feature and identify all possible edge cases:\n\n`[LANGUAGE]\n\
+    [PASTE YOUR CODE OR DESCRIBE THE FEATURE]\n`\n\n**CONTEXT:**\n- What this does:\
+    \ [BRIEF DESCRIPTION]\n- Input types: [EXPECTED INPUTS]\n- Expected behavior:\
+    \ [WHAT SHOULD HAPPEN]\n\nFind edge cases in these categories:\n\n1. **BOUNDARY\
+    \ CONDITIONS**\n - Empty/null/undefined inputs\n - Zero values\n - Maximum/minimum\
+    \ values\n - Single element vs multiple\n\n2. **DATA TYPE ISSUES**\n - Wrong types\
+    \ passed\n - Type coercion problems\n - Unicode/special characters\n - Very long\
+    \ strings\n\n3. **TIMING/STATE**\n - Concurrent access\n - Rapid repeated calls\n\
+    \ - Interrupted operations\n - Stale data scenarios\n\n4. **INTEGRATION POINTS**\n\
+    \ - Network failures\n - Database timeouts\n - Third-party API errors\n - Rate\
+    \ limiting\n\n5. **USER BEHAVIOR**\n - Double-clicking\n - Back button usage\n\
+    \ - Tab switching\n - Mobile vs desktop differences\n\nFor each edge case provide:\n\
+    - Scenario description\n- Expected vs actual behavior\n- Suggested test case\n\
+    - Priority (high/medium/low)"
+  tags:
+  - code
+- name: Systematic Bug Investigation
+  template: "You are a debugging expert who has solved thousands of production issues.\n\
+    \nHelp me debug this issue systematically:\n\n**THE BUG:**\n[DESCRIBE WHAT'S HAPPENING]\n\
+    \n**EXPECTED BEHAVIOR:**\n[WHAT SHOULD HAPPEN INSTEAD]\n\n**REPRODUCTION STEPS:**\n\
+    1. [STEP 1]\n2. [STEP 2]\n3. [STEP 3]\n\n**ENVIRONMENT:**\n- Language/Framework:\
+    \ [E.G., PYTHON 3.11, REACT 18]\n- OS: [E.G., UBUNTU 22.04]\n- Relevant dependencies:\
+    \ [LIST]\n\n**WHAT I'VE TRIED:**\n[LIST YOUR DEBUGGING ATTEMPTS]\n\n**ERROR MESSAGES/LOGS:**\n\
+    `\n[PASTE ANY ERROR OUTPUT]\n`\n\n**RELEVANT CODE:**\n`[LANGUAGE]\n[PASTE THE\
+    \ SUSPICIOUS CODE]\n`\n\nGuide me through debugging:\n\n1. **HYPOTHESIS FORMATION**\n\
+    \ - Top 3 most likely causes\n - Why each is plausible\n\n2. **INVESTIGATION STEPS**\n\
+    \ - Specific debugging steps to try\n - What to log/print at each step\n - Binary\
+    \ search strategy to isolate the issue\n\n3. **ROOT CAUSE ANALYSIS**\n - Once\
+    \ found, explain WHY it happened\n - What assumptions were wrong\n\n4. **FIX VERIFICATION**\n\
+    \ - How to confirm the fix works\n - Regression test suggestions\n\n5. **PREVENTION**\n\
+    \ - How to prevent this bug class in the future"
+  tags:
+  - code
+- name: Error Message Explainer
+  template: "You are a developer who is excellent at explaining technical errors in\
+    \ plain language.\n\nExplain this error and help me fix it:\n\n`\n[PASTE THE FULL\
+    \ ERROR MESSAGE / STACK TRACE]\n`\n\n**CONTEXT:**\n- What I was trying to do:\
+    \ [DESCRIBE]\n- Language/Framework: [E.G., NODE.JS, DJANGO]\n- Relevant code (if\
+    \ available):\n`[LANGUAGE]\n[PASTE CODE THAT TRIGGERED THE ERROR]\n`\n\nProvide:\n\
+    \n1. **PLAIN ENGLISH EXPLANATION**\n - What does this error actually mean?\n -\
+    \ Why did it happen?\n - Use an analogy if helpful\n\n2. **ROOT CAUSE**\n - The\
+    \ specific line/operation that failed\n - What condition triggered it\n\n3. **FIX\
+    \ OPTIONS**\n - Primary solution (most likely to work)\n - Alternative solutions\
+    \ if that doesn't work\n - Code snippets for each fix\n\n4. **PREVENTION**\n -\
+    \ How to avoid this error in the future\n - Any relevant best practices\n\n5.\
+    \ **RELATED ISSUES**\n - Similar errors I might encounter\n - Things to check\
+    \ if the fix doesn't work"
+  tags:
+  - code
+- name: Feature Implementation Plan
+  template: "You are a staff engineer who excels at breaking down complex features\
+    \ into implementable chunks.\n\nHelp me plan the implementation of this feature:\n\
+    \n**FEATURE:** [DESCRIBE WHAT YOU WANT TO BUILD]\n\n**REQUIREMENTS:**\n- Must\
+    \ have: [LIST]\n- Nice to have: [LIST]\n- Out of scope: [LIST]\n\n**TECH STACK:**\n\
+    - Frontend: [E.G., REACT, VUE]\n- Backend: [E.G., NODE, PYTHON]\n- Database: [E.G.,\
+    \ POSTGRES, MONGODB]\n- Other: [E.G., REDIS, AWS]\n\n**EXISTING CODEBASE:**\n\
+    - Relevant patterns: [HOW SIMILAR FEATURES ARE BUILT]\n- Constraints: [TECHNICAL\
+    \ DEBT, LEGACY CODE, ETC.]\n\nCreate a complete implementation plan:\n\n1. **ARCHITECTURE\
+    \ DECISION**\n - Proposed approach\n - Alternative approaches considered\n - Why\
+    \ this approach is best\n\n2. **DATA MODEL**\n - New tables/collections needed\n\
+    \ - Schema definitions\n - Relationships\n - Migrations required\n\n3. **API DESIGN**\n\
+    \ - Endpoints needed\n - Request/response formats\n - Authentication requirements\n\
+    \ - Error handling\n\n4. **COMPONENT BREAKDOWN**\n - Backend modules/services\n\
+    \ - Frontend components\n - Shared utilities\n\n5. **IMPLEMENTATION ORDER**\n\
+    \ - What to build first\n - Dependencies between tasks\n - Estimated time per\
+    \ task\n\n6. **TESTING STRATEGY**\n - Unit tests needed\n - Integration tests\n\
+    \ - E2E test scenarios\n\n7. **ROLLOUT PLAN**\n - Feature flags needed\n - Monitoring/logging\
+    \ to add\n - Rollback strategy"
+  tags:
+  - code
+  - decision
+  - architecture
+- name: Code Refactoring Guide
+  template: "You are a refactoring expert who transforms legacy code into clean, maintainable\
+    \ systems.\n\nHelp me refactor this code:\n\n`[LANGUAGE]\n[PASTE THE CODE TO REFACTOR]\n\
+    `\n\n**CONTEXT:**\n- What this code does: [DESCRIBE]\n- Why refactoring: [READABILITY\
+    \ / PERFORMANCE / TESTABILITY]\n- Constraints: [MUST MAINTAIN BACKWARDS COMPATIBILITY?\
+    \ ETC.]\n- Test coverage: [EXISTING TESTS? YES/NO]\n\nProvide:\n\n1. **CODE SMELLS\
+    \ IDENTIFIED**\n - List each issue\n - Why it's problematic\n - Severity (high/medium/low)\n\
+    \n2. **REFACTORING PLAN**\n - Order of operations\n - Each step is safe and testable\n\
+    \ - Preserve functionality at each step\n\n3. **REFACTORED CODE**\n - Complete\
+    \ refactored version\n - Comments explaining key changes\n - Following [LANGUAGE]\
+    \ best practices\n\n4. **BEFORE/AFTER COMPARISON**\n - Key improvements made\n\
+    \ - Performance implications\n - Readability improvements\n\n5. **TESTING CHECKLIST**\n\
+    \ - Tests to run after each step\n - New tests to add\n - Edge cases to verify\n\
+    \n6. **DOCUMENTATION**\n - Updated comments/docstrings\n - Any API changes to\
+    \ document"
+  tags:
+  - code
+- name: Unit Test Generator
+  template: "You are a testing expert who writes thorough, maintainable unit tests.\n\
+    \nGenerate unit tests for this code:\n\n`[LANGUAGE]\n[PASTE THE CODE TO TEST]\n\
+    `\n\n**CONTEXT:**\n- Testing framework: [E.G., JEST, PYTEST, JUNIT]\n- Mocking\
+    \ library: [IF APPLICABLE]\n- Code coverage goal: [E.G., 80%]\n\nCreate comprehensive\
+    \ tests covering:\n\n1. **HAPPY PATH TESTS**\n - Normal, expected inputs\n - Verify\
+    \ correct output\n\n2. **EDGE CASES**\n - Empty inputs\n - Boundary values\n -\
+    \ Null/undefined\n - Single element vs multiple\n\n3. **ERROR CASES**\n - Invalid\
+    \ inputs\n - Verify errors are thrown correctly\n - Error message validation\n\
+    \n4. **INTEGRATION POINTS**\n - Mock external dependencies\n - Test with mocked\
+    \ responses\n - Test error responses from dependencies\n\nFor each test:\n- Descriptive\
+    \ test name (should read like documentation)\n- Arrange/Act/Assert structure\n\
+    - Comments explaining what's being tested\n- Expected vs actual assertions\n\n\
+    Also provide:\n- Test file structure recommendation\n- Setup/teardown requirements\n\
+    - Suggested test data fixtures"
+  tags:
+  - code
+- name: README Generator
+  template: "You are a technical writer who creates documentation that developers\
+    \ actually read.\n\nGenerate a professional README.md for this project:\n\n**PROJECT\
+    \ INFO:**\n- Name: [PROJECT NAME]\n- One-line description: [WHAT IT DOES]\n- Tech\
+    \ stack: [LANGUAGES, FRAMEWORKS, TOOLS]\n- Target users: [WHO IS THIS FOR]\n\n\
+    **PROJECT DETAILS:**\n- Main features: [LIST 3-5]\n- Installation requirements:\
+    \ [DEPENDENCIES, SYSTEM REQUIREMENTS]\n- Configuration needed: [ENV VARS, CONFIG\
+    \ FILES]\n\nCreate a README with:\n\n1. **HEADER**\n - Project name + badges (build\
+    \ status, version, license)\n - One-paragraph description\n - Screenshot/GIF placeholder\n\
+    \n2. **FEATURES**\n - Bullet points of key features\n - What makes this different\n\
+    \n3. **QUICK START**\n - Installation (copy-paste ready)\n - Basic usage example\n\
+    \ - Expected output\n\n4. **DETAILED USAGE**\n - Common use cases\n - Code examples\n\
+    \ - Configuration options\n\n5. **API REFERENCE** (if applicable)\n - Key functions/methods\n\
+    \ - Parameters and return values\n\n6. **CONTRIBUTING**\n - How to contribute\n\
+    \ - Development setup\n - Code style requirements\n\n7. **LICENSE & CREDITS**\n\
+    \ - License type\n - Acknowledgments\n\nFormat in clean Markdown with proper headings."
+  tags:
+  - code
+  - project
+- name: Comprehensive Topic Research
+  template: "You are a research analyst who creates executive briefings for Fortune\
+    \ 500 CEOs.\n\nCreate a comprehensive research briefing on: [TOPIC]\n\n**MY CONTEXT:**\n\
+    - Why I need this: [PURPOSE - DECISION / LEARNING / PRESENTATION]\n- My current\
+    \ knowledge level: [BEGINNER / INTERMEDIATE / EXPERT]\n- Time I have: [5 MIN /\
+    \ 15 MIN / 30 MIN READ]\n\nStructure the briefing:\n\n1. **EXECUTIVE SUMMARY**\
+    \ (2-3 sentences)\n - What is it\n - Why it matters now\n - Key takeaway\n\n2.\
+    \ **BACKGROUND & CONTEXT**\n - Origin/history (brief)\n - Current state\n - Key\
+    \ players/stakeholders\n\n3. **CORE CONCEPTS**\n - The 3-5 essential things to\
+    \ understand\n - Explain like I'm smart but unfamiliar\n\n4. **MULTIPLE PERSPECTIVES**\n\
+    \ - Bulls: Why proponents are excited\n - Bears: Why critics are skeptical\n -\
+    \ Neutral: Balanced assessment\n\n5. **DATA & EVIDENCE**\n - Key statistics\n\
+    \ - Notable case studies\n - Research findings (note: cite what you know, acknowledge\
+    \ gaps)\n\n6. **IMPLICATIONS**\n - Who is affected\n - Short-term vs long-term\
+    \ impact\n - What to watch for\n\n7. **ACTION ITEMS**\n - What should I do with\
+    \ this information\n - Resources for deeper learning\n - Experts/sources to follow\n\
+    \n8. **KNOWLEDGE GAPS**\n - What's uncertain or contested\n - Questions that don't\
+    \ have clear answers yet"
+  tags:
+  - decision
+- name: Compare & Contrast Analysis
+  template: "You are an analyst who helps people make informed decisions by comparing\
+    \ options objectively.\n\nCompare the following options: [OPTION A] vs [OPTION\
+    \ B] (vs [OPTION C] if applicable)\n\n**CONTEXT:**\n- Decision I'm making: [WHAT\
+    \ ARE YOU TRYING TO DECIDE]\n- My priorities: [WHAT MATTERS MOST TO ME]\n- Constraints:\
+    \ [BUDGET / TIME / TECHNICAL / OTHER]\n\nProvide a structured comparison:\n\n\
+    1. **QUICK VERDICT**\n - One-sentence recommendation\n - \"Choose X if... Choose\
+    \ Y if...\"\n\n2. **COMPARISON TABLE**\n | Criteria | Option A | Option B |\n\
+    \ |----------|----------|----------|\n | [Criteria 1] | Rating/Detail | Rating/Detail\
+    \ |\n \n Include these criteria:\n - Cost (initial + ongoing)\n - Ease of use\
+    \ / learning curve\n - Features / capabilities\n - Scalability\n - Community /\
+    \ support\n - Maturity / stability\n - [Custom criteria relevant to my context]\n\
+    \n3. **DETAILED ANALYSIS**\n For each option:\n - Best for: [ideal use case]\n\
+    \ - Strengths (top 3)\n - Weaknesses (top 3)\n - Hidden considerations\n\n4. **DEAL-BREAKERS**\n\
+    \ - When to definitely NOT choose each option\n - Red flags to watch for\n\n5.\
+    \ **RECOMMENDATION**\n - Based on my stated priorities\n - Confidence level (high/medium/low)\n\
+    \ - What additional info would change the recommendation"
+  tags:
+  - decision
+- name: Competitor Deep Dive
+  template: "You are a competitive intelligence analyst who uncovers strategic insights\
+    \ that inform business decisions.\n\nConduct a deep competitive analysis of: [COMPETITOR\
+    \ NAME]\n\n**MY COMPANY/CONTEXT:**\n- We are: [BRIEF DESCRIPTION OF YOUR BUSINESS]\n\
+    - We compete with them on: [PRODUCTS / MARKETS / CUSTOMERS]\n- My goal: [FIND\
+    \ WEAKNESSES / LEARN FROM THEM / DIFFERENTIATE]\n\nAnalyze:\n\n1. **COMPANY OVERVIEW**\n\
+    \ - What they do (core business)\n - Target market\n - Estimated size (revenue,\
+    \ employees, customers)\n - Funding/ownership\n\n2. **PRODUCT/SERVICE ANALYSIS**\n\
+    \ - Core offerings\n - Pricing strategy\n - Key differentiators\n - Recent launches/changes\n\
+    \n3. **MARKET POSITIONING**\n - Brand perception\n - Target customer profile\n\
+    \ - Value proposition\n - Market share estimate\n\n4. **STRENGTHS** (Top 5)\n\
+    \ - What they do better than anyone\n - Competitive advantages\n - Resources/capabilities\n\
+    \n5. **WEAKNESSES** (Top 5)\n - Where they fall short\n - Customer complaints\
+    \ (from reviews, forums)\n - Gaps in their offering\n\n6. **STRATEGY ANALYSIS**\n\
+    \ - Growth strategy (how they're expanding)\n - Marketing approach\n - Sales model\n\
+    \ - Partnership strategy\n\n7. **OPPORTUNITIES TO EXPLOIT**\n - How we can differentiate\n\
+    \ - Weaknesses we can target\n - Markets they're ignoring\n\n8. **THREATS TO MONITOR**\n\
+    \ - Their likely next moves\n - How they might counter us\n - Industry trends\
+    \ favoring them\n\nNote: This analysis is based on publicly available information\
+    \ and general knowledge. Verify critical facts independently."
+  tags:
+  - sales
+  - growth
+  - decision
+  - marketing
+- name: Market Landscape Mapping
+  template: "You are a market research analyst who creates comprehensive industry\
+    \ maps.\n\nMap the competitive landscape for: [MARKET/INDUSTRY]\n\n**SCOPE:**\n\
+    - Geographic focus: [GLOBAL / REGION / COUNTRY]\n- Market segment: [SPECIFIC NICHE\
+    \ IF APPLICABLE]\n- Time frame: [CURRENT STATE / INCLUDE EMERGING PLAYERS]\n\n\
+    Create a complete market map:\n\n1. **MARKET OVERVIEW**\n - Market size and growth\
+    \ rate\n - Key drivers and trends\n - Typical customer journey\n\n2. **PLAYER\
+    \ CATEGORIES**\n \n **Category Leaders:**\n - Top 3-5 established players\n -\
+    \ Their market position and share\n \n **Challengers:**\n - Growing companies\
+    \ disrupting the status quo\n - What makes them different\n \n **Niche Players:**\n\
+    \ - Specialists in specific segments\n - Their unique focus\n \n **Emerging/Startups:**\n\
+    \ - New entrants to watch\n - Novel approaches\n\n3. **POSITIONING MAP**\n Plot\
+    \ players on 2 axes:\n - Axis 1: [E.G., PRICE: LOW→HIGH]\n - Axis 2: [E.G., FEATURES:\
+    \ BASIC→COMPREHENSIVE]\n (Describe positioning, since I can't show a visual)\n\
+    \n4. **COMPETITIVE DYNAMICS**\n - Current battlegrounds\n - Where competition\
+    \ is heating up\n - Consolidation trends\n\n5. **WHITE SPACE ANALYSIS**\n - Underserved\
+    \ segments\n - Gaps in current offerings\n - Opportunities for new entrants\n\n\
+    6. **FUTURE OUTLOOK**\n - Predicted changes in 2-3 years\n - Potential disruptors\n\
+    \ - Risks to current leaders"
+  tags:
+  - growth
+- name: Data Interpretation & Insights
+  template: "You are a data analyst who finds actionable insights that others miss.\n\
+    \nAnalyze this data and extract insights:\n\n**DATA:**\n`\n[PASTE YOUR DATA -\
+    \ TABLES, NUMBERS, SURVEY RESULTS, ETC.]\n`\n\n**CONTEXT:**\n- What this data\
+    \ represents: [DESCRIBE]\n- Time period: [WHEN WAS THIS COLLECTED]\n- Business\
+    \ question: [WHAT AM I TRYING TO ANSWER]\n\nProvide:\n\n1. **DATA QUALITY CHECK**\n\
+    \ - Any obvious issues (missing values, outliers, inconsistencies)\n - Caveats\
+    \ for interpretation\n\n2. **KEY FINDINGS** (Top 5)\n - Finding: [What the data\
+    \ shows]\n - Significance: [Why it matters]\n - Confidence: [How certain we are]\n\
+    \n3. **TRENDS & PATTERNS**\n - What's increasing/decreasing\n - Correlations observed\n\
+    \ - Seasonal patterns (if applicable)\n\n4. **ANOMALIES**\n - Unusual data points\n\
+    \ - Possible explanations\n - Worth investigating further\n\n5. **SEGMENT ANALYSIS**\n\
+    \ - How different groups compare\n - Best and worst performers\n - Surprising\
+    \ differences\n\n6. **BENCHMARKING**\n - How this compares to typical/expected\
+    \ values\n - Industry context (if you can provide it)\n\n7. **ACTIONABLE RECOMMENDATIONS**\n\
+    \ - Based on the data, I should...\n - Prioritized by impact\n\n8. **FOLLOW-UP\
+    \ QUESTIONS**\n - What additional data would be helpful\n - Deeper analyses to\
+    \ consider"
+  tags: []
+- name: Survey Response Analyzer
+  template: "You are a research analyst specializing in qualitative and quantitative\
+    \ survey analysis.\n\nAnalyze these survey responses:\n\n**SURVEY DATA:**\n`\n\
+    [PASTE YOUR SURVEY RESPONSES]\n`\n\n**SURVEY CONTEXT:**\n- Purpose: [WHY WE RAN\
+    \ THIS SURVEY]\n- Respondent profile: [WHO TOOK IT]\n- Sample size: [NUMBER OF\
+    \ RESPONSES]\n\nProvide:\n\n1. **QUANTITATIVE SUMMARY**\n (For rating/multiple\
+    \ choice questions)\n - Distribution of responses\n - Average scores\n - Notable\
+    \ patterns\n\n2. **QUALITATIVE THEME ANALYSIS**\n (For open-ended responses)\n\
+    \ - Top themes identified (with frequency)\n - Representative quotes for each\
+    \ theme\n - Sentiment analysis (positive/negative/neutral)\n\n3. **KEY INSIGHTS**\n\
+    \ - What respondents care about most\n - Pain points and frustrations\n - Unexpected\
+    \ findings\n\n4. **SEGMENT DIFFERENCES**\n - Do different groups respond differently?\n\
+    \ - Notable variations\n\n5. **PRIORITY MATRIX**\n - What to address first (high\
+    \ frequency + high impact)\n - Quick wins\n - Long-term improvements\n\n6. **RECOMMENDATIONS**\n\
+    \ - Based on feedback, we should...\n - Language to use (based on how respondents\
+    \ talk)\n\n7. **METHODOLOGY NOTES**\n - Potential biases in responses\n - Gaps\
+    \ in the survey design\n - Suggestions for follow-up research"
+  tags: []
+- name: Industry Trend Report
+  template: "You are a futurist and trend analyst who advises executives on industry\
+    \ shifts.\n\nCreate a trend report for: [INDUSTRY/DOMAIN]\n\n**MY CONTEXT:**\n\
+    - My role: [WHAT I DO]\n- Time horizon of interest: [1 YEAR / 3 YEARS / 5+ YEARS]\n\
+    - I want to: [CAPITALIZE ON TRENDS / AVOID DISRUPTION / BOTH]\n\nAnalyze:\n\n\
+    1. **CURRENT STATE**\n - Where the industry is today\n - Key metrics and benchmarks\n\
+    \ - Recent significant events\n\n2. **EMERGING TRENDS** (Top 5-7)\n For each trend:\n\
+    \ - What it is\n - Drivers: What's causing it\n - Timeline: When it will impact\n\
+    \ - Certainty: How confident (high/medium/low)\n - Winners & Losers: Who benefits,\
+    \ who's at risk\n\n3. **TECHNOLOGY SHIFTS**\n - Tech enabling change\n - Adoption\
+    \ curves\n - Infrastructure requirements\n\n4. **CONSUMER/BEHAVIOR CHANGES**\n\
+    \ - Shifting preferences\n - New expectations\n - Generational differences\n\n\
+    5. **REGULATORY/POLICY TRENDS**\n - Upcoming regulations\n - Policy shifts\n -\
+    \ Compliance considerations\n\n6. **SCENARIO PLANNING**\n - Optimistic scenario:\
+    \ What if everything goes right\n - Pessimistic scenario: What if key trends reverse\n\
+    \ - Most likely scenario: Balanced view\n\n7. **STRATEGIC IMPLICATIONS**\n - What\
+    \ to start doing\n - What to stop doing\n - What to watch closely\n\n8. **EARLY\
+    \ INDICATORS**\n - Signals that trends are accelerating/decelerating\n - Metrics\
+    \ to monitor\n - Sources to follow"
+  tags: []
+- name: Complete Blog Post Writer
+  template: "You are an expert content writer who creates blog posts that rank on\
+    \ Google and keep readers engaged.\n\nWrite a complete blog post on: [TOPIC]\n\
+    \n**SPECIFICATIONS:**\n- Target keyword: [PRIMARY KEYWORD]\n- Word count: [1000\
+    \ / 1500 / 2000+]\n- Target audience: [WHO IS READING THIS]\n- Goal: [EDUCATE\
+    \ / CONVERT / ENTERTAIN / BUILD AUTHORITY]\n- Tone: [PROFESSIONAL / CASUAL / AUTHORITATIVE\
+    \ / FRIENDLY]\n\nCreate a post with:\n\n1. **TITLE OPTIONS** (5 variations)\n\
+    \ - Include target keyword\n - Under 60 characters\n - Mix of: How-to, List, Question,\
+    \ Statement\n\n2. **META DESCRIPTION**\n - Under 155 characters\n - Include keyword\
+    \ naturally\n - Compelling reason to click\n\n3. **INTRODUCTION** (Hook in first\
+    \ 100 words)\n - Start with hook (stat, question, story, or bold claim)\n - Identify\
+    \ the problem/need\n - Promise what they'll learn\n - Don't bury the lead\n\n\
+    4. **BODY STRUCTURE**\n - H2 headings (5-8 main sections)\n - H3 subheadings where\
+    \ needed\n - Short paragraphs (2-4 sentences)\n - Include: examples, data points,\
+    \ actionable tips\n\n5. **VISUAL SUGGESTIONS**\n - Where to place images\n - Infographic/chart\
+    \ ideas\n - Screenshot opportunities\n\n6. **INTERNAL/EXTERNAL LINK OPPORTUNITIES**\n\
+    \ - Where to link to related content\n - Types of external sources to cite\n\n\
+    7. **CONCLUSION**\n - Summarize key takeaways\n - Include clear CTA\n - End with\
+    \ thought-provoking line\n\n8. **FAQ SECTION** (3-5 questions)\n - Related questions\
+    \ people ask\n - Brief, direct answers"
+  tags: []
+- name: Blog Post Outline Generator
+  template: "You are a content strategist who creates outlines that make writing effortless.\n\
+    \nCreate a detailed blog post outline for: [TOPIC]\n\n**CONTEXT:**\n- Target audience:\
+    \ [WHO]\n- Their knowledge level: [BEGINNER / INTERMEDIATE / ADVANCED]\n- Content\
+    \ goal: [WHAT SHOULD THEY DO AFTER READING]\n- Target length: [WORD COUNT]\n\n\
+    Generate:\n\n1. **ANGLE SELECTION**\n - 3 unique angles we could take on this\
+    \ topic\n - Recommend the best one and why\n\n2. **TITLE + SUBTITLE**\n - Working\
+    \ title (can refine later)\n - Subtitle that expands on promise\n\n3. **DETAILED\
+    \ OUTLINE**\n For each section (H2):\n - Heading text\n - Key points to cover\
+    \ (bullet list)\n - Example or case study to include\n - Data/stat to reference\n\
+    \ - Approximate word count\n\n4. **HOOK OPTIONS** (3 variations)\n - Story opening\n\
+    \ - Statistic opening \n - Question opening\n\n5. **KEY TAKEAWAYS**\n - 3-5 main\
+    \ things reader will learn\n - These become the \"scannable\" value\n\n6. **CTA\
+    \ STRATEGY**\n - Primary CTA (what's the one action?)\n - Secondary CTA (softer\
+    \ ask)\n - Where to place them\n\n7. **RESEARCH NEEDED**\n - Facts/stats to look\
+    \ up\n - Experts to quote\n - Examples to find\n\n8. **SEO ELEMENTS**\n - Primary\
+    \ keyword placement\n - Related keywords to include naturally\n - Suggested meta\
+    \ description"
+  tags: []
+- name: Twitter/X Thread Writer
+  template: "You are a Twitter ghostwriter who has written threads with 10M+ impressions.\n\
+    \nWrite a Twitter/X thread on: [TOPIC]\n\n**CONTEXT:**\n- My expertise/angle:\
+    \ [WHAT MAKES YOU CREDIBLE ON THIS]\n- Goal: [EDUCATE / ENTERTAIN / PROMOTE /\
+    \ BUILD AUTHORITY]\n- Call to action: [FOLLOW / VISIT LINK / REPLY / RETWEET]\n\
+    \nCreate a thread with:\n\n1. **HOOK TWEET** (Tweet 1)\n - Pattern interrupt opening\n\
+    \ - Promise of value\n - Create curiosity gap\n - Under 200 characters ideal\n\
+    \n2. **BODY TWEETS** (Tweets 2-9)\n Each tweet should:\n - Make ONE point\n -\
+    \ Be standalone valuable\n - Use simple language\n - Include white space\n \n\
+    \ Structure options:\n - Listicle (each tweet = one item)\n - Story (chronological\
+    \ narrative)\n - Framework (step-by-step process)\n - Myth-busting (misconception\
+    \ → truth)\n\n3. **PAYOFF TWEET** (Tweet 10)\n - Summarize key insight\n - Deliver\
+    \ on the hook's promise\n\n4. **CTA TWEET** (Final)\n - Clear ask\n - Make it\
+    \ easy (one action)\n - Offer value for taking action\n\n5. **FORMATTING NOTES**\n\
+    \ - Where to use → arrows\n - Where to use • bullets \n - Emoji placement (sparingly)\n\
+    \ - Line breaks for readability\n\n6. **ENGAGEMENT HOOKS**\n - Questions to ask\n\
+    \ - \"Comment if...\" prompts\n - Controversy/debate starters\n\nProvide the complete\
+    \ thread, ready to copy-paste."
+  tags: []
+- name: Content Repurposer
+  template: "You are a content strategist who maximizes the value of every piece of\
+    \ content created.\n\nRepurpose this content for multiple platforms:\n\n**ORIGINAL\
+    \ CONTENT:**\n`\n[PASTE YOUR BLOG POST, VIDEO TRANSCRIPT, PODCAST NOTES, ETC.]\n\
+    `\n\n**SOURCE TYPE:** [BLOG POST / VIDEO / PODCAST / PRESENTATION]\n\nTransform\
+    \ into:\n\n1. **TWITTER/X THREAD** (8-10 tweets)\n - Hook tweet\n - Key points\
+    \ as individual tweets\n - CTA tweet\n - Engagement prompt\n\n2. **LINKEDIN POST**\
+    \ (1 long-form)\n - Professional angle\n - Personal story/insight\n - Industry\
+    \ relevance\n - 1200-1500 characters\n\n3. **INSTAGRAM CAROUSEL** (8-10 slides)\n\
+    \ - Slide 1: Hook/Title\n - Slides 2-9: One point per slide\n - Slide 10: CTA\n\
+    \ - Caption text\n\n4. **EMAIL NEWSLETTER SNIPPET**\n - Subject line options (3)\n\
+    \ - Preview text\n - Brief intro\n - Key takeaways\n - Link CTA\n\n5. **YOUTUBE\
+    \ SHORT / TIKTOK SCRIPT** (60 seconds)\n - Hook (first 3 seconds)\n - Core content\n\
+    \ - CTA\n - Suggested b-roll/visuals\n\n6. **PODCAST TALKING POINTS**\n - Episode\
+    \ angle\n - 5 discussion points\n - Stories to tell\n - Questions to answer\n\n\
+    For each format:\n- Adjust tone for the platform\n- Optimize length\n- Include\
+    \ platform-specific CTAs"
+  tags:
+  - email
+- name: Weekly Newsletter Template
+  template: "You are a newsletter writer with a 60%+ open rate who knows how to deliver\
+    \ value consistently.\n\nWrite this week's newsletter edition.\n\n**NEWSLETTER\
+    \ INFO:**\n- Name: [NEWSLETTER NAME]\n- Niche: [TOPIC/INDUSTRY]\n- Audience: [WHO\
+    \ READS IT]\n- Frequency: [WEEKLY / BI-WEEKLY]\n- Voice: [PROFESSIONAL / CASUAL\
+    \ / WITTY / AUTHORITATIVE]\n\n**THIS WEEK'S FOCUS:**\n- Main topic: [PRIMARY SUBJECT]\n\
+    - News/events to cover: [OPTIONAL]\n- Promotion: [IF ANY]\n\nCreate:\n\n1. **SUBJECT\
+    \ LINES** (5 options)\n - Under 50 characters\n - Create curiosity or promise\
+    \ value\n - Avoid spam trigger words\n - Mix of: question, number, statement,\
+    \ emoji\n\n2. **PREVIEW TEXT**\n - Complements subject line\n - Adds additional\
+    \ hook\n\n3. **OPENING**\n - Personal touch (what I'm thinking/doing)\n - Quick\
+    \ connection to main topic\n - 2-3 sentences max\n\n4. **MAIN CONTENT**\n - One\
+    \ big idea (the \"TL;DR\")\n - Supporting points/insights\n - Actionable takeaway\n\
+    \ - 300-500 words\n\n5. **CURATED LINKS** (3-5)\n - Link 1: [ARTICLE/RESOURCE]\
+    \ — One-line description\n - Brief \"why this matters\" for each\n\n6. **PERSONAL\
+    \ NOTE / BONUS**\n - Something behind-the-scenes\n - A tool I'm using\n - A question\
+    \ I'm pondering\n\n7. **CTA / ENGAGEMENT ASK**\n - Hit reply and tell me...\n\
+    \ - Share with someone who...\n - Check out [LINK]\n\n8. **SIGN-OFF**\n - Consistent\
+    \ closing line\n - Personal signature"
+  tags: []
+- name: Business Story Framework
+  template: "You are a storytelling coach who helps entrepreneurs craft stories that\
+    \ move audiences to action.\n\nHelp me turn this experience into a compelling\
+    \ story:\n\n**RAW STORY:**\n[DESCRIBE WHAT HAPPENED - THE EXPERIENCE, CHALLENGE,\
+    \ TRANSFORMATION]\n\n**USAGE:**\n- Where I'll tell this: [KEYNOTE / SALES CALL\
+    \ / BLOG / SOCIAL / ALL]\n- Goal: [INSPIRE / TEACH / SELL / BUILD TRUST]\n- Audience:\
+    \ [WHO WILL HEAR THIS]\n- Length: [30 SEC / 2 MIN / 5 MIN / LONG-FORM]\n\nCraft\
+    \ the story using this structure:\n\n1. **HOOK** (First 10 seconds)\n - In medias\
+    \ res (start in the middle of action)\n - Or: Start with the stakes\n - Grab attention\
+    \ immediately\n\n2. **CONTEXT** (Set the scene)\n - When and where\n - Who is\
+    \ involved\n - Just enough background\n\n3. **CONFLICT** (The challenge)\n - What\
+    \ was at stake\n - What obstacles appeared\n - The moment of doubt/fear\n\n4.\
+    \ **TURNING POINT** (The breakthrough)\n - What changed\n - The insight or decision\n\
+    \ - The action taken\n\n5. **RESOLUTION** (The outcome)\n - What happened as a\
+    \ result\n - Concrete results (numbers if possible)\n - How life/work changed\n\
+    \n6. **LESSON** (The takeaway)\n - Universal truth from specific experience\n\
+    \ - Make it about THEM, not you\n - Actionable insight\n\n7. **BRIDGE** (To your\
+    \ offer/CTA)\n - Natural transition to what you do\n - How this connects to helping\
+    \ them\n\nProvide:\n- The full story, ready to tell\n- Key emotional beats to\
+    \ hit\n- Pauses and emphasis notes\n- Visual/slide suggestions if relevant"
+  tags:
+  - sales
+  - decision
+- name: Case Study Writer
+  template: "You are a case study writer who creates stories that help close deals.\n\
+    \nWrite a case study based on this client success:\n\n**CLIENT INFO:**\n- Company/Person:\
+    \ [NAME] (use real or [CLIENT] placeholder)\n- Industry: [INDUSTRY]\n- Size: [COMPANY\
+    \ SIZE / CONTEXT]\n\n**THE STORY:**\n- Challenge they faced: [WHAT WAS THE PROBLEM]\n\
+    - Solution provided: [WHAT YOU DID]\n- Results achieved: [MEASURABLE OUTCOMES]\n\
+    \n**AVAILABLE DATA:**\n- Metrics: [NUMBERS, PERCENTAGES, TIMEFRAMES]\n- Quote\
+    \ from client: [ACTUAL OR APPROXIMATE]\n\nCreate a case study with:\n\n1. **HEADLINE**\n\
+    \ - Result-focused\n - Include specific metric if possible\n - \"[COMPANY] Achieved\
+    \ [X RESULT] with [YOUR SOLUTION]\"\n\n2. **SNAPSHOT BOX**\n - Industry: \n -\
+    \ Challenge: (one line)\n - Solution: (one line)\n - Results: (key metrics)\n\n\
+    3. **THE CHALLENGE** (200 words)\n - Paint the \"before\" picture\n - Specific\
+    \ pain points\n - Stakes and consequences\n - What they'd tried before\n\n4. **THE\
+    \ SOLUTION** (200 words)\n - Why they chose you\n - What you implemented\n - How\
+    \ you worked together\n - Key differentiators\n\n5. **THE RESULTS** (200 words)\n\
+    \ - Specific, measurable outcomes\n - Before/after comparison\n - Timeline to\
+    \ results\n - Unexpected benefits\n\n6. **CLIENT QUOTE**\n - Powerful testimonial\n\
+    \ - Speaks to transformation\n\n7. **KEY TAKEAWAYS**\n - 3 bullet points\n - Make\
+    \ it relevant to prospects\n\nFormat for both web and PDF use."
+  tags: []
+- name: Content Editor & Improver
+  template: "You are a professional editor who makes good writing great.\n\nEdit and\
+    \ improve this content:\n\n`\n[PASTE YOUR DRAFT]\n`\n\n**EDITING FOCUS:**\n- Primary\
+    \ goal: [CLARITY / ENGAGEMENT / PERSUASION / SEO]\n- Tone: [KEEP CURRENT / MAKE\
+    \ MORE FORMAL / MORE CASUAL / MORE PUNCHY]\n- Length: [KEEP SAME / CUT BY X% /\
+    \ EXPAND]\n\nProvide:\n\n1. **OVERALL ASSESSMENT**\n - Strengths of the current\
+    \ draft\n - Main areas for improvement\n - Rating (1-10) with explanation\n\n\
+    2. **STRUCTURAL EDITS**\n - Reorganization suggestions\n - Missing elements\n\
+    \ - Sections to cut/combine\n\n3. **LINE EDITS**\n - Awkward phrasing → Better\
+    \ version\n - Passive voice → Active voice\n - Wordy sentences → Concise versions\n\
+    \ - Weak words → Stronger alternatives\n\n4. **CLARITY IMPROVEMENTS**\n - Jargon\
+    \ to simplify\n - Complex ideas to break down\n - Places needing examples\n\n\
+    5. **ENGAGEMENT BOOSTERS**\n - Hook improvements\n - Transitions between sections\n\
+    \ - Places to add questions or interactivity\n\n6. **FINAL POLISHED VERSION**\n\
+    \ - Complete edited draft\n - Track major changes\n - Ready to publish\n\n7. **HEADLINE\
+    \ ALTERNATIVES**\n - 3 better title options (if applicable)"
+  tags: []
+- name: Cinematic Portrait
+  template: '[SUBJECT], cinematic portrait photography, dramatic side lighting, shallow
+    depth of field, Arri Alexa camera, anamorphic lens flare, moody color grading,
+    film grain, 8k --ar 2:3 --style raw --s 250'
+  tags: []
+- name: Cyberpunk Neon
+  template: '[SUBJECT], cyberpunk aesthetic, neon lights, rain-soaked streets, holographic
+    advertisements, blade runner inspired, teal and magenta color palette, volumetric
+    fog, night photography --ar 16:9 --s 300'
+  tags: []
+- name: Watercolor Painting
+  template: '[SUBJECT], watercolor painting, soft washes, wet on wet technique, delicate
+    brushstrokes, paper texture visible, muted pastel colors, artistic imperfection,
+    traditional art --ar 4:5 --s 200'
+  tags: []
+- name: Studio Ghibli Style
+  template: '[SUBJECT], studio ghibli style, hayao miyazaki inspired, hand-drawn animation
+    aesthetic, soft lighting, whimsical atmosphere, detailed backgrounds, vibrant
+    colors, nostalgic feeling --ar 16:9 --niji 6'
+  tags: []
+- name: Octane Render
+  template: '[SUBJECT], octane render, 3D illustration, soft lighting, studio lighting,
+    glossy materials, subsurface scattering, high detail, photorealistic, 8k resolution,
+    trending on ArtStation --ar 1:1 --s 500'
+  tags: []
+- name: Classical Oil Painting
+  template: '[SUBJECT], classical oil painting, renaissance style, chiaroscuro lighting,
+    visible brushstrokes, rich earth tones, dramatic shadows, museum quality, masterpiece
+    --ar 3:4 --s 400'
+  tags: []
+- name: Retro 80s Synthwave
+  template: '[SUBJECT], 1980s retro synthwave, neon grid, sunset gradient, chrome
+    accents, VHS aesthetic, geometric shapes, outrun style, magenta and cyan, nostalgic
+    --ar 16:9 --s 350'
+  tags: []
+- name: High Fashion Editorial
+  template: '[SUBJECT], high fashion editorial photography, Vogue magazine style,
+    professional studio lighting, dramatic pose, minimalist background, haute couture,
+    Annie Leibovitz inspired --ar 2:3 --s 400'
+  tags: []
+- name: Pixel Art
+  template: '[SUBJECT], pixel art style, 16-bit graphics, retro video game aesthetic,
+    limited color palette, crisp pixels, dithering, nostalgic gaming, sprite art --ar
+    1:1 --s 200'
+  tags: []
+- name: Dark Fantasy
+  template: '[SUBJECT], dark fantasy art, gothic atmosphere, dramatic lighting, intricate
+    armor details, mystical elements, Frank Frazetta inspired, epic composition, cinematic
+    --ar 16:9 --s 500'
+  tags: []
+- name: Minimalist Vector
+  template: '[SUBJECT], minimalist vector illustration, flat design, limited color
+    palette, clean lines, geometric shapes, negative space, modern graphic design,
+    simple and elegant --ar 1:1 --s 150'
+  tags: []
+- name: Street Photography
+  template: '[SUBJECT], candid street photography, black and white, high contrast,
+    grain, decisive moment, urban environment, natural light, documentary style, Leica
+    aesthetic --ar 3:2 --style raw'
+  tags: []
+- name: Manga Panel
+  template: '[SUBJECT], manga art style, black and white, screentone shading, dynamic
+    action lines, expressive eyes, Japanese comic aesthetic, detailed linework --ar
+    2:3 --niji 6'
+  tags: []
+- name: Isometric 3D
+  template: '[SUBJECT], isometric 3D illustration, cute miniature scene, soft shadows,
+    pastel colors, tiny detailed world, diorama style, game art aesthetic, clean render
+    --ar 1:1 --s 300'
+  tags: []
+- name: Art Deco Poster
+  template: '[SUBJECT], art deco poster, 1920s aesthetic, gold and black color scheme,
+    geometric patterns, elegant typography, vintage glamour, Alphonse Mucha inspired
+    --ar 2:3 --s 350'
+  tags: []
+- name: Ukiyo-e Japanese
+  template: '[SUBJECT], ukiyo-e style, Japanese woodblock print, flat colors, bold
+    outlines, traditional waves pattern, Hokusai inspired, Edo period aesthetic --ar
+    3:4 --s 400'
+  tags: []
+- name: Claymation Style
+  template: '[SUBJECT], claymation style, stop motion aesthetic, clay texture, handmade
+    feeling, Aardman studios inspired, playful characters, soft lighting, miniature
+    set --ar 16:9 --s 300'
+  tags: []
+- name: Marvel Comic Style
+  template: '[SUBJECT], Marvel comic book art style, bold ink lines, vibrant colors,
+    Ben-Day dots, dynamic pose, action scene, superhero aesthetic, Jack Kirby inspired
+    --ar 2:3 --s 400'
+  tags: []
+- name: Instant Polaroid
+  template: '[SUBJECT], polaroid photograph, instant film aesthetic, slightly faded
+    colors, soft vignette, vintage feeling, candid moment, 1970s nostalgia, white
+    border frame --ar 4:5 --style raw'
+  tags: []
+- name: Stained Glass
+  template: '[SUBJECT], stained glass window style, vibrant translucent colors, black
+    lead lines, light shining through, cathedral aesthetic, religious art inspired,
+    intricate patterns --ar 3:4 --s 350'
+  tags: []
+- name: Modern Anime (Makoto Shinkai)
+  template: '[SUBJECT], Makoto Shinkai style anime, Your Name aesthetic, stunning
+    sky, detailed clouds, lens flare, vibrant colors, photorealistic backgrounds,
+    emotional atmosphere --ar 16:9 --niji 6'
+  tags: []
+- name: Product Photography
+  template: '[SUBJECT], professional product photography, studio lighting, clean white
+    background, high-end commercial, sharp focus, subtle reflections, premium feel,
+    advertisement quality --ar 1:1 --s 300'
+  tags: []
+- name: Neon Noir
+  template: '[SUBJECT], neon noir photography, cinematic night scene, single color
+    neon light source, deep shadows, mysterious atmosphere, film noir meets cyberpunk,
+    moody urban --ar 16:9 --style raw --s 400'
+  tags: []
+- name: Low Poly 3D
+  template: '[SUBJECT], low poly 3D art, geometric faceted style, flat shading, vibrant
+    colors, angular shapes, modern game aesthetic, clean render, minimalist 3D --ar
+    16:9 --s 250'
+  tags: []
+- name: 🐛 Debugging
+  template: Private card body. Edit this text...
+  tags: []
+- name: 🔍 Code Review
+  template: Private card body. Edit this text...
+  tags:
+  - code
+- name: 🏗️ Building Features
+  template: Private card body. Edit this text...
+  tags: []
+- name: 📝 Documentation
+  template: Private card body. Edit this text...
+  tags: []
+- name: ⚙️ Systems & Automation
+  template: Private card body. Edit this text...
+  tags: []
+- name: 📋 Project Planning
+  template: Private card body. Edit this text...
+  tags:
+  - project
+- name: 🧠 Decision Making
+  template: Private card body. Edit this text...
+  tags:
+  - decision
+- name: 📱 Social Media
+  template: Private card body. Edit this text...
+  tags: []
+- name: 💰 Sales
+  template: Private card body. Edit this text...
+  tags:
+  - sales
+- name: 📧 Email Marketing
+  template: Private card body. Edit this text...
+  tags:
+  - email
+  - marketing
+- name: ✍️ Copywriting
+  template: Private card body. Edit this text...
+  tags: []
+- name: 📱 Social Media
+  template: Private card body. Edit this text...
+  tags: []
+- name: 📧 Newsletters
+  template: Private card body. Edit this text...
+  tags: []
+- name: 📖 Storytelling
+  template: Private card body. Edit this text...
+  tags: []
+- name: ✂️ Editing & Polishing
+  template: Private card body. Edit this text...
+  tags: []
+- name: 📝 Blog Posts
+  template: Private card body. Edit this text...
+  tags: []

@@ -410,6 +410,30 @@ func (s *pickerState) redraw() {
 					qColor = color.RGBA{R: 180, G: 230, B: 180, A: 255}
 				}
 				s.drawText(img, qLabel, 20, panelY, qColor, 1)
+			} else if s.smartState.kind == SmartTypePrompt {
+				panelY += heightNormal + 8
+				roleName := "No match"
+				matchCount := 0
+				if len(s.smartState.promptMatches) > 0 && s.smartState.promptIdx >= 0 && s.smartState.promptIdx < len(s.smartState.promptMatches) {
+					roleName = s.smartState.promptMatches[s.smartState.promptIdx].Name
+					matchCount = len(s.smartState.promptMatches)
+				}
+				statusStr := fmt.Sprintf("%s (%d matches)", roleName, matchCount)
+				s.drawText(img, statusStr, 30, panelY, mutedColor, 1)
+
+				// Query input line
+				panelY += heightSmall + 9
+				qLabel := "  > "
+				if s.smartState.query != "" {
+					qLabel += s.smartState.query + "_"
+				} else {
+					qLabel += "type prompt role/tags or \u2190\u2192 to cycle"
+				}
+				qColor := mutedColor
+				if s.smartState.query != "" {
+					qColor = color.RGBA{R: 180, G: 230, B: 180, A: 255}
+				}
+				s.drawText(img, qLabel, 20, panelY, qColor, 1)
 			}
 		}
 	}
@@ -456,6 +480,14 @@ func (s *pickerState) syncSmartState() {
 					kind: SmartTypeEmoji,
 				}
 				s.smartState.resolveEmojiQuery()
+			}
+			return
+		} else if snip.Smart == SmartTypePrompt {
+			if s.smartState == nil || s.smartState.kind != SmartTypePrompt {
+				s.smartState = &SmartState{
+					kind: SmartTypePrompt,
+				}
+				s.smartState.resolvePromptQuery()
 			}
 			return
 		}
@@ -511,7 +543,7 @@ func (s *pickerState) handleKeyPress(X *xgbutil.XUtil, ev xevent.KeyPressEvent) 
 		}
 
 		// ── Smart snippet: Left/Right cycle presets / predictions ─────────
-		if s.smartState != nil && (s.smartState.kind == SmartTypeTime || s.smartState.kind == SmartTypeEmoji) {
+		if s.smartState != nil && (s.smartState.kind == SmartTypeTime || s.smartState.kind == SmartTypeEmoji || s.smartState.kind == SmartTypePrompt) {
 			if keyStr == "Left" {
 				s.smartState.CyclePrev()
 				s.redraw()

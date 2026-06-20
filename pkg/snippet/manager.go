@@ -34,6 +34,7 @@ type Manager struct {
 
 // NewManager creates a new snippet manager and loads existing snippets from file
 func NewManager(filePath string) (*Manager, error) {
+	SnippetFilePath = filePath
 	mgr := &Manager{
 		filePath: filePath,
 		snippets: make([]Snippet, 0),
@@ -115,6 +116,11 @@ var builtinSmartSnippets = []Snippet{
 		ID:    "__smart_emoji__",
 		Name:  "⚡ Search Emoji",
 		Smart: SmartTypeEmoji,
+	},
+	{
+		ID:    "__smart_prompt__",
+		Name:  "⚡ AI System Prompt",
+		Smart: SmartTypePrompt,
 	},
 }
 
