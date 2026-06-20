@@ -209,35 +209,57 @@ func (m *Manager) Delete(id string) (bool, error) {
 	return true, nil
 }
 
-// Paste handles either copying the snippet content to clipboard and pasting it, or typing it out like a human
-func (m *Manager) Paste(content string, mode string) error {
-	if mode == "type" {
-		xu, err := xgbutil.NewConn()
-		if err != nil {
-			return fmt.Errorf("failed to connect to X server: %w", err)
-		}
-		defer xu.Conn().Close()
-
-		keybind.Initialize(xu)
-		// Small delay to let the picker window fully unmap/destroy and restore focus
-		time.Sleep(200 * time.Millisecond)
-		return TypeHumanly(xu, content)
-	}
-
-	if err := capture.CopyTextToClipboard(content); err != nil {
-		return fmt.Errorf("failed to copy snippet to clipboard: %w", err)
-	}
-
-	// Perform auto-paste synchronously with a small delay for OS clipboard sync before process exits
-	time.Sleep(100 * time.Millisecond)
-
+// Paste handles either copying the snippet content to clipboard and pasting it, or typing it out like a human.
+// prevFocusWin is the X11 window that had focus before the picker opened; pass 0 if unknown.
+func (m *Manager) Paste(content string, mode string, prevFocusWin xproto.Window) error {
 	xu, err := xgbutil.NewConn()
 	if err != nil {
 		return fmt.Errorf("failed to connect to X server: %w", err)
 	}
 	defer xu.Conn().Close()
-
 	keybind.Initialize(xu)
+
+	// Determine the window we want to receive the paste.
+	// If we have no hint, fall back to whatever window currently has focus.
+	targetWin := prevFocusWin
+	if targetWin == 0 {
+		if reply, ferr := xproto.GetInputFocus(xu.Conn()).Reply(); ferr == nil {
+			targetWin = reply.Focus
+		}
+	}
+
+	if mode == "type" {
+		// Wait deterministically for the previous window to hold focus again
+		// instead of using an arbitrary fixed sleep.
+		if targetWin != 0 {
+			if err := pasteWaitForFocus(xu, targetWin, 800*time.Millisecond); err != nil {
+				// Compositing WM hasn't re-focused yet — nudge it with a real timestamp.
+				ts := pasteRealTimestamp(xu)
+				xproto.SetInputFocus(xu.Conn(), xproto.InputFocusRevertToPointerRoot, targetWin, ts)
+				time.Sleep(30 * time.Millisecond)
+			}
+		}
+		return TypeHumanly(xu, content)
+	}
+
+	// --- paste mode ---
+	if err := capture.CopyTextToClipboard(content); err != nil {
+		return fmt.Errorf("failed to copy snippet to clipboard: %w", err)
+	}
+
+	// Wait for the target window to regain focus before injecting Ctrl+V.
+	if targetWin != 0 {
+		if err := pasteWaitForFocus(xu, targetWin, 800*time.Millisecond); err != nil {
+			// Force focus back with a real X timestamp.
+			ts := pasteRealTimestamp(xu)
+			xproto.SetInputFocus(xu.Conn(), xproto.InputFocusRevertToPointerRoot, targetWin, ts)
+			time.Sleep(30 * time.Millisecond)
+		}
+	} else {
+		// No saved window: small sleep for OS clipboard sync as last resort.
+		time.Sleep(120 * time.Millisecond)
+	}
+
 	if err := xtest.Init(xu.Conn()); err != nil {
 		return fmt.Errorf("failed to initialize xtest extension: %w", err)
 	}
@@ -249,7 +271,6 @@ func (m *Manager) Paste(content string, mode string) error {
 	}
 
 	c := xu.Conn()
-	// Press Ctrl
 	_, kcs, err := keybind.ParseString(xu, "Control_L")
 	var ctrlKC byte
 	if err == nil && len(kcs) > 0 {
@@ -257,19 +278,86 @@ func (m *Manager) Paste(content string, mode string) error {
 	} else {
 		ctrlKC = 37 // fallback
 	}
-
-	xtest.FakeInput(c, xproto.KeyPress, ctrlKC, 0, 0, 0, 0, 0)
-
-	// Press and release V
 	vKC := byte(keycodes[0])
+
+	if targetWin != 0 {
+		// Send Ctrl+V as XSendEvent directly to the saved window, bypassing any
+		// focus uncertainty introduced by xtest.FakeInput.
+		root := xproto.Setup(c).Roots[0].Root
+		press := xproto.KeyPressEvent{
+			Detail:     xproto.Keycode(vKC),
+			State:      xproto.ModMaskControl,
+			Event:      targetWin,
+			Root:       root,
+			SameScreen: true,
+		}
+		release := xproto.KeyReleaseEvent(press)
+		xproto.SendEvent(c, false, targetWin, xproto.EventMaskKeyPress, string(press.Bytes()))
+		xproto.SendEvent(c, false, targetWin, xproto.EventMaskKeyRelease, string(release.Bytes()))
+		c.Flush()
+		return nil
+	}
+
+	// Fallback: use xtest.FakeInput when we have no target window.
+	xtest.FakeInput(c, xproto.KeyPress, ctrlKC, 0, 0, 0, 0, 0)
 	xtest.FakeInput(c, xproto.KeyPress, vKC, 0, 0, 0, 0, 0)
 	xtest.FakeInput(c, xproto.KeyRelease, vKC, 0, 0, 0, 0, 0)
-
-	// Release Ctrl
 	xtest.FakeInput(c, xproto.KeyRelease, ctrlKC, 0, 0, 0, 0, 0)
 
 	return nil
 }
+
+// pasteWaitForFocus polls GetInputFocus until the target window holds focus or
+// the deadline passes. Returns nil on success, error on timeout.
+func pasteWaitForFocus(xu *xgbutil.XUtil, win xproto.Window, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		reply, err := xproto.GetInputFocus(xu.Conn()).Reply()
+		if err == nil && (reply.Focus == win) {
+			return nil
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	return fmt.Errorf("window %d did not regain focus within %s", win, timeout)
+}
+
+// pasteRealTimestamp gets a real X server timestamp by doing a no-op property
+// change on the root window and reading the resulting PropertyNotify time.
+func pasteRealTimestamp(xu *xgbutil.XUtil) xproto.Timestamp {
+	root := xproto.Setup(xu.Conn()).Roots[0].Root
+	// Subscribe to PropertyNotify on root (transient; we restore immediately)
+	xproto.ChangeWindowAttributes(xu.Conn(), root, xproto.CwEventMask,
+		[]uint32{xproto.EventMaskPropertyChange})
+	wmNameAtom, err := xproto.InternAtom(xu.Conn(), false, uint16(len("WM_NAME")), "WM_NAME").Reply()
+	if err != nil {
+		xproto.ChangeWindowAttributes(xu.Conn(), root, xproto.CwEventMask, []uint32{0})
+		return xproto.TimeCurrentTime
+	}
+	xproto.ChangeProperty(xu.Conn(), xproto.PropModeAppend, root,
+		wmNameAtom.Atom, xproto.AtomString, 8, 0, nil)
+	xu.Conn().Flush()
+
+	deadline := time.Now().Add(150 * time.Millisecond)
+	var ts xproto.Timestamp = xproto.TimeCurrentTime
+	for time.Now().Before(deadline) {
+		ev, evErr := xu.Conn().PollForEvent()
+		if evErr != nil {
+			break
+		}
+		if ev == nil {
+			time.Sleep(2 * time.Millisecond)
+			continue
+		}
+		if pn, ok := ev.(xproto.PropertyNotifyEvent); ok {
+			ts = pn.Time
+			break
+		}
+	}
+	// Remove PropertyNotify subscription from root
+	xproto.ChangeWindowAttributes(xu.Conn(), root, xproto.CwEventMask, []uint32{0})
+	return ts
+}
+
 
 func TypeHumanly(xu *xgbutil.XUtil, text string) error {
 	c := xu.Conn()

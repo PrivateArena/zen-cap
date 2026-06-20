@@ -301,8 +301,17 @@ func handleService() error {
 		if err != nil {
 			exe = "zen-cap"
 		}
+		// Save the currently focused window XID BEFORE the picker steals focus,
+		// so the paste logic can restore and verify focus deterministically.
+		var prevFocusEnv string
+		if focusReply, ferr := xproto.GetInputFocus(X.Conn()).Reply(); ferr == nil && focusReply.Focus != 0 {
+			prevFocusEnv = fmt.Sprintf("ZENCAP_PREV_FOCUS=%d", uint32(focusReply.Focus))
+		}
 		cmd := exec.Command(exe, "snippet-picker")
 		cmd.Env = os.Environ()
+		if prevFocusEnv != "" {
+			cmd.Env = append(cmd.Env, prevFocusEnv)
+		}
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Start(); err != nil {

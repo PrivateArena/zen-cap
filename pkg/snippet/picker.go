@@ -7,6 +7,7 @@ import (
 	"image/draw"
 	"log"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/jezek/xgb/xproto"
@@ -42,11 +43,23 @@ type pickerState struct {
 	smartState    *SmartState
 	faceNormal    font.Face
 	faceSmall     font.Face
+	// prevFocusWin is the X11 window that held focus before the picker opened.
+	// Passed through to Paste() so it can poll/restore focus deterministically.
+	prevFocusWin  xproto.Window
 }
 
 // ShowPicker opens a native X11 popup window at the center of the screen to select a snippet.
 func ShowPicker(mgr *Manager, cfg *config.Config) error {
 	snippets := mgr.GetAll()
+
+	// Read the previous focus window saved by the service before spawning us.
+	// This lets Paste() deterministically restore and verify focus.
+	var prevFocusWin xproto.Window
+	if envVal := os.Getenv("ZENCAP_PREV_FOCUS"); envVal != "" {
+		if n, err := strconv.ParseUint(envVal, 10, 32); err == nil {
+			prevFocusWin = xproto.Window(n)
+		}
+	}
 
 	// Connect to X server
 	xu, err := xgbutil.NewConn()
@@ -73,7 +86,8 @@ func ShowPicker(mgr *Manager, cfg *config.Config) error {
 
 	// Set window attributes: override_redirect to float on top of everything without borders
 	var overrideRedirect uint32 = 1
-	var eventMask uint32 = xproto.EventMaskKeyPress | xproto.EventMaskExposure | xproto.EventMaskButtonPress
+	// Include StructureNotify so we receive MapNotify before attempting GrabKeyboard.
+	var eventMask uint32 = xproto.EventMaskKeyPress | xproto.EventMaskExposure | xproto.EventMaskButtonPress | xproto.EventMaskStructureNotify
 
 	x := (screenWidth - width) / 2
 	y := (screenHeight - height) / 2
@@ -142,17 +156,42 @@ func ShowPicker(mgr *Manager, cfg *config.Config) error {
 		return fmt.Errorf("failed to map window: %w", err)
 	}
 
-	// Actively request input focus for the override_redirect window
-	_ = xproto.SetInputFocus(xu.Conn(), xproto.InputFocusParent, winID, xproto.TimeCurrentTime).Check()
+	// Wait for the server to confirm the window is mapped (MapNotify) before
+	// grabbing the keyboard.  Grabbing before this event arrives is a race that
+	// causes GrabKeyboard to target an unmapped window and fail or behave
+	// unpredictably.
+	mapDeadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(mapDeadline) {
+		ev, evErr := xu.Conn().PollForEvent()
+		if evErr != nil {
+			break
+		}
+		if ev == nil {
+			time.Sleep(5 * time.Millisecond)
+			continue
+		}
+		if mn, ok := ev.(xproto.MapNotifyEvent); ok && mn.Window == winID {
+			break
+		}
+	}
 
-	// Grab Keyboard for exclusive hotkey focus, retrying in case the service's passive grab is still active
+	// Obtain a real server-side timestamp via a round-trip PropertyNotify.
+	// TimeCurrentTime (0) is treated as timestamp 0 by the server which is
+	// older than any real event — ICCCM-compliant WMs silently ignore such
+	// SetInputFocus calls.
+	realTimestamp := pickerRealTimestamp(xu, winID)
+
+	// Set focus using the real timestamp so compositing WMs honour it.
+	_ = xproto.SetInputFocusChecked(xu.Conn(), xproto.InputFocusParent, winID, realTimestamp).Check()
+
+	// Grab Keyboard exclusively — now safe because MapNotify was received.
 	grabSuccess := false
 	for i := 0; i < 20; i++ {
 		keyboardGrab, err := xproto.GrabKeyboard(
 			xu.Conn(),
 			false,
 			winID,
-			xproto.TimeCurrentTime,
+			realTimestamp,
 			xproto.GrabModeAsync,
 			xproto.GrabModeAsync,
 		).Reply()
@@ -160,7 +199,7 @@ func ShowPicker(mgr *Manager, cfg *config.Config) error {
 			grabSuccess = true
 			break
 		}
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(15 * time.Millisecond)
 	}
 
 	if !grabSuccess {
@@ -187,6 +226,7 @@ func ShowPicker(mgr *Manager, cfg *config.Config) error {
 		cfg:           cfg,
 		faceNormal:    faceNormal,
 		faceSmall:     faceSmall,
+		prevFocusWin:  prevFocusWin,
 	}
 	// Initialise smartState if the first item is a smart snippet.
 	state.syncSmartState()
@@ -221,11 +261,48 @@ func ShowPicker(mgr *Manager, cfg *config.Config) error {
 			}
 			content = state.smartState.Content(selectedSnip.Format)
 		}
-		return state.mgr.Paste(content, state.cfg.SnippetMode)
+		return state.mgr.Paste(content, state.cfg.SnippetMode, prevFocusWin)
 	}
 
 	return nil
 }
+
+// pickerRealTimestamp obtains a real X server timestamp by triggering a
+// PropertyNotify event via a zero-length ChangeProperty and waiting for it.
+// This is required because TimeCurrentTime (0) is rejected by ICCCM/EWMH
+// compliant compositors when used with SetInputFocus or GrabKeyboard.
+func pickerRealTimestamp(xu *xgbutil.XUtil, win xproto.Window) xproto.Timestamp {
+	// Subscribe to PropertyChange events on the window
+	xproto.ChangeWindowAttributes(xu.Conn(), win, xproto.CwEventMask,
+		[]uint32{xproto.EventMaskPropertyChange | xproto.EventMaskStructureNotify |
+			xproto.EventMaskKeyPress | xproto.EventMaskExposure | xproto.EventMaskButtonPress})
+
+	// Touch a zero-length WM_NAME property to provoke PropertyNotify
+	wmNameAtom, err := xproto.InternAtom(xu.Conn(), false, uint16(len("WM_NAME")), "WM_NAME").Reply()
+	if err != nil {
+		return xproto.TimeCurrentTime
+	}
+	xproto.ChangeProperty(xu.Conn(), xproto.PropModeAppend, win,
+		wmNameAtom.Atom, xproto.AtomString, 8, 0, nil)
+	xu.Conn().Flush()
+
+	deadline := time.Now().Add(200 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		ev, evErr := xu.Conn().PollForEvent()
+		if evErr != nil {
+			break
+		}
+		if ev == nil {
+			time.Sleep(2 * time.Millisecond)
+			continue
+		}
+		if pn, ok := ev.(xproto.PropertyNotifyEvent); ok {
+			return pn.Time
+		}
+	}
+	return xproto.TimeCurrentTime // fallback only
+}
+
 
 func (s *pickerState) redraw() {
 	img := image.NewRGBA(image.Rect(0, 0, s.width, s.height))
