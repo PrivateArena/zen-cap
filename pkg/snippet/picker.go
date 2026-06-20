@@ -66,7 +66,31 @@ func ShowPicker(mgr *Manager, cfg *config.Config) error {
 	if err != nil {
 		return fmt.Errorf("failed to connect to X server: %w", err)
 	}
-	defer xu.Conn().Close()
+
+	var (
+		winID              xproto.Window
+		gcID               xproto.Gcontext
+		bufPixmapID        xproto.Pixmap
+		windowNeedsDestroy bool
+		gcFreed            bool
+		pixmapFreed        bool
+		connectionClosed   bool
+	)
+
+	defer func() {
+		if !connectionClosed {
+			if windowNeedsDestroy {
+				xproto.DestroyWindow(xu.Conn(), winID)
+			}
+			if !gcFreed && gcID != 0 {
+				xproto.FreeGC(xu.Conn(), gcID)
+			}
+			if !pixmapFreed && bufPixmapID != 0 {
+				xproto.FreePixmap(xu.Conn(), bufPixmapID)
+			}
+			xu.Conn().Close()
+		}
+	}()
 
 	screen := xu.Screen()
 	screenWidth := int(screen.WidthInPixels)
@@ -79,7 +103,7 @@ func ShowPicker(mgr *Manager, cfg *config.Config) error {
 	faceNormal, faceSmall := loadPickerFonts(cfg)
 
 	// Create window ID
-	winID, err := xproto.NewWindowId(xu.Conn())
+	winID, err = xproto.NewWindowId(xu.Conn())
 	if err != nil {
 		return fmt.Errorf("failed to create window ID: %w", err)
 	}
@@ -107,16 +131,10 @@ func ShowPicker(mgr *Manager, cfg *config.Config) error {
 	if err != nil {
 		return fmt.Errorf("failed to create picker window: %w", err)
 	}
-
-	windowNeedsDestroy := true
-	defer func() {
-		if windowNeedsDestroy {
-			xproto.DestroyWindow(xu.Conn(), winID)
-		}
-	}()
+	windowNeedsDestroy = true
 
 	// Setup Graphics Context (GC) for drawing
-	gcID, err := xproto.NewGcontextId(xu.Conn())
+	gcID, err = xproto.NewGcontextId(xu.Conn())
 	if err != nil {
 		return fmt.Errorf("failed to create GC ID: %w", err)
 	}
@@ -130,10 +148,9 @@ func ShowPicker(mgr *Manager, cfg *config.Config) error {
 	if err != nil {
 		return fmt.Errorf("failed to create GC: %w", err)
 	}
-	defer xproto.FreeGC(xu.Conn(), gcID)
 
 	// Create buffer Pixmap for double-buffering
-	bufPixmapID, err := xproto.NewPixmapId(xu.Conn())
+	bufPixmapID, err = xproto.NewPixmapId(xu.Conn())
 	if err != nil {
 		return fmt.Errorf("failed to create buffer pixmap ID: %w", err)
 	}
@@ -148,7 +165,6 @@ func ShowPicker(mgr *Manager, cfg *config.Config) error {
 	if err != nil {
 		return fmt.Errorf("failed to create buffer pixmap: %w", err)
 	}
-	defer xproto.FreePixmap(xu.Conn(), bufPixmapID)
 
 	// Map the window
 	err = xproto.MapWindowChecked(xu.Conn(), winID).Check()
@@ -244,8 +260,15 @@ func ShowPicker(mgr *Manager, cfg *config.Config) error {
 	// Event loop
 	xevent.Main(xu)
 
+	// Clean up X11 resources and close connection now so WM can restore focus.
 	windowNeedsDestroy = false
+	gcFreed = true
+	pixmapFreed = true
+	connectionClosed = true
+	xproto.FreeGC(xu.Conn(), gcID)
+	xproto.FreePixmap(xu.Conn(), bufPixmapID)
 	xproto.DestroyWindow(xu.Conn(), winID)
+	xu.Conn().Close()
 
 	if state.selected && len(snippets) > 0 && state.selectedIndex >= 0 && state.selectedIndex < len(snippets) {
 		selectedSnip := snippets[state.selectedIndex]
@@ -284,7 +307,6 @@ func pickerRealTimestamp(xu *xgbutil.XUtil, win xproto.Window) xproto.Timestamp 
 	}
 	xproto.ChangeProperty(xu.Conn(), xproto.PropModeAppend, win,
 		wmNameAtom.Atom, xproto.AtomString, 8, 0, nil)
-	xu.Conn().Flush()
 
 	deadline := time.Now().Add(200 * time.Millisecond)
 	for time.Now().Before(deadline) {
