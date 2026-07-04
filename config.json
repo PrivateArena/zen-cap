@@ -82,6 +82,10 @@
     "font_face": ""
   },
   "recorder": {
+    "width": 0,
+    "height": 0,
+    "internal_width": 0,
+    "internal_height": 0,
     "fps": 30,
     "bitrate": 4000000,
     "encoder": {

@@ -17,35 +17,41 @@ import (
 // overrides display/area/fps/bitrate/output as needed.
 func RecorderConfigFromConfig(cfg *config.Config) RecorderConfig {
 	return RecorderConfig{
-		Display:    ":0.0",
-		FPS:        cfg.Recorder.FPS,
-		Bitrate:    cfg.Recorder.Bitrate,
-		ScaleAlgo:  cfg.Recorder.Encoder.ScaleAlgo,
-		EncoderPreset:    cfg.Recorder.Encoder.Preset,
-		EncoderCRF:       cfg.Recorder.Encoder.CRF,
-		EncoderTune:      cfg.Recorder.Encoder.Tune,
-		EncoderProfile:   cfg.Recorder.Encoder.Profile,
-		EncoderPixFormat: cfg.Recorder.Encoder.PixelFormat,
-		AudioDevice:      cfg.Recorder.Audio.Device,
-		AudioEnabled:     cfg.Recorder.Audio.Enabled,
-		AudioSampleRate:  cfg.Recorder.Audio.SampleRate,
-		AudioChannels:    cfg.Recorder.Audio.Channels,
-		AudioBitrate:     cfg.Recorder.Audio.Bitrate,
+		Display:            ":0.0",
+		Width:              cfg.Recorder.Width,
+		Height:             cfg.Recorder.Height,
+		InternalWidth:      cfg.Recorder.InternalWidth,
+		InternalHeight:     cfg.Recorder.InternalHeight,
+		FPS:                cfg.Recorder.FPS,
+		Bitrate:            cfg.Recorder.Bitrate,
+		ScaleAlgo:          cfg.Recorder.Encoder.ScaleAlgo,
+		EncoderPreset:      cfg.Recorder.Encoder.Preset,
+		EncoderCRF:         cfg.Recorder.Encoder.CRF,
+		EncoderTune:        cfg.Recorder.Encoder.Tune,
+		EncoderProfile:     cfg.Recorder.Encoder.Profile,
+		EncoderPixFormat:   cfg.Recorder.Encoder.PixelFormat,
+		AudioDevice:        cfg.Recorder.Audio.Device,
+		AudioEnabled:       cfg.Recorder.Audio.Enabled,
+		AudioSampleRate:    cfg.Recorder.Audio.SampleRate,
+		AudioChannels:      cfg.Recorder.Audio.Channels,
+		AudioBitrate:       cfg.Recorder.Audio.Bitrate,
 	}
 }
 
 const aacFrameSamples = 1024
 
 type RecorderConfig struct {
-	Display    string
-	X          int
-	Y          int
-	Width      int
-	Height     int
-	FPS        int
-	OutputPath string
-	Bitrate    int64
-	WindowID   uint32
+	Display        string
+	X              int
+	Y              int
+	Width          int // output/encoded resolution (0 = use capture)
+	Height         int
+	InternalWidth  int // capture resolution (0 = use Width or device native)
+	InternalHeight int
+	FPS            int
+	OutputPath     string
+	Bitrate        int64
+	WindowID       uint32
 
 	ScaleAlgo        string
 	EncoderPreset    string
@@ -123,12 +129,20 @@ func (r *Recorder) IsRecording() bool {
 func (r *Recorder) run() {
 	defer close(r.doneChan)
 
+	// Capture dimensions: Internal* → Width → device native (0/-1 = fullscreen)
+	capW := r.cfg.InternalWidth
+	capH := r.cfg.InternalHeight
+	if capW <= 0 && capH <= 0 {
+		capW = r.cfg.Width
+		capH = r.cfg.Height
+	}
+
 	devCfg := av.DeviceConfig{
 		Display:  r.cfg.Display,
 		X:        r.cfg.X,
 		Y:        r.cfg.Y,
-		Width:    r.cfg.Width,
-		Height:   r.cfg.Height,
+		Width:    capW,
+		Height:   capH,
 		FPS:      r.cfg.FPS,
 		WindowID: r.cfg.WindowID,
 	}
@@ -140,8 +154,18 @@ func (r *Recorder) run() {
 	}
 	defer device.Close()
 
-	w := device.Width()
-	h := device.Height()
+	capW = device.Width()
+	capH = device.Height()
+
+	// Output dimensions: Width/Height from config, fallback to capture
+	outW := r.cfg.Width
+	outH := r.cfg.Height
+	if outW <= 0 || outH <= 0 {
+		outW = capW
+		outH = capH
+	}
+
+	fmt.Printf("Capture: %dx%d  Output: %dx%d\n", capW, capH, outW, outH)
 
 	firstFrame, err := device.ReadFrame()
 	if err != nil {
@@ -159,7 +183,7 @@ func (r *Recorder) run() {
 		Profile:     r.cfg.EncoderProfile,
 		PixelFormat: av.PixelFormatFromString(r.cfg.EncoderPixFormat),
 	}
-	encoder, err := av.NewVideoEncoder(w, h, r.cfg.FPS, r.cfg.Bitrate, encOpts)
+	encoder, err := av.NewVideoEncoder(outW, outH, r.cfg.FPS, r.cfg.Bitrate, encOpts)
 	if err != nil {
 		fmt.Printf("Recorder error: failed to initialize encoder: %v\n", err)
 		return
@@ -170,7 +194,7 @@ func (r *Recorder) run() {
 	if scaleAlgo == "" {
 		scaleAlgo = "lanczos"
 	}
-	scaler, err := av.NewScaler(w, h, srcPixFmt, w, h, astiav.PixelFormatYuv420P, scaleAlgo)
+	scaler, err := av.NewScaler(capW, capH, srcPixFmt, outW, outH, astiav.PixelFormatYuv420P, scaleAlgo)
 	if err != nil {
 		fmt.Printf("Recorder error: failed to initialize scaler: %v\n", err)
 		return
@@ -190,11 +214,11 @@ func (r *Recorder) run() {
 		return
 	}
 
-	// Allocate reusable YUV420P destination frame
+	// Allocate reusable YUV420P destination frame (output dimensions)
 	yuvFrame := astiav.AllocFrame()
 	defer yuvFrame.Free()
-	yuvFrame.SetWidth(w)
-	yuvFrame.SetHeight(h)
+	yuvFrame.SetWidth(outW)
+	yuvFrame.SetHeight(outH)
 	yuvFrame.SetPixelFormat(astiav.PixelFormatYuv420P)
 
 	yuvFrame.SetColorRange(astiav.ColorRangeMpeg)
@@ -301,7 +325,7 @@ func (r *Recorder) run() {
 		}()
 	}
 
-	fmt.Printf("Recording started: %dx%d @ %d FPS -> %s", w, h, r.cfg.FPS, r.cfg.OutputPath)
+	fmt.Printf("Recording started: %dx%d @ %d FPS -> %s", outW, outH, r.cfg.FPS, r.cfg.OutputPath)
 	if r.cfg.AudioEnabled {
 		fmt.Printf(" (with audio)")
 	}

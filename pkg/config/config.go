@@ -67,12 +67,14 @@ type AudioSettings struct {
 
 // RecorderSettings holds top-level recording configuration.
 type RecorderSettings struct {
-	Width   int             `json:"width,omitempty"`
-	Height  int             `json:"height,omitempty"`
-	FPS     int             `json:"fps,omitempty"`
-	Bitrate int64           `json:"bitrate,omitempty"`
-	Encoder EncoderSettings `json:"encoder"`
-	Audio   AudioSettings   `json:"audio"`
+	Width          int             `json:"width,omitempty"`           // output/encoded resolution
+	Height         int             `json:"height,omitempty"`
+	InternalWidth  int             `json:"internal_width,omitempty"`  // capture resolution
+	InternalHeight int             `json:"internal_height,omitempty"`
+	FPS            int             `json:"fps,omitempty"`
+	Bitrate        int64           `json:"bitrate,omitempty"`
+	Encoder        EncoderSettings `json:"encoder"`
+	Audio          AudioSettings   `json:"audio"`
 }
 
 type Config struct {
@@ -227,10 +229,12 @@ func DefaultConfig() *Config {
 			SmoothScaling:    true,
 		},
 		Recorder: RecorderSettings{
-			Width:   0,
-			Height:  0,
-			FPS:     30,
-			Bitrate: 4000000,
+			Width:          0,
+			Height:         0,
+			InternalWidth:  0,
+			InternalHeight: 0,
+			FPS:            30,
+			Bitrate:        4000000,
 			Encoder: EncoderSettings{
 				Encoder:     "libx264",
 				ScaleAlgo:   "lanczos",
@@ -320,10 +324,12 @@ func DefaultPortableConfig(binDir string) *Config {
 			FontFace: "",
 		},
 		Recorder: RecorderSettings{
-			Width:   0,
-			Height:  0,
-			FPS:     30,
-			Bitrate: 4000000,
+			Width:          0,
+			Height:         0,
+			InternalWidth:  0,
+			InternalHeight: 0,
+			FPS:            30,
+			Bitrate:        4000000,
 			Encoder: EncoderSettings{
 				Encoder:     "libx264",
 				ScaleAlgo:   "lanczos",

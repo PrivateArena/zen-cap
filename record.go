@@ -104,8 +104,8 @@ func handleRecord() error {
 	recCfg.Display = *disp
 	recCfg.X = x
 	recCfg.Y = y
-	recCfg.Width = w
-	recCfg.Height = h
+	recCfg.InternalWidth = w
+	recCfg.InternalHeight = h
 	recCfg.OutputPath = outputPath
 	recCfg.WindowID = windowID
 	if *fps > 0 {

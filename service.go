@@ -1095,14 +1095,14 @@ func handleService() error {
 				if area.Type == "fullscreen" || area.X < 0 || area.Y < 0 || area.Width <= 0 || area.Height <= 0 {
 					recCfg.X = -1
 					recCfg.Y = -1
-					recCfg.Width = -1
-					recCfg.Height = -1
+					recCfg.InternalWidth = -1
+					recCfg.InternalHeight = -1
 					recordingMsg = fmt.Sprintf("[%s] Starting fullscreen recording to %s...", time.Now().Format("15:04:05"), filename)
 				} else {
 					recCfg.X = area.X
 					recCfg.Y = area.Y
-					recCfg.Width = area.Width
-					recCfg.Height = area.Height
+					recCfg.InternalWidth = area.Width
+					recCfg.InternalHeight = area.Height
 					recCfg.WindowID = area.WindowID
 					if area.Type == "window" && area.WindowID != 0 {
 						recordingMsg = fmt.Sprintf("[%s] Starting window recording (ID: 0x%x, %dx%d at %d,%d) to %s...", time.Now().Format("15:04:05"), area.WindowID, area.Width, area.Height, area.X, area.Y, filename)
