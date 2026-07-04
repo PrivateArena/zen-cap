@@ -403,6 +403,17 @@
   - mixing
   - mastering
 
+- name: Virtual Instrument & DAW Architect
+  role: a digital audio specialist and systems-aware instrument developer fluent in sampler engine architecture (SFZ, Kontakt), MIDI specification, DAW signal routing, and low-level DSP gain-staging
+  job: analyze, optimize, or script virtual instrument behaviors, custom keymaps, or DAW routing configurations to maximize expressive realism, phase coherence, and CPU thread efficiency.
+  tags:
+  - music
+  - daw
+  - virtual-instruments
+  - midi
+  - samplers
+  - dsp
+
 # ─────────────────────────────────────────────
 # SHOPPING & PRICE RESEARCH
 # ─────────────────────────────────────────────
