@@ -7,9 +7,32 @@ import (
 	"unsafe"
 
 	"zen-cap/pkg/av"
+	"zen-cap/pkg/config"
 
 	astiav "github.com/asticode/go-astiav"
 )
+
+// RecorderConfigFromConfig builds a RecorderConfig from the global config,
+// populating encoder, audio, and all shared fields. The caller then
+// overrides display/area/fps/bitrate/output as needed.
+func RecorderConfigFromConfig(cfg *config.Config) RecorderConfig {
+	return RecorderConfig{
+		Display:    ":0.0",
+		FPS:        cfg.Recorder.FPS,
+		Bitrate:    cfg.Recorder.Bitrate,
+		ScaleAlgo:  cfg.Recorder.Encoder.ScaleAlgo,
+		EncoderPreset:    cfg.Recorder.Encoder.Preset,
+		EncoderCRF:       cfg.Recorder.Encoder.CRF,
+		EncoderTune:      cfg.Recorder.Encoder.Tune,
+		EncoderProfile:   cfg.Recorder.Encoder.Profile,
+		EncoderPixFormat: cfg.Recorder.Encoder.PixelFormat,
+		AudioDevice:      cfg.Recorder.Audio.Device,
+		AudioEnabled:     cfg.Recorder.Audio.Enabled,
+		AudioSampleRate:  cfg.Recorder.Audio.SampleRate,
+		AudioChannels:    cfg.Recorder.Audio.Channels,
+		AudioBitrate:     cfg.Recorder.Audio.Bitrate,
+	}
+}
 
 const aacFrameSamples = 1024
 
@@ -479,25 +502,20 @@ func convertAudioFrame(src *astiav.Frame, dstFmt astiav.SampleFormat, dstSampleR
 		}
 
 		planeBytes := srcNb * 4
-		left := make([]byte, planeBytes)
-		right := make([]byte, planeBytes)
+		buf := make([]byte, planeBytes*2)
 
 		for i := 0; i < srcNb; i++ {
 			off := i * 4
 			l := float32(int16(srcBytes[off])|int16(srcBytes[off+1])<<8) / 32768.0
 			r := float32(int16(srcBytes[off+2])|int16(srcBytes[off+3])<<8) / 32768.0
 
-			*(*float32)(unsafe.Pointer(&left[i*4])) = l
-			*(*float32)(unsafe.Pointer(&right[i*4])) = r
+			*(*float32)(unsafe.Pointer(&buf[i*4])) = l
+			*(*float32)(unsafe.Pointer(&buf[planeBytes+i*4])) = r
 		}
 
-		if err := dst.Data().SetBytes(left, 0); err != nil {
+		if err := dst.Data().SetBytes(buf, 0); err != nil {
 			dst.Free()
-			return nil, fmt.Errorf("set dst plane 0: %w", err)
-		}
-		if err := dst.Data().SetBytes(right, 1); err != nil {
-			dst.Free()
-			return nil, fmt.Errorf("set dst plane 1: %w", err)
+			return nil, fmt.Errorf("set dst bytes: %w", err)
 		}
 		return dst, nil
 	}

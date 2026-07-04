@@ -25,9 +25,9 @@ type AudioDevice struct {
 func OpenAudioDevice(cfg AudioDeviceConfig) (*AudioDevice, error) {
 	Init()
 
-	inputFormat := astiav.FindInputFormat("pulse")
+	inputFormat := astiav.FindInputFormat("alsa")
 	if inputFormat == nil {
-		return nil, fmt.Errorf("pulse audio input format not found")
+		return nil, fmt.Errorf("ALSA audio input format not found (ffmpeg built without ALSA)")
 	}
 
 	options := astiav.NewDictionary()

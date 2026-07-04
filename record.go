@@ -100,29 +100,19 @@ func handleRecord() error {
 		bitrateVal = cfg.Recorder.Bitrate
 	}
 
-	recCfg := recorder.RecorderConfig{
-		Display:    *disp,
-		X:          x,
-		Y:          y,
-		Width:      w,
-		Height:     h,
-		FPS:        fpsVal,
-		OutputPath: outputPath,
-		Bitrate:    bitrateVal,
-		WindowID:   windowID,
-
-		ScaleAlgo:        cfg.Recorder.Encoder.ScaleAlgo,
-		EncoderPreset:    cfg.Recorder.Encoder.Preset,
-		EncoderCRF:       cfg.Recorder.Encoder.CRF,
-		EncoderTune:      cfg.Recorder.Encoder.Tune,
-		EncoderProfile:   cfg.Recorder.Encoder.Profile,
-		EncoderPixFormat: cfg.Recorder.Encoder.PixelFormat,
-
-		AudioDevice:     cfg.Recorder.Audio.Device,
-		AudioEnabled:    cfg.Recorder.Audio.Enabled,
-		AudioSampleRate: cfg.Recorder.Audio.SampleRate,
-		AudioChannels:   cfg.Recorder.Audio.Channels,
-		AudioBitrate:    cfg.Recorder.Audio.Bitrate,
+	recCfg := recorder.RecorderConfigFromConfig(cfg)
+	recCfg.Display = *disp
+	recCfg.X = x
+	recCfg.Y = y
+	recCfg.Width = w
+	recCfg.Height = h
+	recCfg.OutputPath = outputPath
+	recCfg.WindowID = windowID
+	if *fps > 0 {
+		recCfg.FPS = *fps
+	}
+	if *bitrate > 0 {
+		recCfg.Bitrate = *bitrate
 	}
 
 	rec := recorder.NewRecorder(recCfg)

@@ -1089,23 +1089,8 @@ func handleService() error {
 				markedAreaMu.Unlock()
 
 				var recordingMsg string
-				recCfg := recorder.RecorderConfig{
-					Display:    ":0.0",
-					FPS:        30,
-					OutputPath: filename,
-					Bitrate:    4000000,
-					ScaleAlgo:        cfg.Recorder.Encoder.ScaleAlgo,
-					EncoderPreset:    cfg.Recorder.Encoder.Preset,
-					EncoderCRF:       cfg.Recorder.Encoder.CRF,
-					EncoderTune:      cfg.Recorder.Encoder.Tune,
-					EncoderProfile:   cfg.Recorder.Encoder.Profile,
-					EncoderPixFormat: cfg.Recorder.Encoder.PixelFormat,
-					AudioDevice:      cfg.Recorder.Audio.Device,
-					AudioEnabled:     cfg.Recorder.Audio.Enabled,
-					AudioSampleRate:  cfg.Recorder.Audio.SampleRate,
-					AudioChannels:    cfg.Recorder.Audio.Channels,
-					AudioBitrate:     cfg.Recorder.Audio.Bitrate,
-				}
+				recCfg := recorder.RecorderConfigFromConfig(cfg)
+				recCfg.OutputPath = filename
 
 				if area.Type == "fullscreen" || area.X < 0 || area.Y < 0 || area.Width <= 0 || area.Height <= 0 {
 					recCfg.X = -1
