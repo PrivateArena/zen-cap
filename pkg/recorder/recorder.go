@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sync"
 	"time"
+	"unsafe"
 
 	"zen-cap/pkg/av"
 
@@ -186,6 +187,8 @@ func (r *Recorder) run() {
 	var audioEncoder *av.AudioEncoder
 	var audioStreamIdx int
 	var audioFifo *astiav.AudioFifo
+	var audioFifoFmt astiav.SampleFormat
+	var audioFifoCh int
 	var stopAudio chan struct{}
 	var audioDone chan struct{}
 
@@ -230,7 +233,17 @@ func (r *Recorder) run() {
 			return
 		}
 
-		audioFifo = astiav.AllocAudioFifo(audioEncoder.CodecContext().SampleFormat(), ch, aacFrameSamples*4)
+		// Detect actual decoder format from the codec context. Pulse
+		// typically outputs S16LE interleaved, but the AAC encoder needs
+		// FLTP planar — we'll convert in runAudio.
+		audioFifoFmt = audioDevice.SampleFormat()
+		audioFifoCh = audioDevice.Channels()
+		fmt.Printf("Audio format: %v %dch @ %dHz\n", audioFifoFmt, audioFifoCh, audioDevice.SampleRate())
+
+		// Allocate FIFO with the DEVICE's format (not encoder's) so the
+		// raw pulse frames can be written directly. Conversion to encoder
+		// format happens right before encoding.
+		audioFifo = astiav.AllocAudioFifo(audioFifoFmt, audioFifoCh, aacFrameSamples*4)
 		if audioFifo == nil {
 			audioDevice.Close()
 			audioEncoder.Close()
@@ -261,7 +274,7 @@ func (r *Recorder) run() {
 	if r.cfg.AudioEnabled && audioDevice != nil {
 		go func() {
 			defer close(audioDone)
-			r.runAudio(audioDevice, audioEncoder, audioFifo, audioStreamIdx, muxer, stopAudio)
+			r.runAudio(audioDevice, audioEncoder, audioFifo, audioFifoFmt, audioFifoCh, audioStreamIdx, muxer, stopAudio)
 		}()
 	}
 
@@ -310,6 +323,7 @@ flush:
 
 	if audioEncoder != nil {
 		fmt.Println("Flushing audio encoder...")
+		r.flushAudioFifo(audioFifo, audioEncoder, audioFifoFmt, audioFifoCh, audioStreamIdx, muxer)
 		if err := audioEncoder.Encode(nil, func(pkt *astiav.Packet) error {
 			return muxer.WritePacket(pkt, audioStreamIdx, audioEncoder.CodecContext().TimeBase())
 		}); err != nil {
@@ -328,15 +342,14 @@ flush:
 	fmt.Println("Recording finished.")
 }
 
-func (r *Recorder) runAudio(device *av.AudioDevice, enc *av.AudioEncoder, fifo *astiav.AudioFifo, streamIdx int, muxer *av.Muxer, stop <-chan struct{}) {
+func (r *Recorder) runAudio(device *av.AudioDevice, enc *av.AudioEncoder, fifo *astiav.AudioFifo, fifoFmt astiav.SampleFormat, fifoCh int, streamIdx int, muxer *av.Muxer, stop <-chan struct{}) {
 	encSampleFmt := enc.CodecContext().SampleFormat()
 	encSampleRate := enc.CodecContext().SampleRate()
 
 	for {
 		select {
 		case <-stop:
-			// Encode any remaining buffered samples
-			r.flushAudioFifo(fifo, enc, streamIdx, muxer, encSampleFmt, encSampleRate)
+			r.flushAudioFifo(fifo, enc, fifoFmt, fifoCh, streamIdx, muxer)
 			return
 		default:
 		}
@@ -347,7 +360,7 @@ func (r *Recorder) runAudio(device *av.AudioDevice, enc *av.AudioEncoder, fifo *
 			return
 		}
 
-		// Write into FIFO
+		// Write into FIFO (in device-native format)
 		if _, err := fifo.Write(frame); err != nil {
 			fmt.Printf("Audio error: failed to write to FIFO: %v\n", err)
 			return
@@ -355,21 +368,29 @@ func (r *Recorder) runAudio(device *av.AudioDevice, enc *av.AudioEncoder, fifo *
 
 		// Drain FIFO in AAC frame chunks
 		for fifo.Size() >= aacFrameSamples {
-			outFrame := astiav.AllocFrame()
-			outFrame.SetSampleFormat(encSampleFmt)
-			outFrame.SetChannelLayout(astiav.ChannelLayoutStereo)
-			outFrame.SetSampleRate(encSampleRate)
-			outFrame.SetNbSamples(aacFrameSamples)
-			if err := outFrame.AllocBuffer(0); err != nil {
-				outFrame.Free()
-				fmt.Printf("Audio error: failed to allocate output frame: %v\n", err)
+			tmpFrame := astiav.AllocFrame()
+			tmpFrame.SetSampleFormat(fifoFmt)
+		tmpFrame.SetChannelLayout(chLayoutFromCount(fifoCh))
+		tmpFrame.SetSampleRate(encSampleRate)
+		tmpFrame.SetNbSamples(aacFrameSamples)
+		if err := tmpFrame.AllocBuffer(0); err != nil {
+				tmpFrame.Free()
+				fmt.Printf("Audio error: failed to allocate tmp frame: %v\n", err)
 				return
-			}
+		}
 
-			n, err := fifo.Read(outFrame)
-			if err != nil || n <= 0 {
-				outFrame.Free()
-				break
+		n, err := fifo.Read(tmpFrame)
+		if err != nil || n <= 0 {
+			tmpFrame.Free()
+			break
+		}
+
+		// Convert device format → encoder format
+		outFrame, err := convertAudioFrame(tmpFrame, encSampleFmt, encSampleRate)
+			tmpFrame.Free()
+			if err != nil {
+				fmt.Printf("Audio error: format conversion failed: %v\n", err)
+				return
 			}
 
 			if err := enc.Encode(outFrame, func(pkt *astiav.Packet) error {
@@ -384,23 +405,31 @@ func (r *Recorder) runAudio(device *av.AudioDevice, enc *av.AudioEncoder, fifo *
 	}
 }
 
-func (r *Recorder) flushAudioFifo(fifo *astiav.AudioFifo, enc *av.AudioEncoder, streamIdx int, muxer *av.Muxer, sampleFmt astiav.SampleFormat, sampleRate int) {
+func (r *Recorder) flushAudioFifo(fifo *astiav.AudioFifo, enc *av.AudioEncoder, fifoFmt astiav.SampleFormat, fifoCh int, streamIdx int, muxer *av.Muxer) {
+	encSampleFmt := enc.CodecContext().SampleFormat()
+	encSampleRate := enc.CodecContext().SampleRate()
+
 	for fifo.Size() > 0 {
 		nb := fifo.Size()
 		if nb > aacFrameSamples {
 			nb = aacFrameSamples
 		}
-		outFrame := astiav.AllocFrame()
-		outFrame.SetSampleFormat(sampleFmt)
-		outFrame.SetChannelLayout(astiav.ChannelLayoutStereo)
-		outFrame.SetSampleRate(sampleRate)
-		outFrame.SetNbSamples(nb)
-		if err := outFrame.AllocBuffer(0); err != nil {
-			outFrame.Free()
+		tmpFrame := astiav.AllocFrame()
+		tmpFrame.SetSampleFormat(fifoFmt)
+		tmpFrame.SetChannelLayout(chLayoutFromCount(fifoCh))
+		tmpFrame.SetSampleRate(encSampleRate)
+		tmpFrame.SetNbSamples(nb)
+		if err := tmpFrame.AllocBuffer(0); err != nil {
+			tmpFrame.Free()
 			return
 		}
-		if _, err := fifo.Read(outFrame); err != nil {
-			outFrame.Free()
+		if _, err := fifo.Read(tmpFrame); err != nil {
+			tmpFrame.Free()
+			return
+		}
+		outFrame, err := convertAudioFrame(tmpFrame, encSampleFmt, encSampleRate)
+		tmpFrame.Free()
+		if err != nil {
 			return
 		}
 		if err := enc.Encode(outFrame, func(pkt *astiav.Packet) error {
@@ -411,4 +440,75 @@ func (r *Recorder) flushAudioFifo(fifo *astiav.AudioFifo, enc *av.AudioEncoder, 
 		}
 		outFrame.Free()
 	}
+}
+
+// convertAudioFrame converts src (device-native format) to dstFmt and returns
+// a newly allocated frame. Handles S16LE interleaved → FLTP planar, and
+// pass-through when formats match.
+func convertAudioFrame(src *astiav.Frame, dstFmt astiav.SampleFormat, dstSampleRate int) (*astiav.Frame, error) {
+	srcFmt := src.SampleFormat()
+	srcCh := src.ChannelLayout().Channels()
+	srcNb := src.NbSamples()
+	srcRate := src.SampleRate()
+
+	if srcFmt == dstFmt && srcRate == dstSampleRate {
+		dst := src.Clone()
+		return dst, nil
+	}
+
+	dst := astiav.AllocFrame()
+	dst.SetSampleFormat(dstFmt)
+	dst.SetChannelLayout(chLayoutFromCount(srcCh))
+	dst.SetSampleRate(dstSampleRate)
+	dst.SetNbSamples(srcNb)
+	if err := dst.AllocBuffer(0); err != nil {
+		dst.Free()
+		return nil, fmt.Errorf("alloc dst frame: %w", err)
+	}
+
+	// Handle conversion: S16LE (interleaved, plane 0) → FLTP (planar)
+	if srcFmt == astiav.SampleFormatS16 && dstFmt == astiav.SampleFormatFltp {
+		srcBytes, err := src.Data().Bytes(0)
+		if err != nil {
+			dst.Free()
+			return nil, fmt.Errorf("src bytes: %w", err)
+		}
+		if len(srcBytes) < srcNb*srcCh*2 {
+			dst.Free()
+			return nil, fmt.Errorf("unexpected src data size %d < %d", len(srcBytes), srcNb*srcCh*2)
+		}
+
+		planeBytes := srcNb * 4
+		left := make([]byte, planeBytes)
+		right := make([]byte, planeBytes)
+
+		for i := 0; i < srcNb; i++ {
+			off := i * 4
+			l := float32(int16(srcBytes[off])|int16(srcBytes[off+1])<<8) / 32768.0
+			r := float32(int16(srcBytes[off+2])|int16(srcBytes[off+3])<<8) / 32768.0
+
+			*(*float32)(unsafe.Pointer(&left[i*4])) = l
+			*(*float32)(unsafe.Pointer(&right[i*4])) = r
+		}
+
+		if err := dst.Data().SetBytes(left, 0); err != nil {
+			dst.Free()
+			return nil, fmt.Errorf("set dst plane 0: %w", err)
+		}
+		if err := dst.Data().SetBytes(right, 1); err != nil {
+			dst.Free()
+			return nil, fmt.Errorf("set dst plane 1: %w", err)
+		}
+		return dst, nil
+	}
+
+	dst.Free()
+	return nil, fmt.Errorf("unsupported audio conversion: %v → %v", srcFmt, dstFmt)
+}
+
+func chLayoutFromCount(n int) astiav.ChannelLayout {
+	if n == 1 {
+		return astiav.ChannelLayoutMono
+	}
+	return astiav.ChannelLayoutStereo
 }
