@@ -117,6 +117,12 @@ func handleRecord() error {
 		EncoderTune:      cfg.Recorder.Encoder.Tune,
 		EncoderProfile:   cfg.Recorder.Encoder.Profile,
 		EncoderPixFormat: cfg.Recorder.Encoder.PixelFormat,
+
+		AudioDevice:     cfg.Recorder.Audio.Device,
+		AudioEnabled:    cfg.Recorder.Audio.Enabled,
+		AudioSampleRate: cfg.Recorder.Audio.SampleRate,
+		AudioChannels:   cfg.Recorder.Audio.Channels,
+		AudioBitrate:    cfg.Recorder.Audio.Bitrate,
 	}
 
 	rec := recorder.NewRecorder(recCfg)

@@ -149,6 +149,89 @@ func (e *VideoEncoder) CodecContext() *astiav.CodecContext {
 	return e.codecCtx
 }
 
+type AudioEncoder struct {
+	codecCtx *astiav.CodecContext
+	codec    *astiav.Codec
+	pkt      *astiav.Packet
+	pts      int64
+}
+
+func NewAudioEncoder(sampleRate, channels int, bitrate int64) (*AudioEncoder, error) {
+	Init()
+
+	codec := astiav.FindEncoder(astiav.CodecIDAac)
+	if codec == nil {
+		return nil, fmt.Errorf("AAC encoder not found")
+	}
+	codecCtx := astiav.AllocCodecContext(codec)
+	if codecCtx == nil {
+		return nil, fmt.Errorf("failed to allocate audio codec context")
+	}
+
+	codecCtx.SetSampleRate(sampleRate)
+	codecCtx.SetChannelLayout(astiav.ChannelLayoutStereo)
+	codecCtx.SetSampleFormat(astiav.SampleFormatFltp)
+	codecCtx.SetTimeBase(astiav.NewRational(1, sampleRate))
+
+	if bitrate > 0 {
+		codecCtx.SetBitRate(bitrate)
+	}
+
+	if err := codecCtx.Open(codec, nil); err != nil {
+		codecCtx.Free()
+		return nil, fmt.Errorf("failed to open audio encoder: %w", err)
+	}
+
+	pkt := astiav.AllocPacket()
+	if pkt == nil {
+		codecCtx.Free()
+		return nil, fmt.Errorf("failed to allocate audio packet")
+	}
+
+	return &AudioEncoder{
+		codecCtx: codecCtx,
+		codec:    codec,
+		pkt:      pkt,
+	}, nil
+}
+
+func (e *AudioEncoder) Encode(frame *astiav.Frame, callback func(*astiav.Packet) error) error {
+	if frame != nil {
+		frame.SetPts(e.pts)
+		e.pts += int64(frame.NbSamples())
+	}
+	if err := e.codecCtx.SendFrame(frame); err != nil {
+		return fmt.Errorf("failed to send audio frame to encoder: %w", err)
+	}
+	for {
+		e.pkt.Unref()
+		err := e.codecCtx.ReceivePacket(e.pkt)
+		if err == nil {
+			if err := callback(e.pkt); err != nil {
+				return err
+			}
+			continue
+		}
+		if err == astiav.ErrEagain || err == astiav.ErrEof {
+			return nil
+		}
+		return fmt.Errorf("audio encoder error: %w", err)
+	}
+}
+
+func (e *AudioEncoder) CodecContext() *astiav.CodecContext {
+	return e.codecCtx
+}
+
+func (e *AudioEncoder) Close() {
+	if e.pkt != nil {
+		e.pkt.Free()
+	}
+	if e.codecCtx != nil {
+		e.codecCtx.Free()
+	}
+}
+
 func (e *VideoEncoder) Close() {
 	if e.pkt != nil {
 		e.pkt.Free()

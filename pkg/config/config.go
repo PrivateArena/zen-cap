@@ -56,13 +56,23 @@ type EncoderSettings struct {
 	ExtraArgs   string `json:"ffmpeg_extra_args,omitempty"`
 }
 
+// AudioSettings holds audio capture and encoding parameters.
+type AudioSettings struct {
+	Enabled     bool   `json:"enabled"`
+	Device      string `json:"device,omitempty"`
+	SampleRate  int    `json:"sample_rate,omitempty"`
+	Channels    int    `json:"channels,omitempty"`
+	Bitrate     int64  `json:"bitrate,omitempty"`
+}
+
 // RecorderSettings holds top-level recording configuration.
 type RecorderSettings struct {
-	Width    int             `json:"width,omitempty"`
-	Height   int             `json:"height,omitempty"`
-	FPS      int             `json:"fps,omitempty"`
-	Bitrate  int64           `json:"bitrate,omitempty"`
-	Encoder  EncoderSettings `json:"encoder"`
+	Width   int             `json:"width,omitempty"`
+	Height  int             `json:"height,omitempty"`
+	FPS     int             `json:"fps,omitempty"`
+	Bitrate int64           `json:"bitrate,omitempty"`
+	Encoder EncoderSettings `json:"encoder"`
+	Audio   AudioSettings   `json:"audio"`
 }
 
 type Config struct {
@@ -231,6 +241,13 @@ func DefaultConfig() *Config {
 				PixelFormat: "yuv420p",
 				ExtraArgs:   "",
 			},
+			Audio: AudioSettings{
+				Enabled:    false,
+				Device:     "default",
+				SampleRate: 48000,
+				Channels:   2,
+				Bitrate:    128000,
+			},
 		},
 		SnippetPicker: SnippetPickerConfig{
 			Width:    550,
@@ -316,6 +333,13 @@ func DefaultPortableConfig(binDir string) *Config {
 				Profile:     "",
 				PixelFormat: "yuv420p",
 				ExtraArgs:   "",
+			},
+			Audio: AudioSettings{
+				Enabled:    false,
+				Device:     "default",
+				SampleRate: 48000,
+				Channels:   2,
+				Bitrate:    128000,
 			},
 		},
 	}
@@ -614,6 +638,18 @@ func readConfig(path string, binDir string, isPortable bool) (*Config, error) {
 	}
 	if cfg.Recorder.Encoder.PixelFormat == "" {
 		cfg.Recorder.Encoder.PixelFormat = defaults.Recorder.Encoder.PixelFormat
+	}
+	if cfg.Recorder.Audio.Device == "" {
+		cfg.Recorder.Audio.Device = defaults.Recorder.Audio.Device
+	}
+	if cfg.Recorder.Audio.SampleRate <= 0 {
+		cfg.Recorder.Audio.SampleRate = defaults.Recorder.Audio.SampleRate
+	}
+	if cfg.Recorder.Audio.Channels <= 0 {
+		cfg.Recorder.Audio.Channels = defaults.Recorder.Audio.Channels
+	}
+	if cfg.Recorder.Audio.Bitrate <= 0 {
+		cfg.Recorder.Audio.Bitrate = defaults.Recorder.Audio.Bitrate
 	}
 
 	return &cfg, nil

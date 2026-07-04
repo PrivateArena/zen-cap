@@ -2,19 +2,20 @@ package av
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/asticode/go-astiav"
 )
 
 type Muxer struct {
 	formatCtx     *astiav.FormatContext
-	stream        *astiav.Stream
 	ioCtx         *astiav.IOContext
 	path          string
 	headerWritten bool
+	mu            sync.Mutex
 }
 
-func NewMuxer(path string, encCtx *astiav.CodecContext) (*Muxer, error) {
+func NewMuxer(path string) (*Muxer, error) {
 	Init()
 
 	formatCtx, err := astiav.AllocOutputFormatContext(nil, "", path)
@@ -24,24 +25,6 @@ func NewMuxer(path string, encCtx *astiav.CodecContext) (*Muxer, error) {
 	if formatCtx == nil {
 		return nil, fmt.Errorf("allocated output format context is nil")
 	}
-
-	stream := formatCtx.NewStream(nil)
-	if stream == nil {
-		formatCtx.Free()
-		return nil, fmt.Errorf("failed to create output stream")
-	}
-
-	// Copy codec parameters (includes the extradata written by GlobalHeader).
-	if err := stream.CodecParameters().FromCodecContext(encCtx); err != nil {
-		formatCtx.Free()
-		return nil, fmt.Errorf("failed to copy codec parameters to stream: %w", err)
-	}
-
-	stream.SetTimeBase(encCtx.TimeBase())
-
-	// NOTE: We intentionally do NOT set GlobalHeader on the encoder context
-	// here. The encoder already has it set before Open() in NewVideoEncoder().
-	// Setting it here (after Open) has no effect and was misleading dead code.
 
 	var ioCtx *astiav.IOContext
 	if !formatCtx.OutputFormat().Flags().Has(astiav.IOFormatFlagNofile) {
@@ -53,26 +36,50 @@ func NewMuxer(path string, encCtx *astiav.CodecContext) (*Muxer, error) {
 		formatCtx.SetPb(ioCtx)
 	}
 
-	if err := formatCtx.WriteHeader(nil); err != nil {
-		if ioCtx != nil {
-			ioCtx.Close()
-		}
-		formatCtx.Free()
-		return nil, fmt.Errorf("failed to write output header: %w", err)
-	}
-
 	return &Muxer{
-		formatCtx:     formatCtx,
-		stream:        stream,
-		ioCtx:         ioCtx,
-		path:          path,
-		headerWritten: true,
+		formatCtx: formatCtx,
+		ioCtx:     ioCtx,
+		path:      path,
 	}, nil
 }
 
-func (m *Muxer) WritePacket(pkt *astiav.Packet, encTimeBase astiav.Rational) error {
-	pkt.RescaleTs(encTimeBase, m.stream.TimeBase())
-	pkt.SetStreamIndex(m.stream.Index())
+func (m *Muxer) AddStream(encCtx *astiav.CodecContext) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	stream := m.formatCtx.NewStream(nil)
+	if stream == nil {
+		return -1, fmt.Errorf("failed to create output stream")
+	}
+	if err := stream.CodecParameters().FromCodecContext(encCtx); err != nil {
+		return -1, fmt.Errorf("failed to copy codec parameters to stream: %w", err)
+	}
+	stream.SetTimeBase(encCtx.TimeBase())
+
+	return stream.Index(), nil
+}
+
+func (m *Muxer) WriteHeader() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.headerWritten {
+		return nil
+	}
+	if err := m.formatCtx.WriteHeader(nil); err != nil {
+		return fmt.Errorf("failed to write output header: %w", err)
+	}
+	m.headerWritten = true
+	return nil
+}
+
+func (m *Muxer) WritePacket(pkt *astiav.Packet, streamIdx int, encTimeBase astiav.Rational) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	stream := m.formatCtx.Streams()[streamIdx]
+	pkt.RescaleTs(encTimeBase, stream.TimeBase())
+	pkt.SetStreamIndex(streamIdx)
 
 	if err := m.formatCtx.WriteInterleavedFrame(pkt); err != nil {
 		return fmt.Errorf("failed to write frame: %w", err)
@@ -81,6 +88,9 @@ func (m *Muxer) WritePacket(pkt *astiav.Packet, encTimeBase astiav.Rational) err
 }
 
 func (m *Muxer) Close() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	var writeTrailerErr error
 	if m.headerWritten && m.formatCtx != nil {
 		if err := m.formatCtx.WriteTrailer(); err != nil {

@@ -92,6 +92,13 @@
       "ffmpeg_tune": "animation",
       "ffmpeg_pixel_format": "yuv420p",
       "ffmpeg_extra_args": ""
+    },
+    "audio": {
+      "enabled": true,
+      "device": "default",
+      "sample_rate": 48000,
+      "channels": 2,
+      "bitrate": 128000
     }
   }
 }

@@ -10,6 +10,8 @@ import (
 	astiav "github.com/asticode/go-astiav"
 )
 
+const aacFrameSamples = 1024
+
 type RecorderConfig struct {
 	Display    string
 	X          int
@@ -27,6 +29,12 @@ type RecorderConfig struct {
 	EncoderTune      string
 	EncoderProfile   string
 	EncoderPixFormat string
+
+	AudioDevice     string
+	AudioEnabled    bool
+	AudioSampleRate int
+	AudioChannels   int
+	AudioBitrate    int64
 }
 
 type Recorder struct {
@@ -111,20 +119,15 @@ func (r *Recorder) run() {
 	w := device.Width()
 	h := device.Height()
 
-	// FIX: Prime the device with one real frame before creating the scaler so
-	// that device.PixelFormat() reflects the actual decoded frame format rather
-	// than the codec-context guess. This is the root cause of pink video.
 	firstFrame, err := device.ReadFrame()
 	if err != nil {
 		fmt.Printf("Recorder error: failed to read first frame: %v\n", err)
 		return
 	}
 
-	// Snapshot the real pixel format now that we have a decoded frame.
 	srcPixFmt := device.PixelFormat()
 	fmt.Printf("Capture pixel format: %v\n", srcPixFmt)
 
-	// Open Video Encoder
 	encOpts := &av.EncoderOptions{
 		Preset:      r.cfg.EncoderPreset,
 		CRF:         r.cfg.EncoderCRF,
@@ -139,7 +142,6 @@ func (r *Recorder) run() {
 	}
 	defer encoder.Close()
 
-	// Open Scaler with the now-accurate source pixel format
 	scaleAlgo := r.cfg.ScaleAlgo
 	if scaleAlgo == "" {
 		scaleAlgo = "lanczos"
@@ -151,13 +153,18 @@ func (r *Recorder) run() {
 	}
 	defer scaler.Close()
 
-	// Open Output Muxer
-	muxer, err := av.NewMuxer(r.cfg.OutputPath, encoder.CodecContext())
+	muxer, err := av.NewMuxer(r.cfg.OutputPath)
 	if err != nil {
 		fmt.Printf("Recorder error: failed to initialize muxer: %v\n", err)
 		return
 	}
 	defer muxer.Close()
+
+	videoStreamIdx, err := muxer.AddStream(encoder.CodecContext())
+	if err != nil {
+		fmt.Printf("Recorder error: failed to add video stream: %v\n", err)
+		return
+	}
 
 	// Allocate reusable YUV420P destination frame
 	yuvFrame := astiav.AllocFrame()
@@ -166,11 +173,6 @@ func (r *Recorder) run() {
 	yuvFrame.SetHeight(h)
 	yuvFrame.SetPixelFormat(astiav.PixelFormatYuv420P)
 
-	// FIX (pink video): stamp matching color metadata so ScaleFrame knows the
-	// destination should be limited-range BT.709 YUV. Must match the encoder's
-	// codec context settings. ColorPrimaries/ColorTransferCharacteristic are
-	// set on the encoder's CodecContext (not Frame) and propagated to the
-	// stream VUI via FromCodecParameters in the muxer.
 	yuvFrame.SetColorRange(astiav.ColorRangeMpeg)
 	yuvFrame.SetColorSpace(astiav.ColorSpaceBt709)
 
@@ -179,19 +181,97 @@ func (r *Recorder) run() {
 		return
 	}
 
-	encodeFrame := func(srcFrame *astiav.Frame) error {
+	// Audio setup
+	var audioDevice *av.AudioDevice
+	var audioEncoder *av.AudioEncoder
+	var audioStreamIdx int
+	var audioFifo *astiav.AudioFifo
+	var stopAudio chan struct{}
+	var audioDone chan struct{}
+
+	if r.cfg.AudioEnabled {
+		sr := r.cfg.AudioSampleRate
+		if sr <= 0 {
+			sr = 48000
+		}
+		ch := r.cfg.AudioChannels
+		if ch <= 0 {
+			ch = 2
+		}
+
+		audioCfg := av.AudioDeviceConfig{
+			Device:     r.cfg.AudioDevice,
+			SampleRate: sr,
+			Channels:   ch,
+		}
+
+		audioDevice, err = av.OpenAudioDevice(audioCfg)
+		if err != nil {
+			fmt.Printf("Recorder error: failed to open audio device: %v\n", err)
+			return
+		}
+
+		abr := r.cfg.AudioBitrate
+		if abr <= 0 {
+			abr = 128000
+		}
+		audioEncoder, err = av.NewAudioEncoder(sr, ch, abr)
+		if err != nil {
+			audioDevice.Close()
+			fmt.Printf("Recorder error: failed to initialize audio encoder: %v\n", err)
+			return
+		}
+
+		audioStreamIdx, err = muxer.AddStream(audioEncoder.CodecContext())
+		if err != nil {
+			audioDevice.Close()
+			audioEncoder.Close()
+			fmt.Printf("Recorder error: failed to add audio stream: %v\n", err)
+			return
+		}
+
+		audioFifo = astiav.AllocAudioFifo(audioEncoder.CodecContext().SampleFormat(), ch, aacFrameSamples*4)
+		if audioFifo == nil {
+			audioDevice.Close()
+			audioEncoder.Close()
+			fmt.Printf("Recorder error: failed to allocate audio FIFO\n")
+			return
+		}
+
+		stopAudio = make(chan struct{})
+		audioDone = make(chan struct{})
+	}
+
+	// Write header once all streams are added
+	if err := muxer.WriteHeader(); err != nil {
+		fmt.Printf("Recorder error: %v\n", err)
+		return
+	}
+
+	encodeVideo := func(srcFrame *astiav.Frame) error {
 		if err := scaler.Scale(srcFrame, yuvFrame); err != nil {
 			return fmt.Errorf("scale failed: %w", err)
 		}
 		return encoder.Encode(yuvFrame, func(pkt *astiav.Packet) error {
-			return muxer.WritePacket(pkt, encoder.CodecContext().TimeBase())
+			return muxer.WritePacket(pkt, videoStreamIdx, encoder.CodecContext().TimeBase())
 		})
 	}
 
-	fmt.Printf("Recording started: %dx%d @ %d FPS -> %s\n", w, h, r.cfg.FPS, r.cfg.OutputPath)
+	// Start audio capture goroutine
+	if r.cfg.AudioEnabled && audioDevice != nil {
+		go func() {
+			defer close(audioDone)
+			r.runAudio(audioDevice, audioEncoder, audioFifo, audioStreamIdx, muxer, stopAudio)
+		}()
+	}
 
-	// Process the already-read first frame before entering the loop.
-	if err := encodeFrame(firstFrame); err != nil {
+	fmt.Printf("Recording started: %dx%d @ %d FPS -> %s", w, h, r.cfg.FPS, r.cfg.OutputPath)
+	if r.cfg.AudioEnabled {
+		fmt.Printf(" (with audio)")
+	}
+	fmt.Println()
+
+	if err := encodeVideo(firstFrame); err != nil {
 		fmt.Printf("Recorder error: encoding first frame failed: %v\n", err)
 		return
 	}
@@ -209,21 +289,126 @@ func (r *Recorder) run() {
 			break
 		}
 
-		if err := encodeFrame(srcFrame); err != nil {
+		if err := encodeVideo(srcFrame); err != nil {
 			fmt.Printf("Recorder error: %v\n", err)
 			break
 		}
 	}
 
 flush:
-	fmt.Println("Flushing encoder and finishing file...")
-	if err := encoder.Encode(nil, func(pkt *astiav.Packet) error {
-		return muxer.WritePacket(pkt, encoder.CodecContext().TimeBase())
-	}); err != nil {
-		fmt.Printf("Recorder error: flushing encoder failed: %v\n", err)
+	if stopAudio != nil {
+		close(stopAudio)
+		<-audioDone
 	}
 
-	// Give the muxer a moment to drain before Close() writes the trailer.
+	fmt.Println("Flushing video encoder...")
+	if err := encoder.Encode(nil, func(pkt *astiav.Packet) error {
+		return muxer.WritePacket(pkt, videoStreamIdx, encoder.CodecContext().TimeBase())
+	}); err != nil {
+		fmt.Printf("Recorder error: flushing video encoder failed: %v\n", err)
+	}
+
+	if audioEncoder != nil {
+		fmt.Println("Flushing audio encoder...")
+		if err := audioEncoder.Encode(nil, func(pkt *astiav.Packet) error {
+			return muxer.WritePacket(pkt, audioStreamIdx, audioEncoder.CodecContext().TimeBase())
+		}); err != nil {
+			fmt.Printf("Recorder error: flushing audio encoder failed: %v\n", err)
+		}
+	}
+
+	if audioFifo != nil {
+		audioFifo.Free()
+	}
+	if audioEncoder != nil {
+		audioEncoder.Close()
+	}
+
 	time.Sleep(100 * time.Millisecond)
 	fmt.Println("Recording finished.")
+}
+
+func (r *Recorder) runAudio(device *av.AudioDevice, enc *av.AudioEncoder, fifo *astiav.AudioFifo, streamIdx int, muxer *av.Muxer, stop <-chan struct{}) {
+	encSampleFmt := enc.CodecContext().SampleFormat()
+	encSampleRate := enc.CodecContext().SampleRate()
+
+	for {
+		select {
+		case <-stop:
+			// Encode any remaining buffered samples
+			r.flushAudioFifo(fifo, enc, streamIdx, muxer, encSampleFmt, encSampleRate)
+			return
+		default:
+		}
+
+		frame, err := device.ReadFrame()
+		if err != nil {
+			fmt.Printf("Audio error: %v\n", err)
+			return
+		}
+
+		// Write into FIFO
+		if _, err := fifo.Write(frame); err != nil {
+			fmt.Printf("Audio error: failed to write to FIFO: %v\n", err)
+			return
+		}
+
+		// Drain FIFO in AAC frame chunks
+		for fifo.Size() >= aacFrameSamples {
+			outFrame := astiav.AllocFrame()
+			outFrame.SetSampleFormat(encSampleFmt)
+			outFrame.SetChannelLayout(astiav.ChannelLayoutStereo)
+			outFrame.SetSampleRate(encSampleRate)
+			outFrame.SetNbSamples(aacFrameSamples)
+			if err := outFrame.AllocBuffer(0); err != nil {
+				outFrame.Free()
+				fmt.Printf("Audio error: failed to allocate output frame: %v\n", err)
+				return
+			}
+
+			n, err := fifo.Read(outFrame)
+			if err != nil || n <= 0 {
+				outFrame.Free()
+				break
+			}
+
+			if err := enc.Encode(outFrame, func(pkt *astiav.Packet) error {
+				return muxer.WritePacket(pkt, streamIdx, enc.CodecContext().TimeBase())
+			}); err != nil {
+				outFrame.Free()
+				fmt.Printf("Audio error: encode failed: %v\n", err)
+				return
+			}
+			outFrame.Free()
+		}
+	}
+}
+
+func (r *Recorder) flushAudioFifo(fifo *astiav.AudioFifo, enc *av.AudioEncoder, streamIdx int, muxer *av.Muxer, sampleFmt astiav.SampleFormat, sampleRate int) {
+	for fifo.Size() > 0 {
+		nb := fifo.Size()
+		if nb > aacFrameSamples {
+			nb = aacFrameSamples
+		}
+		outFrame := astiav.AllocFrame()
+		outFrame.SetSampleFormat(sampleFmt)
+		outFrame.SetChannelLayout(astiav.ChannelLayoutStereo)
+		outFrame.SetSampleRate(sampleRate)
+		outFrame.SetNbSamples(nb)
+		if err := outFrame.AllocBuffer(0); err != nil {
+			outFrame.Free()
+			return
+		}
+		if _, err := fifo.Read(outFrame); err != nil {
+			outFrame.Free()
+			return
+		}
+		if err := enc.Encode(outFrame, func(pkt *astiav.Packet) error {
+			return muxer.WritePacket(pkt, streamIdx, enc.CodecContext().TimeBase())
+		}); err != nil {
+			outFrame.Free()
+			return
+		}
+		outFrame.Free()
+	}
 }
