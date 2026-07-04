@@ -20,6 +20,13 @@ type RecorderConfig struct {
 	OutputPath string
 	Bitrate    int64
 	WindowID   uint32
+
+	ScaleAlgo        string
+	EncoderPreset    string
+	EncoderCRF       string
+	EncoderTune      string
+	EncoderProfile   string
+	EncoderPixFormat string
 }
 
 type Recorder struct {
@@ -118,7 +125,14 @@ func (r *Recorder) run() {
 	fmt.Printf("Capture pixel format: %v\n", srcPixFmt)
 
 	// Open Video Encoder
-	encoder, err := av.NewVideoEncoder(w, h, r.cfg.FPS, r.cfg.Bitrate)
+	encOpts := &av.EncoderOptions{
+		Preset:      r.cfg.EncoderPreset,
+		CRF:         r.cfg.EncoderCRF,
+		Tune:        r.cfg.EncoderTune,
+		Profile:     r.cfg.EncoderProfile,
+		PixelFormat: av.PixelFormatFromString(r.cfg.EncoderPixFormat),
+	}
+	encoder, err := av.NewVideoEncoder(w, h, r.cfg.FPS, r.cfg.Bitrate, encOpts)
 	if err != nil {
 		fmt.Printf("Recorder error: failed to initialize encoder: %v\n", err)
 		return
@@ -126,7 +140,11 @@ func (r *Recorder) run() {
 	defer encoder.Close()
 
 	// Open Scaler with the now-accurate source pixel format
-	scaler, err := av.NewScaler(w, h, srcPixFmt, w, h, astiav.PixelFormatYuv420P)
+	scaleAlgo := r.cfg.ScaleAlgo
+	if scaleAlgo == "" {
+		scaleAlgo = "lanczos"
+	}
+	scaler, err := av.NewScaler(w, h, srcPixFmt, w, h, astiav.PixelFormatYuv420P, scaleAlgo)
 	if err != nil {
 		fmt.Printf("Recorder error: failed to initialize scaler: %v\n", err)
 		return

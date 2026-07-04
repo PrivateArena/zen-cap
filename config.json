@@ -80,5 +80,18 @@
     "height": 690,
     "font_size": 24,
     "font_face": ""
+  },
+  "recorder": {
+    "fps": 30,
+    "bitrate": 4000000,
+    "encoder": {
+      "ffmpeg_encoder": "libx264",
+      "ffmpeg_scale_algo": "lanczos",
+      "ffmpeg_preset": "ultrafast",
+      "ffmpeg_crf": "28",
+      "ffmpeg_tune": "animation",
+      "ffmpeg_pixel_format": "yuv420p",
+      "ffmpeg_extra_args": ""
+    }
   }
 }

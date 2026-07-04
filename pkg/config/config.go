@@ -44,6 +44,27 @@ type SnippetPickerConfig struct {
 	FontFace string `json:"font_face"`
 }
 
+// EncoderSettings holds encoding parameters for screen recording.
+type EncoderSettings struct {
+	Encoder     string `json:"ffmpeg_encoder,omitempty"`
+	ScaleAlgo   string `json:"ffmpeg_scale_algo,omitempty"`
+	Preset      string `json:"ffmpeg_preset,omitempty"`
+	CRF         string `json:"ffmpeg_crf,omitempty"`
+	Tune        string `json:"ffmpeg_tune,omitempty"`
+	Profile     string `json:"ffmpeg_profile,omitempty"`
+	PixelFormat string `json:"ffmpeg_pixel_format,omitempty"`
+	ExtraArgs   string `json:"ffmpeg_extra_args,omitempty"`
+}
+
+// RecorderSettings holds top-level recording configuration.
+type RecorderSettings struct {
+	Width    int             `json:"width,omitempty"`
+	Height   int             `json:"height,omitempty"`
+	FPS      int             `json:"fps,omitempty"`
+	Bitrate  int64           `json:"bitrate,omitempty"`
+	Encoder  EncoderSettings `json:"encoder"`
+}
+
 type Config struct {
 	OutputDir            string          `json:"output_dir"`
 	Hotkeys              HotkeysConfig   `json:"hotkeys"`
@@ -61,9 +82,10 @@ type Config struct {
 	ClipboardSessionFile string          `json:"clipboard_session_file"`
 	SnippetFile          string          `json:"snippet_file"`
 	AutomationDir        string          `json:"automation_dir"`
-	TransformRules       []TransformRule `json:"transform_rules"`
-	Magnifier            MagnifierConfig `json:"magnifier"`
-	SnippetMode          string          `json:"snippet_mode"`          // "paste" or "type" (default: "paste")
+	TransformRules       []TransformRule  `json:"transform_rules"`
+	Magnifier            MagnifierConfig  `json:"magnifier"`
+	Recorder             RecorderSettings `json:"recorder"`
+	SnippetMode          string           `json:"snippet_mode"`          // "paste" or "type" (default: "paste")
 }
 
 type HotkeysConfig struct {
@@ -194,6 +216,22 @@ func DefaultConfig() *Config {
 			LensShape:        "circle",
 			SmoothScaling:    true,
 		},
+		Recorder: RecorderSettings{
+			Width:   0,
+			Height:  0,
+			FPS:     30,
+			Bitrate: 4000000,
+			Encoder: EncoderSettings{
+				Encoder:     "libx264",
+				ScaleAlgo:   "lanczos",
+				Preset:      "ultrafast",
+				CRF:         "28",
+				Tune:        "animation",
+				Profile:     "",
+				PixelFormat: "yuv420p",
+				ExtraArgs:   "",
+			},
+		},
 		SnippetPicker: SnippetPickerConfig{
 			Width:    550,
 			Height:   390,
@@ -263,6 +301,22 @@ func DefaultPortableConfig(binDir string) *Config {
 			Height:   390,
 			FontSize: 14,
 			FontFace: "",
+		},
+		Recorder: RecorderSettings{
+			Width:   0,
+			Height:  0,
+			FPS:     30,
+			Bitrate: 4000000,
+			Encoder: EncoderSettings{
+				Encoder:     "libx264",
+				ScaleAlgo:   "lanczos",
+				Preset:      "ultrafast",
+				CRF:         "28",
+				Tune:        "animation",
+				Profile:     "",
+				PixelFormat: "yuv420p",
+				ExtraArgs:   "",
+			},
 		},
 	}
 }
@@ -529,6 +583,37 @@ func readConfig(path string, binDir string, isPortable bool) (*Config, error) {
 	}
 	if cfg.SnippetPicker.FontFace == "" {
 		cfg.SnippetPicker.FontFace = defaults.SnippetPicker.FontFace
+	}
+
+	if cfg.Recorder.Width <= 0 {
+		cfg.Recorder.Width = defaults.Recorder.Width
+	}
+	if cfg.Recorder.Height <= 0 {
+		cfg.Recorder.Height = defaults.Recorder.Height
+	}
+	if cfg.Recorder.FPS <= 0 {
+		cfg.Recorder.FPS = defaults.Recorder.FPS
+	}
+	if cfg.Recorder.Bitrate <= 0 {
+		cfg.Recorder.Bitrate = defaults.Recorder.Bitrate
+	}
+	if cfg.Recorder.Encoder.Encoder == "" {
+		cfg.Recorder.Encoder.Encoder = defaults.Recorder.Encoder.Encoder
+	}
+	if cfg.Recorder.Encoder.ScaleAlgo == "" {
+		cfg.Recorder.Encoder.ScaleAlgo = defaults.Recorder.Encoder.ScaleAlgo
+	}
+	if cfg.Recorder.Encoder.Preset == "" {
+		cfg.Recorder.Encoder.Preset = defaults.Recorder.Encoder.Preset
+	}
+	if cfg.Recorder.Encoder.CRF == "" {
+		cfg.Recorder.Encoder.CRF = defaults.Recorder.Encoder.CRF
+	}
+	if cfg.Recorder.Encoder.Tune == "" {
+		cfg.Recorder.Encoder.Tune = defaults.Recorder.Encoder.Tune
+	}
+	if cfg.Recorder.Encoder.PixelFormat == "" {
+		cfg.Recorder.Encoder.PixelFormat = defaults.Recorder.Encoder.PixelFormat
 	}
 
 	return &cfg, nil

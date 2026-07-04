@@ -97,7 +97,7 @@ func captureScreenImpl(cfg CaptureConfig) (image.Image, error) {
 		return nil, fmt.Errorf("failed to allocate destination frame buffer: %w", err)
 	}
 
-	scaler, err := av.NewScaler(w, h, srcPixFmt, w, h, astiav.PixelFormatRgba)
+	scaler, err := av.NewScaler(w, h, srcPixFmt, w, h, astiav.PixelFormatRgba, "lanczos")
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize scaler: %w", err)
 	}

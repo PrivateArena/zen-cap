@@ -6,6 +6,14 @@ import (
 	astiav "github.com/asticode/go-astiav"
 )
 
+type EncoderOptions struct {
+	Preset      string
+	CRF         string
+	Tune        string
+	Profile     string
+	PixelFormat astiav.PixelFormat
+}
+
 type VideoEncoder struct {
 	codecCtx *astiav.CodecContext
 	codec    *astiav.Codec
@@ -14,7 +22,7 @@ type VideoEncoder struct {
 	fps      int
 }
 
-func NewVideoEncoder(w, h, fps int, bitrate int64) (*VideoEncoder, error) {
+func NewVideoEncoder(w, h, fps int, bitrate int64, opts *EncoderOptions) (*VideoEncoder, error) {
 	Init()
 
 	codec := astiav.FindEncoder(astiav.CodecIDH264)
@@ -29,7 +37,13 @@ func NewVideoEncoder(w, h, fps int, bitrate int64) (*VideoEncoder, error) {
 
 	codecCtx.SetWidth(w)
 	codecCtx.SetHeight(h)
-	codecCtx.SetPixelFormat(astiav.PixelFormatYuv420P)
+
+	pixFmt := astiav.PixelFormatYuv420P
+	if opts != nil && opts.PixelFormat > 0 {
+		pixFmt = opts.PixelFormat
+	}
+	codecCtx.SetPixelFormat(pixFmt)
+
 	codecCtx.SetTimeBase(astiav.NewRational(1, fps))
 	codecCtx.SetFramerate(astiav.NewRational(fps, 1))
 	// 2-second GOP gives good seeking granularity without bloating the file.
@@ -58,9 +72,30 @@ func NewVideoEncoder(w, h, fps int, bitrate int64) (*VideoEncoder, error) {
 
 	options := astiav.NewDictionary()
 	defer options.Free()
-	options.Set("preset", "ultrafast", 0)
-	options.Set("crf", "23", 0)
-	options.Set("tune", "zerolatency", 0)
+
+	preset := "ultrafast"
+	crf := "23"
+	tune := "zerolatency"
+	if opts != nil {
+		if opts.Preset != "" {
+			preset = opts.Preset
+		}
+		if opts.CRF != "" {
+			crf = opts.CRF
+		}
+		if opts.Tune != "" {
+			tune = opts.Tune
+		}
+	}
+	options.Set("preset", preset, 0)
+	options.Set("crf", crf, 0)
+	options.Set("tune", tune, 0)
+
+	if opts != nil && opts.Profile != "" {
+		if p := h264Profile(opts.Profile); p >= 0 {
+			codecCtx.SetProfile(p)
+		}
+	}
 
 	if err := codecCtx.Open(codec, options); err != nil {
 		codecCtx.Free()
@@ -120,5 +155,47 @@ func (e *VideoEncoder) Close() {
 	}
 	if e.codecCtx != nil {
 		e.codecCtx.Free()
+	}
+}
+
+func h264Profile(s string) astiav.Profile {
+	switch s {
+	case "baseline":
+		return astiav.ProfileH264Baseline
+	case "constrained_baseline":
+		return astiav.ProfileH264ConstrainedBaseline
+	case "main":
+		return astiav.ProfileH264Main
+	case "high":
+		return astiav.ProfileH264High
+	case "high10":
+		return astiav.ProfileH264High10
+	case "high422":
+		return astiav.ProfileH264High422
+	case "high444":
+		return astiav.ProfileH264High444
+	default:
+		return -1
+	}
+}
+
+func PixelFormatFromString(s string) astiav.PixelFormat {
+	switch s {
+	case "yuv420p":
+		return astiav.PixelFormatYuv420P
+	case "yuvj420p":
+		return astiav.PixelFormatYuvj420P
+	case "nv12":
+		return astiav.PixelFormatNv12
+	case "bgr0":
+		return astiav.PixelFormatBgr0
+	case "bgra":
+		return astiav.PixelFormatBgra
+	case "rgba":
+		return astiav.PixelFormatRgba
+	case "rgb0":
+		return astiav.PixelFormatRgb0
+	default:
+		return astiav.PixelFormatNone
 	}
 }

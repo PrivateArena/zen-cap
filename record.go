@@ -18,8 +18,8 @@ import (
 func handleRecord() error {
 	fs := flag.NewFlagSet("record", flag.ExitOnError)
 	output := fs.String("o", "output.mp4", "Output file path")
-	fps := fs.Int("fps", 30, "Frame rate")
-	bitrate := fs.Int64("b", 4000000, "Bitrate in bps (default: 4Mbps)")
+	fps := fs.Int("fps", 0, "Frame rate (default: from config, ~30)")
+	bitrate := fs.Int64("b", 0, "Bitrate in bps (default: from config, ~4Mbps)")
 	duration := fs.Duration("t", 0, "Recording duration (e.g. 10s, 2m, default 0 for manual stop)")
 	region := fs.String("r", "", "Region geometry (X,Y,W,H e.g. 100,200,800,600)")
 	window := fs.String("w", "", "Target window: 'active', 'list', or specific window ID (e.g. 0x40000a)")
@@ -91,16 +91,32 @@ func handleRecord() error {
 		return fmt.Errorf("failed to create directory for output: %w", err)
 	}
 
+	fpsVal := *fps
+	if fpsVal <= 0 {
+		fpsVal = cfg.Recorder.FPS
+	}
+	bitrateVal := *bitrate
+	if bitrateVal <= 0 {
+		bitrateVal = cfg.Recorder.Bitrate
+	}
+
 	recCfg := recorder.RecorderConfig{
 		Display:    *disp,
 		X:          x,
 		Y:          y,
 		Width:      w,
 		Height:     h,
-		FPS:        *fps,
+		FPS:        fpsVal,
 		OutputPath: outputPath,
-		Bitrate:    *bitrate,
+		Bitrate:    bitrateVal,
 		WindowID:   windowID,
+
+		ScaleAlgo:        cfg.Recorder.Encoder.ScaleAlgo,
+		EncoderPreset:    cfg.Recorder.Encoder.Preset,
+		EncoderCRF:       cfg.Recorder.Encoder.CRF,
+		EncoderTune:      cfg.Recorder.Encoder.Tune,
+		EncoderProfile:   cfg.Recorder.Encoder.Profile,
+		EncoderPixFormat: cfg.Recorder.Encoder.PixelFormat,
 	}
 
 	rec := recorder.NewRecorder(recCfg)
