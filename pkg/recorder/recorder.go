@@ -147,6 +147,15 @@ func (r *Recorder) run() {
 	yuvFrame.SetWidth(w)
 	yuvFrame.SetHeight(h)
 	yuvFrame.SetPixelFormat(astiav.PixelFormatYuv420P)
+
+	// FIX (pink video): stamp matching color metadata so ScaleFrame knows the
+	// destination should be limited-range BT.709 YUV. Must match the encoder's
+	// codec context settings. ColorPrimaries/ColorTransferCharacteristic are
+	// set on the encoder's CodecContext (not Frame) and propagated to the
+	// stream VUI via FromCodecParameters in the muxer.
+	yuvFrame.SetColorRange(astiav.ColorRangeMpeg)
+	yuvFrame.SetColorSpace(astiav.ColorSpaceBt709)
+
 	if err := yuvFrame.AllocBuffer(0); err != nil {
 		fmt.Printf("Recorder error: failed to allocate YUV frame buffer: %v\n", err)
 		return

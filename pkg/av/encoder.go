@@ -35,6 +35,16 @@ func NewVideoEncoder(w, h, fps int, bitrate int64) (*VideoEncoder, error) {
 	// 2-second GOP gives good seeking granularity without bloating the file.
 	codecCtx.SetGopSize(fps * 2)
 
+	// FIX (pink video): declare color metadata explicitly instead of leaving
+	// it AVCOL_*_UNSPECIFIED. This must match what we stamp on the YUV frame
+	// in recorder.go. Limited range + BT.709 is the standard for HD screen
+	// recordings; it ensures swscale's frame-based ScaleFrame programs the
+	// correct RGB->YUV conversion matrix and players interpret the stream.
+	codecCtx.SetColorRange(astiav.ColorRangeMpeg)
+	codecCtx.SetColorSpace(astiav.ColorSpaceBt709)
+	codecCtx.SetColorPrimaries(astiav.ColorPrimariesBt709)
+	codecCtx.SetColorTransferCharacteristic(astiav.ColorTransferCharacteristicBt709)
+
 	if bitrate > 0 {
 		codecCtx.SetBitRate(bitrate)
 	}

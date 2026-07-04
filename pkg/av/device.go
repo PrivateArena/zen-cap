@@ -193,6 +193,16 @@ func (d *InputDevice) ReadFrame() (*astiav.Frame, error) {
 				d.pixFmt = d.frame.PixelFormat()
 				d.pixFmtKnown = true
 			}
+
+			// FIX (pink video): xcbgrab/x11grab produce raw RGB data with
+			// full-range (0-255) pixel values but the decoder never stamps
+			// color_range on the frame, leaving it AVCOL_RANGE_UNSPECIFIED.
+			// Frame-based swscale (ScaleFrame) reads color metadata from
+			// the AVFrame; when both src and dst are "unspecified" it can
+			// skip programming real conversion coefficients and fall back
+			// to mismatched defaults, producing a solid magenta/pink cast.
+			d.frame.SetColorRange(astiav.ColorRangeJpeg)
+
 			return d.frame, nil
 		}
 

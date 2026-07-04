@@ -12,8 +12,10 @@ type Scaler struct {
 }
 
 func NewScaler(srcW, srcH int, srcFmt astiav.PixelFormat, dstW, dstH int, dstFmt astiav.PixelFormat) (*Scaler, error) {
-	// Create software scale context using bilinear interpolation
-	flags := astiav.SoftwareScaleContextFlags(astiav.SoftwareScaleContextFlagBilinear)
+	// Bilinear for quality, AccurateRnd to avoid rounding bias in the
+	// RGB->4:2:0 chroma downsampling (common screen-capture edge case).
+	flags := astiav.SoftwareScaleContextFlags(astiav.SoftwareScaleContextFlagBilinear).
+		Add(astiav.SoftwareScaleContextFlagAccurateRnd)
 	swsCtx, err := astiav.CreateSoftwareScaleContext(srcW, srcH, srcFmt, dstW, dstH, dstFmt, flags)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create software scale context: %w", err)
