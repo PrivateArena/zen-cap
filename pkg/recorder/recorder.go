@@ -35,6 +35,7 @@ func RecorderConfigFromConfig(cfg *config.Config) RecorderConfig {
 		AudioSampleRate:    cfg.Recorder.Audio.SampleRate,
 		AudioChannels:      cfg.Recorder.Audio.Channels,
 		AudioBitrate:       cfg.Recorder.Audio.Bitrate,
+		AudioOnly:          false,
 	}
 }
 
@@ -52,6 +53,7 @@ type RecorderConfig struct {
 	OutputPath     string
 	Bitrate        int64
 	WindowID       uint32
+	AudioOnly      bool
 
 	ScaleAlgo        string
 	EncoderPreset    string
@@ -129,77 +131,17 @@ func (r *Recorder) IsRecording() bool {
 func (r *Recorder) run() {
 	defer close(r.doneChan)
 
-	// Capture dimensions: Internal* → Width → device native (0/-1 = fullscreen)
-	capW := r.cfg.InternalWidth
-	capH := r.cfg.InternalHeight
-	if capW <= 0 && capH <= 0 {
-		capW = r.cfg.Width
-		capH = r.cfg.Height
+	if r.cfg.AudioOnly {
+		r.cfg.AudioEnabled = true
 	}
 
-	devCfg := av.DeviceConfig{
-		Display:  r.cfg.Display,
-		X:        r.cfg.X,
-		Y:        r.cfg.Y,
-		Width:    capW,
-		Height:   capH,
-		FPS:      r.cfg.FPS,
-		WindowID: r.cfg.WindowID,
-	}
-
-	device, err := av.OpenDevice(devCfg)
-	if err != nil {
-		fmt.Printf("Recorder error: failed to open capture device: %v\n", err)
-		return
-	}
-	defer device.Close()
-
-	capW = device.Width()
-	capH = device.Height()
-
-	// Output dimensions: Width/Height from config, fallback to capture
-	outW := r.cfg.Width
-	outH := r.cfg.Height
-	if outW <= 0 || outH <= 0 {
-		outW = capW
-		outH = capH
-	}
-
-	fmt.Printf("Capture: %dx%d  Output: %dx%d\n", capW, capH, outW, outH)
-
-	firstFrame, err := device.ReadFrame()
-	if err != nil {
-		fmt.Printf("Recorder error: failed to read first frame: %v\n", err)
-		return
-	}
-
-	srcPixFmt := device.PixelFormat()
-	fmt.Printf("Capture pixel format: %v\n", srcPixFmt)
-
-	encOpts := &av.EncoderOptions{
-		Preset:      r.cfg.EncoderPreset,
-		CRF:         r.cfg.EncoderCRF,
-		Tune:        r.cfg.EncoderTune,
-		Profile:     r.cfg.EncoderProfile,
-		PixelFormat: av.PixelFormatFromString(r.cfg.EncoderPixFormat),
-	}
-	encoder, err := av.NewVideoEncoder(outW, outH, r.cfg.FPS, r.cfg.Bitrate, encOpts)
-	if err != nil {
-		fmt.Printf("Recorder error: failed to initialize encoder: %v\n", err)
-		return
-	}
-	defer encoder.Close()
-
-	scaleAlgo := r.cfg.ScaleAlgo
-	if scaleAlgo == "" {
-		scaleAlgo = "lanczos"
-	}
-	scaler, err := av.NewScaler(capW, capH, srcPixFmt, outW, outH, astiav.PixelFormatYuv420P, scaleAlgo)
-	if err != nil {
-		fmt.Printf("Recorder error: failed to initialize scaler: %v\n", err)
-		return
-	}
-	defer scaler.Close()
+	var device *av.InputDevice
+	var encoder *av.VideoEncoder
+	var scaler *av.Scaler
+	var yuvFrame *astiav.Frame
+	var firstFrame *astiav.Frame
+	var videoStreamIdx int
+	var outW, outH int
 
 	muxer, err := av.NewMuxer(r.cfg.OutputPath)
 	if err != nil {
@@ -208,25 +150,99 @@ func (r *Recorder) run() {
 	}
 	defer muxer.Close()
 
-	videoStreamIdx, err := muxer.AddStream(encoder.CodecContext())
-	if err != nil {
-		fmt.Printf("Recorder error: failed to add video stream: %v\n", err)
-		return
-	}
+	if !r.cfg.AudioOnly {
+		// Capture dimensions: Internal* → Width → device native (0/-1 = fullscreen)
+		capW := r.cfg.InternalWidth
+		capH := r.cfg.InternalHeight
+		if capW <= 0 && capH <= 0 {
+			capW = r.cfg.Width
+			capH = r.cfg.Height
+		}
 
-	// Allocate reusable YUV420P destination frame (output dimensions)
-	yuvFrame := astiav.AllocFrame()
-	defer yuvFrame.Free()
-	yuvFrame.SetWidth(outW)
-	yuvFrame.SetHeight(outH)
-	yuvFrame.SetPixelFormat(astiav.PixelFormatYuv420P)
+		devCfg := av.DeviceConfig{
+			Display:  r.cfg.Display,
+			X:        r.cfg.X,
+			Y:        r.cfg.Y,
+			Width:    capW,
+			Height:   capH,
+			FPS:      r.cfg.FPS,
+			WindowID: r.cfg.WindowID,
+		}
 
-	yuvFrame.SetColorRange(astiav.ColorRangeMpeg)
-	yuvFrame.SetColorSpace(astiav.ColorSpaceBt709)
+		device, err = av.OpenDevice(devCfg)
+		if err != nil {
+			fmt.Printf("Recorder error: failed to open capture device: %v\n", err)
+			return
+		}
+		defer device.Close()
 
-	if err := yuvFrame.AllocBuffer(0); err != nil {
-		fmt.Printf("Recorder error: failed to allocate YUV frame buffer: %v\n", err)
-		return
+		capW = device.Width()
+		capH = device.Height()
+
+		// Output dimensions: Width/Height from config, fallback to capture
+		outW = r.cfg.Width
+		outH = r.cfg.Height
+		if outW <= 0 || outH <= 0 {
+			outW = capW
+			outH = capH
+		}
+
+		fmt.Printf("Capture: %dx%d  Output: %dx%d\n", capW, capH, outW, outH)
+
+		firstFrame, err = device.ReadFrame()
+		if err != nil {
+			fmt.Printf("Recorder error: failed to read first frame: %v\n", err)
+			return
+		}
+
+		srcPixFmt := device.PixelFormat()
+		fmt.Printf("Capture pixel format: %v\n", srcPixFmt)
+
+		encOpts := &av.EncoderOptions{
+			Preset:      r.cfg.EncoderPreset,
+			CRF:         r.cfg.EncoderCRF,
+			Tune:        r.cfg.EncoderTune,
+			Profile:     r.cfg.EncoderProfile,
+			PixelFormat: av.PixelFormatFromString(r.cfg.EncoderPixFormat),
+		}
+		encoder, err = av.NewVideoEncoder(outW, outH, r.cfg.FPS, r.cfg.Bitrate, encOpts)
+		if err != nil {
+			fmt.Printf("Recorder error: failed to initialize encoder: %v\n", err)
+			return
+		}
+		defer encoder.Close()
+
+		scaleAlgo := r.cfg.ScaleAlgo
+		if scaleAlgo == "" {
+			scaleAlgo = "lanczos"
+		}
+		scaler, err = av.NewScaler(capW, capH, srcPixFmt, outW, outH, astiav.PixelFormatYuv420P, scaleAlgo)
+		if err != nil {
+			fmt.Printf("Recorder error: failed to initialize scaler: %v\n", err)
+			return
+		}
+		defer scaler.Close()
+
+		videoStreamIdx, err = muxer.AddStream(encoder.CodecContext())
+		if err != nil {
+			fmt.Printf("Recorder error: failed to add video stream: %v\n", err)
+			return
+		}
+
+		// Allocate reusable YUV420P destination frame (output dimensions)
+		yuvFrame = astiav.AllocFrame()
+		defer yuvFrame.Free()
+		yuvFrame.SetWidth(outW)
+		yuvFrame.SetHeight(outH)
+		yuvFrame.SetPixelFormat(astiav.PixelFormatYuv420P)
+
+		yuvFrame.SetColorRange(astiav.ColorRangeMpeg)
+		yuvFrame.SetColorSpace(astiav.ColorSpaceBt709)
+
+		if err := yuvFrame.AllocBuffer(0); err != nil {
+			fmt.Printf("Recorder error: failed to allocate YUV frame buffer: %v\n", err)
+			return
+		}
 	}
 
 	// Audio setup
@@ -308,15 +324,6 @@ func (r *Recorder) run() {
 		return
 	}
 
-	encodeVideo := func(srcFrame *astiav.Frame) error {
-		if err := scaler.Scale(srcFrame, yuvFrame); err != nil {
-			return fmt.Errorf("scale failed: %w", err)
-		}
-		return encoder.Encode(yuvFrame, func(pkt *astiav.Packet) error {
-			return muxer.WritePacket(pkt, videoStreamIdx, encoder.CodecContext().TimeBase())
-		})
-	}
-
 	// Start audio capture goroutine
 	if r.cfg.AudioEnabled && audioDevice != nil {
 		go func() {
@@ -325,33 +332,50 @@ func (r *Recorder) run() {
 		}()
 	}
 
+	if r.cfg.AudioOnly {
+		fmt.Printf("Recording started (audio only) -> %s\n", r.cfg.OutputPath)
+		<-r.stopChan
+		goto flush
+	}
+
 	fmt.Printf("Recording started: %dx%d @ %d FPS -> %s", outW, outH, r.cfg.FPS, r.cfg.OutputPath)
 	if r.cfg.AudioEnabled {
 		fmt.Printf(" (with audio)")
 	}
 	fmt.Println()
 
-	if err := encodeVideo(firstFrame); err != nil {
-		fmt.Printf("Recorder error: encoding first frame failed: %v\n", err)
-		return
-	}
-
-	for {
-		select {
-		case <-r.stopChan:
-			goto flush
-		default:
+	{
+		encodeVideo := func(srcFrame *astiav.Frame) error {
+			if err := scaler.Scale(srcFrame, yuvFrame); err != nil {
+				return fmt.Errorf("scale failed: %w", err)
+			}
+			return encoder.Encode(yuvFrame, func(pkt *astiav.Packet) error {
+				return muxer.WritePacket(pkt, videoStreamIdx, encoder.CodecContext().TimeBase())
+			})
 		}
 
-		srcFrame, err := device.ReadFrame()
-		if err != nil {
-			fmt.Printf("Recorder error: failed to read frame: %v\n", err)
-			break
+		if err := encodeVideo(firstFrame); err != nil {
+			fmt.Printf("Recorder error: encoding first frame failed: %v\n", err)
+			return
 		}
 
-		if err := encodeVideo(srcFrame); err != nil {
-			fmt.Printf("Recorder error: %v\n", err)
-			break
+		for {
+			select {
+			case <-r.stopChan:
+				goto flush
+			default:
+			}
+
+			srcFrame, err := device.ReadFrame()
+			if err != nil {
+				fmt.Printf("Recorder error: failed to read frame: %v\n", err)
+				break
+			}
+
+			if err := encodeVideo(srcFrame); err != nil {
+				fmt.Printf("Recorder error: %v\n", err)
+				break
+			}
 		}
 	}
 
@@ -361,11 +385,13 @@ flush:
 		<-audioDone
 	}
 
-	fmt.Println("Flushing video encoder...")
-	if err := encoder.Encode(nil, func(pkt *astiav.Packet) error {
-		return muxer.WritePacket(pkt, videoStreamIdx, encoder.CodecContext().TimeBase())
-	}); err != nil {
-		fmt.Printf("Recorder error: flushing video encoder failed: %v\n", err)
+	if !r.cfg.AudioOnly && encoder != nil {
+		fmt.Println("Flushing video encoder...")
+		if err := encoder.Encode(nil, func(pkt *astiav.Packet) error {
+			return muxer.WritePacket(pkt, videoStreamIdx, encoder.CodecContext().TimeBase())
+		}); err != nil {
+			fmt.Printf("Recorder error: flushing video encoder failed: %v\n", err)
+		}
 	}
 
 	if audioEncoder != nil {

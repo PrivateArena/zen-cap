@@ -91,6 +91,7 @@ func handleService() error {
 	fmt.Printf("  %-14s -> Mark Region for Recording\n", cfg.Hotkeys.RecordMarkRegion)
 	fmt.Printf("  %-14s -> Mark Window for Recording\n", cfg.Hotkeys.RecordMarkWindow)
 	fmt.Printf("  %-14s -> Show/Hide Recording Area Overlay\n", cfg.Hotkeys.RecordShowArea)
+	fmt.Printf("  %-14s -> Toggle Audio-Only Recording Mode\n", cfg.Hotkeys.RecordAudioOnly)
 	fmt.Printf("  %-14s -> Clipboard Manager: Copy (0-9)\n", cfg.Hotkeys.ClipboardCopyMod+"-[0-9]")
 	fmt.Printf("  %-14s -> Clipboard Manager: Paste (0-9)\n", cfg.Hotkeys.ClipboardPasteMod+"-[0-9]")
 	fmt.Printf("  %-14s -> Clipboard Manager: Cycle Transform Rules\n", cfg.Hotkeys.ClipboardCycleRule)
@@ -121,6 +122,7 @@ func handleService() error {
 	recordMarkRegionChan := make(chan struct{}, 1)
 	recordMarkWindowChan := make(chan struct{}, 1)
 	recordShowAreaChan := make(chan struct{}, 1)
+	recordAudioOnlyChan := make(chan struct{}, 1)
 	snippetCycleModeChan := make(chan struct{}, 1)
 
 	// Initialize X11 connection for global hotkeys
@@ -227,6 +229,15 @@ func handleService() error {
 		fmt.Println("Hotkey pressed: Triggering record mark fullscreen...")
 		select {
 		case recordMarkFullscreenChan <- struct{}{}:
+		default:
+		}
+	})
+
+	// Register Record Audio Only Hotkey
+	cm.Register(cfg.Hotkeys.RecordAudioOnly, func() {
+		fmt.Println("Hotkey pressed: Triggering record audio only toggle...")
+		select {
+		case recordAudioOnlyChan <- struct{}{}:
 		default:
 		}
 	})
@@ -372,6 +383,7 @@ func handleService() error {
 	cm.Start()
 
 	var activeRec *recorder.Recorder
+	var recordAudioOnly bool
 	var recMu sync.Mutex
 
 	type MarkedArea struct {
@@ -853,6 +865,25 @@ func handleService() error {
 		}
 	}()
 
+	// Background loop for recordAudioOnlyChan
+	go func() {
+		for range recordAudioOnlyChan {
+			recMu.Lock()
+			recordAudioOnly = !recordAudioOnly
+			status := recordAudioOnly
+			recMu.Unlock()
+
+			var msg string
+			if status {
+				msg = "Audio-only recording enabled!"
+			} else {
+				msg = "Audio-only recording disabled (video + audio)!"
+			}
+			fmt.Printf("[Recorder] %s\n", msg)
+			sendNotification("Zen-Cap", msg)
+		}
+	}()
+
 	// Background loop for recordMarkRegionChan
 	go func() {
 		for range recordMarkRegionChan {
@@ -1082,7 +1113,11 @@ func handleService() error {
 					cfg = freshCfg
 				}
 				timestamp := time.Now().Format("20060102_150405")
-				filename := filepath.Join(cfg.OutputDir, fmt.Sprintf("recording_%s.mp4", timestamp))
+				ext := ".mp4"
+				if recordAudioOnly {
+					ext = ".m4a"
+				}
+				filename := filepath.Join(cfg.OutputDir, fmt.Sprintf("recording_%s%s", timestamp, ext))
 
 				markedAreaMu.Lock()
 				area := markedArea
@@ -1091,8 +1126,12 @@ func handleService() error {
 				var recordingMsg string
 				recCfg := recorder.RecorderConfigFromConfig(cfg)
 				recCfg.OutputPath = filename
+				recCfg.AudioOnly = recordAudioOnly
 
-				if area.Type == "fullscreen" || area.X < 0 || area.Y < 0 || area.Width <= 0 || area.Height <= 0 {
+				if recordAudioOnly {
+					recCfg.AudioEnabled = true
+					recordingMsg = fmt.Sprintf("[%s] Starting audio-only recording to %s...", time.Now().Format("15:04:05"), filename)
+				} else if area.Type == "fullscreen" || area.X < 0 || area.Y < 0 || area.Width <= 0 || area.Height <= 0 {
 					recCfg.X = -1
 					recCfg.Y = -1
 					recCfg.InternalWidth = -1

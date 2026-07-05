@@ -12,6 +12,7 @@
     "record_mark_region": "Control-Shift-Mod1-F2",
     "record_mark_window": "Control-Shift-Mod1-F3",
     "record_show_area": "Mod1-Shift-F4",
+    "record_audio_only": "Control-Shift-Mod1-F5",
     "clipboard_copy_mod": "Control-Shift",
     "clipboard_paste_mod": "Control-Mod1",
     "clipboard_cycle_rule": "Control-grave",

@@ -112,6 +112,7 @@ type HotkeysConfig struct {
 	RecordMarkRegion       string `json:"record_mark_region"`
 	RecordMarkWindow       string `json:"record_mark_window"`
 	RecordShowArea         string `json:"record_show_area"`
+	RecordAudioOnly        string `json:"record_audio_only"`
 	ClipboardCopyMod       string `json:"clipboard_copy_mod"`   // e.g. "Control-Shift"
 	ClipboardPasteMod      string `json:"clipboard_paste_mod"`  // e.g. "Mod1-Shift"
 	ClipboardCycleRule     string `json:"clipboard_cycle_rule"` // e.g. "Control-grave"
@@ -189,6 +190,7 @@ func DefaultConfig() *Config {
 			RecordMarkRegion:     "Control-Mod1-r",
 			RecordMarkWindow:     "Control-Mod1-w",
 			RecordShowArea:       "Mod1-Shift-F4",
+			RecordAudioOnly:      "Control-Shift-Mod1-F5",
 			ClipboardCopyMod:     "Control-Shift",
 			ClipboardPasteMod:    "Mod1-Shift",
 			ClipboardCycleRule:   "Control-grave",
@@ -278,6 +280,7 @@ func DefaultPortableConfig(binDir string) *Config {
 			RecordMarkRegion:     "Control-Mod1-r",
 			RecordMarkWindow:     "Control-Mod1-w",
 			RecordShowArea:       "Mod1-Shift-F4",
+			RecordAudioOnly:      "Control-Shift-Mod1-F5",
 			ClipboardCopyMod:     "Control-Shift",
 			ClipboardPasteMod:    "Mod1-Shift",
 			ClipboardCycleRule:   "Control-grave",
@@ -510,6 +513,9 @@ func readConfig(path string, binDir string, isPortable bool) (*Config, error) {
 	}
 	if cfg.Hotkeys.RecordShowArea == "" {
 		cfg.Hotkeys.RecordShowArea = defaults.Hotkeys.RecordShowArea
+	}
+	if cfg.Hotkeys.RecordAudioOnly == "" {
+		cfg.Hotkeys.RecordAudioOnly = defaults.Hotkeys.RecordAudioOnly
 	}
 	if cfg.Hotkeys.ClipboardCopyMod == "" {
 		cfg.Hotkeys.ClipboardCopyMod = defaults.Hotkeys.ClipboardCopyMod
