@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"zen-cap/pkg/prompt"
 )
 
 // smartType enumerates all supported smart snippet kinds.
@@ -12,9 +14,9 @@ type smartType string
 var SnippetFilePath string
 
 const (
-	SmartTypeTime  smartType = "time"
-	SmartTypeIP    smartType = "ip"
-	SmartTypeEmoji smartType = "emoji"
+	SmartTypeTime   smartType = "time"
+	SmartTypeIP     smartType = "ip"
+	SmartTypeEmoji  smartType = "emoji"
 	SmartTypePrompt smartType = "prompt"
 )
 
@@ -55,12 +57,13 @@ type SmartState struct {
 	emojiIdx     int
 
 	// --- For SmartTypePrompt ---
-	promptMatches []PromptRole
+	promptAll     []prompt.PromptDef // full database (unfiltered)
+	promptMatches []prompt.PromptDef // filtered matches
 	promptIdx     int
 }
 
 // Content returns the current resolved snippet text for pasting.
-func (s *SmartState) Content(format string) string {
+func (s *SmartState) Content(format string, skillsPath string) string {
 	if s.kind == SmartTypeTime {
 		if format == "" {
 			format = "{time}"
@@ -123,21 +126,10 @@ func (s *SmartState) Content(format string) string {
 		res = strings.ReplaceAll(res, "{name}", nameVal)
 		return res
 	} else if s.kind == SmartTypePrompt {
-		if format == "" {
-			format = "You are a {role}.\nYour JOB is to {job}."
-		}
-		roleVal := ""
-		jobVal := ""
 		if len(s.promptMatches) > 0 && s.promptIdx >= 0 && s.promptIdx < len(s.promptMatches) {
-			roleVal = s.promptMatches[s.promptIdx].Role
-			jobVal = s.promptMatches[s.promptIdx].Job
-		} else {
-			roleVal = "AI assistant"
-			jobVal = "help the user with their request"
+			return prompt.ResolveContent(s.promptMatches[s.promptIdx], skillsPath)
 		}
-		res := strings.ReplaceAll(format, "{role}", roleVal)
-		res = strings.ReplaceAll(res, "{job}", jobVal)
-		return res
+		return ""
 	}
 	return ""
 }

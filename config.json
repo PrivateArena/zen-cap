@@ -105,5 +105,7 @@
       "channels": 2,
       "bitrate": 128000
     }
-  }
+  },
+  "prompts_path": "/media/jang/home/Deve/web-reader-mcp-master/src/resources/prompts",
+  "skills_path": "/media/jang/home/Deve/web-reader-mcp-master/src/resources/skills"
 }

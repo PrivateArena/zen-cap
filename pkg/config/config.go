@@ -58,18 +58,18 @@ type EncoderSettings struct {
 
 // AudioSettings holds audio capture and encoding parameters.
 type AudioSettings struct {
-	Enabled     bool   `json:"enabled"`
-	Device      string `json:"device,omitempty"`
-	SampleRate  int    `json:"sample_rate,omitempty"`
-	Channels    int    `json:"channels,omitempty"`
-	Bitrate     int64  `json:"bitrate,omitempty"`
+	Enabled    bool   `json:"enabled"`
+	Device     string `json:"device,omitempty"`
+	SampleRate int    `json:"sample_rate,omitempty"`
+	Channels   int    `json:"channels,omitempty"`
+	Bitrate    int64  `json:"bitrate,omitempty"`
 }
 
 // RecorderSettings holds top-level recording configuration.
 type RecorderSettings struct {
-	Width          int             `json:"width,omitempty"`           // output/encoded resolution
+	Width          int             `json:"width,omitempty"` // output/encoded resolution
 	Height         int             `json:"height,omitempty"`
-	InternalWidth  int             `json:"internal_width,omitempty"`  // capture resolution
+	InternalWidth  int             `json:"internal_width,omitempty"` // capture resolution
 	InternalHeight int             `json:"internal_height,omitempty"`
 	FPS            int             `json:"fps,omitempty"`
 	Bitrate        int64           `json:"bitrate,omitempty"`
@@ -78,50 +78,52 @@ type RecorderSettings struct {
 }
 
 type Config struct {
-	OutputDir            string          `json:"output_dir"`
-	Hotkeys              HotkeysConfig   `json:"hotkeys"`
+	OutputDir            string              `json:"output_dir"`
+	Hotkeys              HotkeysConfig       `json:"hotkeys"`
 	SnippetPicker        SnippetPickerConfig `json:"snippet_picker"`
-	ClipboardMode        string          `json:"clipboard_mode"`     // "image", "path", "ocr", "translate", "none"
-	OCRAddress           string          `json:"ocr_address"`        // Default: "http://localhost:8765"
-	APIAddress           string          `json:"api_address"`        // Default: "localhost:4444"
-	OCRLanguage          string          `json:"ocr_language"`       // Default: "ch"
-	OCRLanguages         []string        `json:"ocr_languages"`      // Default: ["en", "ja", "ko", "ch"]
-	TranslationTarget    string          `json:"translation_target"` // Default: "en"
-	TranslationEngine    string          `json:"translation_engine"` // "google" or "local" (default: "google")
-	AutoTranslate        bool            `json:"auto_translate"`     // Default: false
-	ColorPickerFormat    string          `json:"color_picker_format"` // "hex", "rgb", "rgba", "hsl" (default: "hex")
-	DisableNotifications bool            `json:"disable_notifications"` // Default: false
-	ClipboardSessionFile string          `json:"clipboard_session_file"`
-	SnippetFile          string          `json:"snippet_file"`
-	AutomationDir        string          `json:"automation_dir"`
-	TransformRules       []TransformRule  `json:"transform_rules"`
-	Magnifier            MagnifierConfig  `json:"magnifier"`
-	Recorder             RecorderSettings `json:"recorder"`
-	SnippetMode          string           `json:"snippet_mode"`          // "paste" or "type" (default: "paste")
+	ClipboardMode        string              `json:"clipboard_mode"`        // "image", "path", "ocr", "translate", "none"
+	OCRAddress           string              `json:"ocr_address"`           // Default: "http://localhost:8765"
+	APIAddress           string              `json:"api_address"`           // Default: "localhost:4444"
+	OCRLanguage          string              `json:"ocr_language"`          // Default: "ch"
+	OCRLanguages         []string            `json:"ocr_languages"`         // Default: ["en", "ja", "ko", "ch"]
+	TranslationTarget    string              `json:"translation_target"`    // Default: "en"
+	TranslationEngine    string              `json:"translation_engine"`    // "google" or "local" (default: "google")
+	AutoTranslate        bool                `json:"auto_translate"`        // Default: false
+	ColorPickerFormat    string              `json:"color_picker_format"`   // "hex", "rgb", "rgba", "hsl" (default: "hex")
+	DisableNotifications bool                `json:"disable_notifications"` // Default: false
+	ClipboardSessionFile string              `json:"clipboard_session_file"`
+	SnippetFile          string              `json:"snippet_file"`
+	AutomationDir        string              `json:"automation_dir"`
+	TransformRules       []TransformRule     `json:"transform_rules"`
+	Magnifier            MagnifierConfig     `json:"magnifier"`
+	Recorder             RecorderSettings    `json:"recorder"`
+	SnippetMode          string              `json:"snippet_mode"` // "paste" or "type" (default: "paste")
+	PromptsPath          string              `json:"prompts_path"` // abs path to prompts directory
+	SkillsPath           string              `json:"skills_path"`  // abs path to skills directory
 }
 
 type HotkeysConfig struct {
-	Screenshot          string `json:"screenshot"`
-	RegionScreenshot    string `json:"region_screenshot"`
-	WindowScreenshot    string `json:"window_screenshot"`
-	OCRScreenshot       string `json:"ocr_screenshot"`
-	OCRRegionScreenshot string `json:"ocr_region_screenshot"`
-	OCRWindowScreenshot string `json:"ocr_window_screenshot"`
-	RecordToggle           string `json:"record_toggle"`
-	RecordMarkFullscreen   string `json:"record_mark_fullscreen"`
-	RecordMarkRegion       string `json:"record_mark_region"`
-	RecordMarkWindow       string `json:"record_mark_window"`
-	RecordShowArea         string `json:"record_show_area"`
-	RecordAudioOnly        string `json:"record_audio_only"`
-	ClipboardCopyMod       string `json:"clipboard_copy_mod"`   // e.g. "Control-Shift"
-	ClipboardPasteMod      string `json:"clipboard_paste_mod"`  // e.g. "Mod1-Shift"
-	ClipboardCycleRule     string `json:"clipboard_cycle_rule"` // e.g. "Control-grave"
-	OcrCycleModel          string `json:"ocr_cycle_model"`      // e.g. "Control-Mod1-grave"
-	SnippetPicker          string `json:"snippet_picker"`       // e.g. "Mod1-grave" (Alt+`)
-	AutomationPicker       string `json:"automation_picker"`    // e.g. "Mod1-a" (Alt+a)
-	WindowClassGrab        string `json:"window_class_grab"`    // e.g. "Shift-F4"
-	ColorPicker            string `json:"color_picker"`          // e.g. "Shift-F5"
-	SnippetCycleMode       string `json:"snippet_cycle_mode"`    // e.g. "Mod4-w"
+	Screenshot           string `json:"screenshot"`
+	RegionScreenshot     string `json:"region_screenshot"`
+	WindowScreenshot     string `json:"window_screenshot"`
+	OCRScreenshot        string `json:"ocr_screenshot"`
+	OCRRegionScreenshot  string `json:"ocr_region_screenshot"`
+	OCRWindowScreenshot  string `json:"ocr_window_screenshot"`
+	RecordToggle         string `json:"record_toggle"`
+	RecordMarkFullscreen string `json:"record_mark_fullscreen"`
+	RecordMarkRegion     string `json:"record_mark_region"`
+	RecordMarkWindow     string `json:"record_mark_window"`
+	RecordShowArea       string `json:"record_show_area"`
+	RecordAudioOnly      string `json:"record_audio_only"`
+	ClipboardCopyMod     string `json:"clipboard_copy_mod"`   // e.g. "Control-Shift"
+	ClipboardPasteMod    string `json:"clipboard_paste_mod"`  // e.g. "Mod1-Shift"
+	ClipboardCycleRule   string `json:"clipboard_cycle_rule"` // e.g. "Control-grave"
+	OcrCycleModel        string `json:"ocr_cycle_model"`      // e.g. "Control-Mod1-grave"
+	SnippetPicker        string `json:"snippet_picker"`       // e.g. "Mod1-grave" (Alt+`)
+	AutomationPicker     string `json:"automation_picker"`    // e.g. "Mod1-a" (Alt+a)
+	WindowClassGrab      string `json:"window_class_grab"`    // e.g. "Shift-F4"
+	ColorPicker          string `json:"color_picker"`         // e.g. "Shift-F5"
+	SnippetCycleMode     string `json:"snippet_cycle_mode"`   // e.g. "Mod4-w"
 }
 
 func DefaultTransformRules() []TransformRule {
@@ -179,12 +181,12 @@ func DefaultConfig() *Config {
 	return &Config{
 		OutputDir: defaultOutputDir,
 		Hotkeys: HotkeysConfig{
-			Screenshot:          "Control-Shift-s",
-			RegionScreenshot:    "Control-Shift-a",
-			WindowScreenshot:    "Shift-F2",
-			OCRScreenshot:       "Control-Shift-o",
-			OCRRegionScreenshot: "Control-Shift-p",
-			OCRWindowScreenshot: "Shift-F3",
+			Screenshot:           "Control-Shift-s",
+			RegionScreenshot:     "Control-Shift-a",
+			WindowScreenshot:     "Shift-F2",
+			OCRScreenshot:        "Control-Shift-o",
+			OCRRegionScreenshot:  "Control-Shift-p",
+			OCRWindowScreenshot:  "Shift-F3",
 			RecordToggle:         "Control-Shift-r",
 			RecordMarkFullscreen: "Control-Mod1-f",
 			RecordMarkRegion:     "Control-Mod1-r",
@@ -194,7 +196,7 @@ func DefaultConfig() *Config {
 			ClipboardCopyMod:     "Control-Shift",
 			ClipboardPasteMod:    "Mod1-Shift",
 			ClipboardCycleRule:   "Control-grave",
-			OcrCycleModel:       "Control-Mod1-grave",
+			OcrCycleModel:        "Control-Mod1-grave",
 			SnippetPicker:        "Mod1-grave",
 			AutomationPicker:     "Mod1-a",
 			WindowClassGrab:      "Shift-F4",
@@ -261,6 +263,8 @@ func DefaultConfig() *Config {
 			FontSize: 14,
 			FontFace: "",
 		},
+		PromptsPath: "/media/jang/home/Deve/web-reader-mcp-master/src/resources/prompts",
+		SkillsPath:  "/media/jang/home/Deve/web-reader-mcp-master/src/resources/skills",
 	}
 }
 
@@ -269,12 +273,12 @@ func DefaultPortableConfig(binDir string) *Config {
 	return &Config{
 		OutputDir: filepath.Join(binDir, "zen-cap-outputs"),
 		Hotkeys: HotkeysConfig{
-			Screenshot:          "Control-Shift-s",
-			RegionScreenshot:    "Control-Shift-a",
-			WindowScreenshot:    "Shift-F2",
-			OCRScreenshot:       "Control-Shift-o",
-			OCRRegionScreenshot: "Control-Shift-p",
-			OCRWindowScreenshot: "Shift-F3",
+			Screenshot:           "Control-Shift-s",
+			RegionScreenshot:     "Control-Shift-a",
+			WindowScreenshot:     "Shift-F2",
+			OCRScreenshot:        "Control-Shift-o",
+			OCRRegionScreenshot:  "Control-Shift-p",
+			OCRWindowScreenshot:  "Shift-F3",
 			RecordToggle:         "Control-Shift-r",
 			RecordMarkFullscreen: "Control-Mod1-f",
 			RecordMarkRegion:     "Control-Mod1-r",
@@ -284,7 +288,7 @@ func DefaultPortableConfig(binDir string) *Config {
 			ClipboardCopyMod:     "Control-Shift",
 			ClipboardPasteMod:    "Mod1-Shift",
 			ClipboardCycleRule:   "Control-grave",
-			OcrCycleModel:       "Control-Mod1-grave",
+			OcrCycleModel:        "Control-Mod1-grave",
 			SnippetPicker:        "Mod1-grave",
 			AutomationPicker:     "Mod1-a",
 			WindowClassGrab:      "Shift-F4",
@@ -351,6 +355,8 @@ func DefaultPortableConfig(binDir string) *Config {
 				Bitrate:    128000,
 			},
 		},
+		PromptsPath: "/media/jang/home/Deve/web-reader-mcp-master/src/resources/prompts",
+		SkillsPath:  "/media/jang/home/Deve/web-reader-mcp-master/src/resources/skills",
 	}
 }
 
@@ -619,6 +625,13 @@ func readConfig(path string, binDir string, isPortable bool) (*Config, error) {
 	}
 	if cfg.SnippetPicker.FontFace == "" {
 		cfg.SnippetPicker.FontFace = defaults.SnippetPicker.FontFace
+	}
+
+	if cfg.PromptsPath == "" {
+		cfg.PromptsPath = defaults.PromptsPath
+	}
+	if cfg.SkillsPath == "" {
+		cfg.SkillsPath = defaults.SkillsPath
 	}
 
 	if cfg.Recorder.Width <= 0 {

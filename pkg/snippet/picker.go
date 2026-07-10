@@ -40,12 +40,12 @@ type pickerState struct {
 	mgr           *Manager
 	cfg           *config.Config
 	// smartState is non-nil when the currently selected snippet is a smart one.
-	smartState    *SmartState
-	faceNormal    font.Face
-	faceSmall     font.Face
+	smartState *SmartState
+	faceNormal font.Face
+	faceSmall  font.Face
 	// prevFocusWin is the X11 window that held focus before the picker opened.
 	// Passed through to Paste() so it can poll/restore focus deterministically.
-	prevFocusWin  xproto.Window
+	prevFocusWin xproto.Window
 }
 
 // ShowPicker opens a native X11 popup window at the center of the screen to select a snippet.
@@ -282,7 +282,7 @@ func ShowPicker(mgr *Manager, cfg *config.Config) error {
 					time.Sleep(100 * time.Millisecond)
 				}
 			}
-			content = state.smartState.Content(selectedSnip.Format)
+			content = state.smartState.Content(selectedSnip.Format, state.cfg.SkillsPath)
 		}
 		return state.mgr.Paste(content, state.cfg.SnippetMode, prevFocusWin)
 	}
@@ -325,18 +325,17 @@ func pickerRealTimestamp(xu *xgbutil.XUtil, win xproto.Window) xproto.Timestamp 
 	return xproto.TimeCurrentTime // fallback only
 }
 
-
 func (s *pickerState) redraw() {
 	img := image.NewRGBA(image.Rect(0, 0, s.width, s.height))
 
 	// Retro Premium Theme
-	bgColor    := color.RGBA{R: 26, G: 26, B: 36, A: 255}
+	bgColor := color.RGBA{R: 26, G: 26, B: 36, A: 255}
 	borderColor := color.RGBA{R: 0, G: 240, B: 255, A: 255}
 	headerColor := color.RGBA{R: 255, G: 0, B: 127, A: 255}
-	textColor   := color.RGBA{R: 230, G: 230, B: 240, A: 255}
-	mutedColor  := color.RGBA{R: 120, G: 120, B: 150, A: 255}
-	selectedBg  := color.RGBA{R: 45, G: 55, B: 85, A: 255}
-	smartColor  := color.RGBA{R: 255, G: 215, B: 0, A: 255} // Gold for smart snippets
+	textColor := color.RGBA{R: 230, G: 230, B: 240, A: 255}
+	mutedColor := color.RGBA{R: 120, G: 120, B: 150, A: 255}
+	selectedBg := color.RGBA{R: 45, G: 55, B: 85, A: 255}
+	smartColor := color.RGBA{R: 255, G: 215, B: 0, A: 255} // Gold for smart snippets
 
 	draw.Draw(img, img.Bounds(), &image.Uniform{bgColor}, image.Point{}, draw.Src)
 
@@ -357,7 +356,7 @@ func (s *pickerState) redraw() {
 		modeText = "MODE: TYPING"
 		modeColor = borderColor
 	}
-	
+
 	var modeWidth int
 	if s.faceNormal != nil {
 		dMeasure := &font.Drawer{Face: s.faceNormal}
@@ -454,7 +453,7 @@ func (s *pickerState) redraw() {
 
 			// Live value (either time or IP)
 			selectedSnip := s.snippets[s.selectedIndex]
-			valStr := s.smartState.Content(selectedSnip.Format)
+			valStr := s.smartState.Content(selectedSnip.Format, s.cfg.SkillsPath)
 			s.drawText(img, valStr, 30, panelY, smartColor, 2)
 
 			if s.smartState.kind == SmartTypeTime {
@@ -583,8 +582,11 @@ func (s *pickerState) syncSmartState() {
 			return
 		} else if snip.Smart == SmartTypePrompt {
 			if s.smartState == nil || s.smartState.kind != SmartTypePrompt {
+				allPrompts := loadPromptsDynamic(s.cfg.PromptsPath)
 				s.smartState = &SmartState{
-					kind: SmartTypePrompt,
+					kind:          SmartTypePrompt,
+					promptAll:     allPrompts,
+					promptMatches: allPrompts,
 				}
 				s.smartState.resolvePromptQuery()
 			}
