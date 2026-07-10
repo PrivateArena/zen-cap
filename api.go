@@ -3,6 +3,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -22,6 +23,7 @@ import (
 
 	"zen-cap/pkg/capture"
 	"zen-cap/pkg/config"
+	"zen-cap/pkg/pipeline"
 )
 
 type ScreenshotOptions struct {
@@ -230,14 +232,10 @@ func captureScreenshotWithOptions(opts ScreenshotOptions, cfg *config.Config) (s
 		absPath = outputPath
 	}
 
-	clipAction := cfg.ClipboardMode
 	if opts.ClipMode != "" {
-		clipAction = opts.ClipMode
+		cfg.ClipboardMode = opts.ClipMode
 	}
-	if chosenAction != "" {
-		clipAction = chosenAction
-	}
-	processClipboardAction(img, absPath, clipAction, cfg)
+	pipeline.Run(context.Background(), cfg, img, absPath, chosenAction)
 
 	return absPath, nil
 }

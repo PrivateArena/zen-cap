@@ -21,7 +21,14 @@
     "automation_picker": "Mod1-a",
     "window_class_grab": "Shift-F4",
     "color_picker": "Shift-F5",
-    "snippet_cycle_mode": "Mod4-w"
+    "snippet_cycle_mode": "Mod4-w",
+    "cycle_task_profile": "Control-Mod1-p"
+  },
+  "snippet_picker": {
+    "width": 850,
+    "height": 690,
+    "font_size": 24,
+    "font_face": ""
   },
   "clipboard_mode": "image",
   "ocr_address": "http://localhost:8765",
@@ -75,18 +82,7 @@
     "lens_shape": "circle",
     "smooth_scaling": true
   },
-  "snippet_mode": "paste",
-  "snippet_picker": {
-    "width": 850,
-    "height": 690,
-    "font_size": 24,
-    "font_face": ""
-  },
   "recorder": {
-    "width": 0,
-    "height": 0,
-    "internal_w idth": 0,
-    "internal_height": 0,
     "fps": 30,
     "bitrate": 4000000,
     "encoder": {
@@ -95,8 +91,7 @@
       "ffmpeg_preset": "ultrafast",
       "ffmpeg_crf": "28",
       "ffmpeg_tune": "animation",
-      "ffmpeg_pixel_format": "yuv420p",
-      "ffmpeg_extra_args": ""
+      "ffmpeg_pixel_format": "yuv420p"
     },
     "audio": {
       "enabled": true,
@@ -106,6 +101,79 @@
       "bitrate": 128000
     }
   },
+  "snippet_mode": "paste",
   "prompts_path": "/media/jang/home/Deve/web-reader-mcp-master/src/resources/prompts",
-  "skills_path": "/media/jang/home/Deve/web-reader-mcp-master/src/resources/skills"
+  "skills_path": "/media/jang/home/Deve/web-reader-mcp-master/src/resources/skills",
+  "after_capture_tasks": [
+    "edit",
+    "upload",
+    "vision",
+    "clipboard"
+  ],
+  "edit": {
+    "enabled": false,
+    "mode": "builtin",
+    "external_cmd": "",
+    "brush_thickness": 3,
+    "font_scale": 2
+  },
+  "uploader": {
+    "enabled": false,
+    "endpoint": "",
+    "field_name": "file",
+    "auth_header": "Authorization",
+    "auth_token": "",
+    "auth_token_env": "",
+    "extra_fields": {},
+    "url_json_path": "data.link",
+    "timeout_seconds": 30
+  },
+  "vision": {
+    "enabled": false,
+    "provider": "claude",
+    "model": "claude-sonnet-4-6",
+    "prompt": "Describe what is shown in this screenshot in 2-3 concise sentences.",
+    "api_key_env": "ANTHROPIC_API_KEY",
+    "save_sidecar": true,
+    "timeout_seconds": 60
+  },
+  "task_profiles": [
+    {
+      "name": "LLM Vision",
+      "after_capture_tasks": [
+        "vision",
+        "clipboard"
+      ],
+      "clipboard_mode": "llm-text"
+    },
+    {
+      "name": "Copy Path",
+      "after_capture_tasks": [
+        "clipboard"
+      ],
+      "clipboard_mode": "path"
+    },
+    {
+      "name": "Copy Image",
+      "after_capture_tasks": [
+        "clipboard"
+      ],
+      "clipboard_mode": "image"
+    },
+    {
+      "name": "OCR",
+      "after_capture_tasks": [
+        "clipboard"
+      ],
+      "clipboard_mode": "ocr"
+    },
+    {
+      "name": "Translate",
+      "after_capture_tasks": [
+        "clipboard"
+      ],
+      "clipboard_mode": "translate"
+    }
+  ],
+  "current_task_profile": "Copy Path"
 }

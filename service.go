@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -24,6 +25,7 @@ import (
 	"zen-cap/pkg/clipboard"
 	"zen-cap/pkg/config"
 	"zen-cap/pkg/magnifier"
+	"zen-cap/pkg/pipeline"
 	"zen-cap/pkg/recorder"
 )
 
@@ -124,6 +126,7 @@ func handleService() error {
 	recordShowAreaChan := make(chan struct{}, 1)
 	recordAudioOnlyChan := make(chan struct{}, 1)
 	snippetCycleModeChan := make(chan struct{}, 1)
+	taskProfileCycleChan := make(chan struct{}, 1)
 
 	// Initialize X11 connection for global hotkeys
 	X, err := xgbutil.NewConn()
@@ -348,6 +351,15 @@ func handleService() error {
 		}
 	})
 
+	// Register Task Profile Cycle Hotkey
+	cm.Register(cfg.Hotkeys.CycleTaskProfile, func() {
+		fmt.Println("Hotkey pressed: Triggering task profile cycle...")
+		select {
+		case taskProfileCycleChan <- struct{}{}:
+		default:
+		}
+	})
+
 	// Register Automation Picker Hotkey
 	cm.Register(cfg.Hotkeys.AutomationPicker, func() {
 		exe, err := os.Executable()
@@ -469,7 +481,7 @@ func handleService() error {
 				if err != nil {
 					absPath = filename
 				}
-				processClipboardAction(img, absPath, cfg.ClipboardMode, cfg)
+				pipeline.Run(context.Background(), cfg, img, absPath, "")
 			}()
 		}
 	}()
@@ -506,15 +518,11 @@ func handleService() error {
 				}
 				fmt.Printf("Region screenshot saved successfully to %s\n", filename)
 
-				action := cfg.ClipboardMode
-				if chosenAction != "" {
-					action = chosenAction
-				}
 				absPath, err := filepath.Abs(filename)
 				if err != nil {
 					absPath = filename
 				}
-				processClipboardAction(img, absPath, action, cfg)
+				pipeline.Run(context.Background(), cfg, img, absPath, chosenAction)
 			}()
 		}
 	}()
@@ -552,15 +560,11 @@ func handleService() error {
 				}
 				fmt.Printf("Window screenshot saved successfully to %s\n", filename)
 
-				action := cfg.ClipboardMode
-				if chosenAction != "" {
-					action = chosenAction
-				}
 				absPath, err := filepath.Abs(filename)
 				if err != nil {
 					absPath = filename
 				}
-				processClipboardAction(img, absPath, action, cfg)
+				pipeline.Run(context.Background(), cfg, img, absPath, chosenAction)
 			}()
 		}
 	}()
@@ -737,6 +741,51 @@ func handleService() error {
 					modeLabel = "Human Typing"
 				}
 				sendNotification("Zen-Cap Snippets", fmt.Sprintf("Cycled snippet mode to: %s", modeLabel))
+			}()
+		}
+	}()
+
+	go func() {
+		for range taskProfileCycleChan {
+			go func() {
+				// 1. Load latest config
+				freshCfg, cfgPath, err := config.LoadConfig()
+				if err != nil {
+					fmt.Printf("[Profile Cycle] Error loading config: %v\n", err)
+					return
+				}
+				cfg = freshCfg
+
+				if len(cfg.TaskProfiles) == 0 {
+					fmt.Println("[Profile Cycle] No task profiles defined in config")
+					return
+				}
+
+				// 2. Find index of current task profile
+				currentIndex := -1
+				for i, p := range cfg.TaskProfiles {
+					if p.Name == cfg.CurrentTaskProfile {
+						currentIndex = i
+						break
+					}
+				}
+
+				// 3. Cycle to next
+				nextIndex := (currentIndex + 1) % len(cfg.TaskProfiles)
+				nextProfile := cfg.TaskProfiles[nextIndex]
+				cfg.CurrentTaskProfile = nextProfile.Name
+
+				// 4. Save config
+				if cfgPath != "" {
+					if err := config.SaveConfig(cfg, cfgPath); err != nil {
+						fmt.Printf("[Profile Cycle] Error saving config: %v\n", err)
+					} else {
+						fmt.Printf("[Profile Cycle] Updated config.json: current_task_profile = %s\n", nextProfile.Name)
+					}
+				}
+
+				// 5. Send desktop notification
+				sendNotification("Zen-Cap Profile", fmt.Sprintf("Cycled task profile to: %s", nextProfile.Name))
 			}()
 		}
 	}()

@@ -77,6 +77,45 @@ type RecorderSettings struct {
 	Audio          AudioSettings   `json:"audio"`
 }
 
+// EditConfig controls the optional post-capture editing/annotation step.
+type EditConfig struct {
+	Enabled        bool   `json:"enabled"`         // Default: false
+	Mode           string `json:"mode"`            // "builtin" or "external" (default: "builtin")
+	ExternalCmd    string `json:"external_cmd"`    // e.g. "gimp {file}" — {file} is replaced with abs path
+	BrushThickness uint32 `json:"brush_thickness"` // Default: 3
+	FontScale      int    `json:"font_scale"`      // Default: 2
+}
+
+// UploaderConfig controls the optional post-capture upload step.
+type UploaderConfig struct {
+	Enabled        bool              `json:"enabled"`         // Default: false
+	Endpoint       string            `json:"endpoint"`        // e.g. "https://api.imgur.com/3/image"
+	FieldName      string            `json:"field_name"`      // multipart field name for the file, default "file"
+	AuthHeader     string            `json:"auth_header"`     // e.g. "Authorization" or "Client-ID"
+	AuthToken      string            `json:"auth_token"`      // plaintext token (prefer AuthTokenEnv)
+	AuthTokenEnv   string            `json:"auth_token_env"`  // env var name to read token from instead
+	ExtraFields    map[string]string `json:"extra_fields"`    // additional multipart form fields
+	URLJSONPath    string            `json:"url_json_path"`   // dot-path into JSON response, e.g. "data.link"
+	TimeoutSeconds int               `json:"timeout_seconds"` // Default: 30
+}
+
+// VisionConfig controls the optional post-capture LLM vision-explanation step.
+type VisionConfig struct {
+	Enabled        bool   `json:"enabled"`         // Default: false
+	Provider       string `json:"provider"`        // "anthropic" or "openai" (default: "anthropic")
+	Model          string `json:"model"`           // e.g. "claude-sonnet-4-6" or "gpt-4o"
+	Prompt         string `json:"prompt"`          // instruction sent with the image
+	APIKeyEnv      string `json:"api_key_env"`     // env var holding the API key
+	SaveSidecar    bool   `json:"save_sidecar"`    // write result to <screenshot>.txt, default true
+	TimeoutSeconds int    `json:"timeout_seconds"` // Default: 60
+}
+
+type TaskProfile struct {
+	Name              string   `json:"name"`
+	AfterCaptureTasks []string `json:"after_capture_tasks"`
+	ClipboardMode     string   `json:"clipboard_mode"`
+}
+
 type Config struct {
 	OutputDir            string              `json:"output_dir"`
 	Hotkeys              HotkeysConfig       `json:"hotkeys"`
@@ -100,6 +139,16 @@ type Config struct {
 	SnippetMode          string              `json:"snippet_mode"` // "paste" or "type" (default: "paste")
 	PromptsPath          string              `json:"prompts_path"` // abs path to prompts directory
 	SkillsPath           string              `json:"skills_path"`  // abs path to skills directory
+
+	// --- new: post-capture task pipeline ---
+	AfterCaptureTasks []string       `json:"after_capture_tasks"` // ordered task names, e.g. ["edit","upload","vision","clipboard"]
+	Edit              EditConfig     `json:"edit"`
+	Uploader          UploaderConfig `json:"uploader"`
+	Vision            VisionConfig   `json:"vision"`
+
+	// --- task profile system ---
+	TaskProfiles       []TaskProfile `json:"task_profiles"`
+	CurrentTaskProfile string        `json:"current_task_profile"`
 }
 
 type HotkeysConfig struct {
@@ -124,6 +173,7 @@ type HotkeysConfig struct {
 	WindowClassGrab      string `json:"window_class_grab"`    // e.g. "Shift-F4"
 	ColorPicker          string `json:"color_picker"`         // e.g. "Shift-F5"
 	SnippetCycleMode     string `json:"snippet_cycle_mode"`   // e.g. "Mod4-w"
+	CycleTaskProfile     string `json:"cycle_task_profile"`   // e.g. "Control-Mod1-p"
 }
 
 func DefaultTransformRules() []TransformRule {
@@ -202,6 +252,7 @@ func DefaultConfig() *Config {
 			WindowClassGrab:      "Shift-F4",
 			ColorPicker:          "Shift-F5",
 			SnippetCycleMode:     "Mod4-w",
+			CycleTaskProfile:     "Control-Mod1-p",
 		},
 		ClipboardMode:        "image",
 		SnippetMode:          "paste",
@@ -265,6 +316,62 @@ func DefaultConfig() *Config {
 		},
 		PromptsPath: "/media/jang/home/Deve/web-reader-mcp-master/src/resources/prompts",
 		SkillsPath:  "/media/jang/home/Deve/web-reader-mcp-master/src/resources/skills",
+		AfterCaptureTasks: []string{"edit", "upload", "vision", "clipboard"},
+		Edit: EditConfig{
+			Enabled:        false,
+			Mode:           "builtin",
+			ExternalCmd:    "",
+			BrushThickness: 3,
+			FontScale:      2,
+		},
+		Uploader: UploaderConfig{
+			Enabled:        false,
+			Endpoint:       "",
+			FieldName:      "file",
+			AuthHeader:     "Authorization",
+			AuthToken:      "",
+			AuthTokenEnv:   "",
+			ExtraFields:    map[string]string{},
+			URLJSONPath:    "data.link",
+			TimeoutSeconds: 30,
+		},
+		Vision: VisionConfig{
+			Enabled:        false,
+			Provider:       "anthropic",
+			Model:          "claude-sonnet-4-6",
+			Prompt:         "Describe what is shown in this screenshot in 2-3 concise sentences.",
+			APIKeyEnv:      "ANTHROPIC_API_KEY",
+			SaveSidecar:    true,
+			TimeoutSeconds: 60,
+		},
+		TaskProfiles: []TaskProfile{
+			{
+				Name:              "LLM Vision",
+				AfterCaptureTasks: []string{"vision", "clipboard"},
+				ClipboardMode:     "llm-text",
+			},
+			{
+				Name:              "Copy Path",
+				AfterCaptureTasks: []string{"clipboard"},
+				ClipboardMode:     "path",
+			},
+			{
+				Name:              "Copy Image",
+				AfterCaptureTasks: []string{"clipboard"},
+				ClipboardMode:     "image",
+			},
+			{
+				Name:              "OCR",
+				AfterCaptureTasks: []string{"clipboard"},
+				ClipboardMode:     "ocr",
+			},
+			{
+				Name:              "Translate",
+				AfterCaptureTasks: []string{"clipboard"},
+				ClipboardMode:     "translate",
+			},
+		},
+		CurrentTaskProfile: "Copy Image",
 	}
 }
 
@@ -294,6 +401,7 @@ func DefaultPortableConfig(binDir string) *Config {
 			WindowClassGrab:      "Shift-F4",
 			ColorPicker:          "Shift-F5",
 			SnippetCycleMode:     "Mod4-w",
+			CycleTaskProfile:     "Control-Mod1-p",
 		},
 		ClipboardMode:        "image",
 		SnippetMode:          "paste",
@@ -357,6 +465,62 @@ func DefaultPortableConfig(binDir string) *Config {
 		},
 		PromptsPath: "/media/jang/home/Deve/web-reader-mcp-master/src/resources/prompts",
 		SkillsPath:  "/media/jang/home/Deve/web-reader-mcp-master/src/resources/skills",
+		AfterCaptureTasks: []string{"edit", "upload", "vision", "clipboard"},
+		Edit: EditConfig{
+			Enabled:        false,
+			Mode:           "builtin",
+			ExternalCmd:    "",
+			BrushThickness: 3,
+			FontScale:      2,
+		},
+		Uploader: UploaderConfig{
+			Enabled:        false,
+			Endpoint:       "",
+			FieldName:      "file",
+			AuthHeader:     "Authorization",
+			AuthToken:      "",
+			AuthTokenEnv:   "",
+			ExtraFields:    map[string]string{},
+			URLJSONPath:    "data.link",
+			TimeoutSeconds: 30,
+		},
+		Vision: VisionConfig{
+			Enabled:        false,
+			Provider:       "anthropic",
+			Model:          "claude-sonnet-4-6",
+			Prompt:         "Describe what is shown in this screenshot in 2-3 concise sentences.",
+			APIKeyEnv:      "ANTHROPIC_API_KEY",
+			SaveSidecar:    true,
+			TimeoutSeconds: 60,
+		},
+		TaskProfiles: []TaskProfile{
+			{
+				Name:              "LLM Vision",
+				AfterCaptureTasks: []string{"vision", "clipboard"},
+				ClipboardMode:     "llm-text",
+			},
+			{
+				Name:              "Copy Path",
+				AfterCaptureTasks: []string{"clipboard"},
+				ClipboardMode:     "path",
+			},
+			{
+				Name:              "Copy Image",
+				AfterCaptureTasks: []string{"clipboard"},
+				ClipboardMode:     "image",
+			},
+			{
+				Name:              "OCR",
+				AfterCaptureTasks: []string{"clipboard"},
+				ClipboardMode:     "ocr",
+			},
+			{
+				Name:              "Translate",
+				AfterCaptureTasks: []string{"clipboard"},
+				ClipboardMode:     "translate",
+			},
+		},
+		CurrentTaskProfile: "Copy Image",
 	}
 }
 
@@ -632,6 +796,46 @@ func readConfig(path string, binDir string, isPortable bool) (*Config, error) {
 	}
 	if cfg.SkillsPath == "" {
 		cfg.SkillsPath = defaults.SkillsPath
+	}
+
+	if len(cfg.AfterCaptureTasks) == 0 {
+		cfg.AfterCaptureTasks = defaults.AfterCaptureTasks
+	}
+	if cfg.Edit.Mode == "" {
+		cfg.Edit.Mode = defaults.Edit.Mode
+	}
+	if cfg.Edit.BrushThickness == 0 {
+		cfg.Edit.BrushThickness = defaults.Edit.BrushThickness
+	}
+	if cfg.Edit.FontScale == 0 {
+		cfg.Edit.FontScale = defaults.Edit.FontScale
+	}
+	if cfg.Uploader.FieldName == "" {
+		cfg.Uploader.FieldName = defaults.Uploader.FieldName
+	}
+	if cfg.Uploader.AuthHeader == "" {
+		cfg.Uploader.AuthHeader = defaults.Uploader.AuthHeader
+	}
+	if cfg.Uploader.URLJSONPath == "" {
+		cfg.Uploader.URLJSONPath = defaults.Uploader.URLJSONPath
+	}
+	if cfg.Uploader.TimeoutSeconds <= 0 {
+		cfg.Uploader.TimeoutSeconds = defaults.Uploader.TimeoutSeconds
+	}
+	if cfg.Vision.Provider == "" {
+		cfg.Vision.Provider = defaults.Vision.Provider
+	}
+	if cfg.Vision.Model == "" {
+		cfg.Vision.Model = defaults.Vision.Model
+	}
+	if cfg.Vision.Prompt == "" {
+		cfg.Vision.Prompt = defaults.Vision.Prompt
+	}
+	if cfg.Vision.APIKeyEnv == "" {
+		cfg.Vision.APIKeyEnv = defaults.Vision.APIKeyEnv
+	}
+	if cfg.Vision.TimeoutSeconds <= 0 {
+		cfg.Vision.TimeoutSeconds = defaults.Vision.TimeoutSeconds
 	}
 
 	if cfg.Recorder.Width <= 0 {

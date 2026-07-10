@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -10,6 +11,7 @@ import (
 
 	"zen-cap/pkg/capture"
 	"zen-cap/pkg/config"
+	"zen-cap/pkg/pipeline"
 )
 
 func handleScreenshot() error {
@@ -124,20 +126,17 @@ func handleScreenshot() error {
 
 	fmt.Printf("Screenshot saved successfully to %s\n", outputPath)
 
-	// Resolve clipboard action
-	action := cfg.ClipboardMode
+	// CLI flag overrides config; the in-crop dynamic choice (chosenAction)
+	// overrides both and is passed through as the pipeline override.
 	if *clipMode != "" {
-		action = *clipMode
-	}
-	if chosenAction != "" {
-		action = chosenAction // Dynamic in-crop selection takes precedence!
+		cfg.ClipboardMode = *clipMode
 	}
 
 	absPath, err := filepath.Abs(outputPath)
 	if err != nil {
 		absPath = outputPath
 	}
-	processClipboardAction(img, absPath, action, cfg)
+	pipeline.Run(context.Background(), cfg, img, absPath, chosenAction)
 
 	return nil
 }
