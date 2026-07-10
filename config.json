@@ -22,7 +22,7 @@
     "window_class_grab": "Shift-F4",
     "color_picker": "Shift-F5",
     "snippet_cycle_mode": "Mod4-w",
-    "cycle_task_profile": "Control-Mod1-p"
+    "cycle_task_profile": "Control-Mod1-w"
   },
   "snippet_picker": {
     "width": 850,
@@ -175,5 +175,11 @@
       "clipboard_mode": "translate"
     }
   ],
-  "current_task_profile": "Copy Path"
+  "current_task_profile": "LLM Vision",
+  "browser_bridge": {
+    "address": "127.0.0.1",
+    "port": 9999,
+    "provider": "gemini",
+    "prompt": "Describe what is shown in this screenshot in 2-3 concise sentences."
+  }
 }

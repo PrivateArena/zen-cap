@@ -116,6 +116,13 @@ type TaskProfile struct {
 	ClipboardMode     string   `json:"clipboard_mode"`
 }
 
+type BrowserBridgeConfig struct {
+	Address  string `json:"address"`
+	Port     int    `json:"port"`
+	Provider string `json:"provider"`
+	Prompt   string `json:"prompt"`
+}
+
 type Config struct {
 	OutputDir            string              `json:"output_dir"`
 	Hotkeys              HotkeysConfig       `json:"hotkeys"`
@@ -149,6 +156,9 @@ type Config struct {
 	// --- task profile system ---
 	TaskProfiles       []TaskProfile `json:"task_profiles"`
 	CurrentTaskProfile string        `json:"current_task_profile"`
+
+	// --- browser bridge configuration ---
+	BrowserBridge BrowserBridgeConfig `json:"browser_bridge"`
 }
 
 type HotkeysConfig struct {
@@ -372,6 +382,12 @@ func DefaultConfig() *Config {
 			},
 		},
 		CurrentTaskProfile: "Copy Image",
+		BrowserBridge: BrowserBridgeConfig{
+			Address:  "127.0.0.1",
+			Port:     9999,
+			Provider: "gemini",
+			Prompt:   "Describe what is shown in this screenshot in 2-3 concise sentences.",
+		},
 	}
 }
 
@@ -521,6 +537,12 @@ func DefaultPortableConfig(binDir string) *Config {
 			},
 		},
 		CurrentTaskProfile: "Copy Image",
+		BrowserBridge: BrowserBridgeConfig{
+			Address:  "127.0.0.1",
+			Port:     9999,
+			Provider: "gemini",
+			Prompt:   "Describe what is shown in this screenshot in 2-3 concise sentences.",
+		},
 	}
 }
 

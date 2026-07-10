@@ -18,14 +18,24 @@ func (VisionTask) Name() string { return "vision" }
 func (VisionTask) Enabled(cfg *config.Config) bool { return cfg.Vision.Enabled }
 
 func (VisionTask) Run(ctx context.Context, r *Result, cfg *config.Config) error {
-	prompt := cfg.Vision.Prompt
-	if prompt == "" {
-		prompt = "Describe what is shown in this screenshot in 2-3 concise sentences."
+	address := cfg.BrowserBridge.Address
+	if address == "" {
+		address = "127.0.0.1"
+	}
+	port := cfg.BrowserBridge.Port
+	if port == 0 {
+		port = 9999
+	}
+	endpoint := fmt.Sprintf("http://%s:%d", address, port)
+
+	provider := cfg.BrowserBridge.Provider
+	if provider == "" {
+		provider = "gemini"
 	}
 
-	provider := cfg.Vision.Provider
-	if provider == "" {
-		provider = "claude"
+	prompt := cfg.BrowserBridge.Prompt
+	if prompt == "" {
+		prompt = "Describe what is shown in this screenshot in 2-3 concise sentences."
 	}
 
 	timeout := time.Duration(cfg.Vision.TimeoutSeconds) * time.Second
@@ -35,8 +45,8 @@ func (VisionTask) Run(ctx context.Context, r *Result, cfg *config.Config) error 
 	reqCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	fmt.Printf("[Vision] Requesting visual analysis from browser bridge using %s...\n", provider)
-	text, err := browser_bridge.CallChat(reqCtx, "", provider, prompt, []string{r.OutputPath})
+	fmt.Printf("[Vision] Requesting visual analysis from browser bridge at %s using %s...\n", endpoint, provider)
+	text, err := browser_bridge.CallChat(reqCtx, endpoint, provider, prompt, []string{r.OutputPath})
 	if err != nil {
 		return err
 	}
