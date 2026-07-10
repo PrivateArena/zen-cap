@@ -10,7 +10,7 @@ import (
 	"zen-cap/pkg/capture"
 	"zen-cap/pkg/config"
 	"zen-cap/pkg/snippet"
-	"zen-cap/pkg/tui"
+	//"zen-cap/pkg/tui"
 )
 
 func runCLI() {
@@ -44,18 +44,18 @@ func runCLI() {
 		if err := handleService(); err != nil {
 			log.Fatalf("Service error: %v", err)
 		}
-	case "manage":
-		cfg, _, err := config.LoadConfig()
-		if err != nil {
-			cfg = config.DefaultConfig()
-		}
-		snipMgr, err := snippet.NewManager(cfg.SnippetFile)
-		if err != nil {
-			log.Fatalf("Failed to initialize Snippet Manager: %v", err)
-		}
-		if err := tui.RunManager(cfg, snipMgr); err != nil {
-			log.Fatalf("TUI Manager failed: %v", err)
-		}
+	// case "manage":
+	// 	cfg, _, err := config.LoadConfig()
+	// 	if err != nil {
+	// 		cfg = config.DefaultConfig()
+	// 	}
+	// 	snipMgr, err := snippet.NewManager(cfg.SnippetFile)
+	// 	if err != nil {
+	// 		log.Fatalf("Failed to initialize Snippet Manager: %v", err)
+	// 	}
+	// 	if err := tui.RunManager(cfg, snipMgr); err != nil {
+	// 		log.Fatalf("TUI Manager failed: %v", err)
+	// 	}
 	case "snippet-picker":
 		cfg, _, err := config.LoadConfig()
 		if err != nil {
