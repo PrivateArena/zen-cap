@@ -25,12 +25,14 @@ func (c *StrokeCmd) apply(layer *image.RGBA, cfg Config) {
 		}
 	case Rect:
 		if len(c.Points) >= 2 {
-			drawRect(layer, c.Points[0].X, c.Points[0].Y, c.Points[1].X, c.Points[1].Y, c.Color, c.Thick)
+			last := c.Points[len(c.Points)-1]
+			drawRect(layer, c.Points[0].X, c.Points[0].Y, last.X, last.Y, c.Color, c.Thick)
 		}
 	case Circle:
 		if len(c.Points) >= 2 {
-			dx := c.Points[1].X - c.Points[0].X
-			dy := c.Points[1].Y - c.Points[0].Y
+			last := c.Points[len(c.Points)-1]
+			dx := last.X - c.Points[0].X
+			dy := last.Y - c.Points[0].Y
 			r := int(math.Sqrt(float64(dx*dx + dy*dy)))
 			if r > 0 {
 				drawCircle(layer, c.Points[0].X, c.Points[0].Y, r, c.Color, c.Thick)

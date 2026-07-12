@@ -41,9 +41,10 @@ type regionState struct {
 	aborted         bool
 	clipboardAction string // "image", "path", "ocr", "translate"
 
-	ann          *annotation.Annotator
-	magnifier    *Magnifier
-	displayCache *image.RGBA // cached GetComposite() to avoid double allocation per redraw
+	ann             *annotation.Annotator
+	magnifier       *Magnifier
+	displayCache    *image.RGBA // cached GetComposite() to avoid double allocation per redraw
+	displayCacheBgra []byte     // cached BGRA bytes of displayCache; avoids 8MB imageToBGRA per frame
 }
 
 // InteractiveSelectRegion is a backward-compatible wrapper around InteractiveSelectRegionExt.
@@ -414,10 +415,14 @@ func (s *regionState) redraw() {
 	if s.ann.IsDirty() {
 		s.displayCache = s.ann.GetComposite()
 		s.ann.ClearDirty()
+		if s.displayCache != nil {
+			s.displayCacheBgra = imageToBGRA(s.displayCache)
+		} else {
+			s.displayCacheBgra = nil
+		}
 	}
-	if s.displayCache != nil {
-		bgra := imageToBGRA(s.displayCache)
-		_ = uploadImageChunked(s.xu, xproto.Drawable(s.bufPixmapID), s.gcID, s.screen.RootDepth, s.screenWidth, s.screenHeight, bgra)
+	if s.displayCacheBgra != nil {
+		_ = uploadImageChunked(s.xu, xproto.Drawable(s.bufPixmapID), s.gcID, s.screen.RootDepth, s.screenWidth, s.screenHeight, s.displayCacheBgra)
 	}
 
 	// 3. Selection overlay
@@ -456,10 +461,10 @@ func (s *regionState) redraw() {
 	// 4. Transient annotation preview (text cursor, shape outlines)
 	s.drawAnnotationPreview()
 
-	// 5. Magnifier (use cached composite if available to avoid allocation)
+	// 5. Magnifier (use cached composite if available; fall back to base to avoid 8MB alloc)
 	displayImg := s.displayCache
 	if displayImg == nil {
-		displayImg = s.ann.GetComposite()
+		displayImg = s.ann.GetBase()
 	}
 	s.magnifier.Render(
 		s.xu,

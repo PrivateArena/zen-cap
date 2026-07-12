@@ -281,6 +281,12 @@ func (a *Annotator) HasCommitted() bool {
 	return a.log.Len() > 0
 }
 
+func (a *Annotator) GetBase() *image.RGBA {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.base
+}
+
 func (a *Annotator) DoodleStart() image.Point {
 	a.mu.Lock()
 	defer a.mu.Unlock()

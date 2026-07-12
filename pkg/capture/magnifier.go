@@ -80,39 +80,45 @@ func (m *Magnifier) Render(
 
 func (m *Magnifier) getMagnifierImage(rgbaImg *image.RGBA, mx, my, lx, ly, screenWidth, screenHeight int, dragging bool, startX, startY int) *image.RGBA {
 	mag := image.NewRGBA(image.Rect(0, 0, 120, 120))
-	pinkColor := color.RGBA{R: 255, G: 0, B: 127, A: 255}
-	cyanColor := color.RGBA{R: 0, G: 240, B: 255, A: 255}
+	magPix := mag.Pix
+	magStride := mag.Stride
+	srcPix := rgbaImg.Pix
+	srcStride := rgbaImg.Stride
+
+	const (
+		pinkR, pinkG, pinkB, pinkA = 255, 0, 127, 255
+		cyanR, cyanG, cyanB, cyanA = 0, 240, 255, 255
+	)
 
 	for dy := 0; dy < 120; dy++ {
 		for dx := 0; dx < 120; dx++ {
+			oi := dy*magStride + dx*4
 			rx := dx - 60
 			ry := dy - 60
 			distSq := rx*rx + ry*ry
 
-			var col color.Color
+			var r, g, b, a uint8
 			if distSq > 60*60 {
-				// Outside the circular magnifier glass: draw background screen pixel
 				sx := lx + dx
 				sy := ly + dy
 				if sx >= 0 && sx < screenWidth && sy >= 0 && sy < screenHeight {
-					col = rgbaImg.At(sx, sy)
+					i := sy*srcStride + sx*4
+					r, g, b, a = srcPix[i+0], srcPix[i+1], srcPix[i+2], srcPix[i+3]
 				} else {
-					col = color.Black
+					a = 255
 				}
 			} else if distSq >= 58*58 && distSq <= 60*60 {
-				// Outer bezel: Neon cyan
-				col = cyanColor
+				r, g, b, a = cyanR, cyanG, cyanB, cyanA
 			} else {
-				// Inside the circular magnifier glass: 4x nearest-neighbor magnification
 				sx := mx - 15 + dx/4
 				sy := my - 15 + dy/4
 				if sx >= 0 && sx < screenWidth && sy >= 0 && sy < screenHeight {
-					col = rgbaImg.At(sx, sy)
+					i := sy*srcStride + sx*4
+					r, g, b, a = srcPix[i+0], srcPix[i+1], srcPix[i+2], srcPix[i+3]
 				} else {
-					col = color.Black
+					a = 255
 				}
 
-				// If PickerSize > 0, draw the border around the picked area
 				isOnBorder := false
 				if m.PickerSize > 0 {
 					ox := dx/4 - 15
@@ -125,20 +131,18 @@ func (m *Magnifier) getMagnifierImage(rgbaImg *image.RGBA, mx, my, lx, ly, scree
 						isOnBorder = true
 					}
 					if isOnBorder {
-						col = cyanColor
+						r, g, b, a = cyanR, cyanG, cyanB, cyanA
 					}
 				}
 
-				// Draw circular central crosshairs (Neon pink, length 10px in 4 directions)
 				if !isOnBorder && ((rx == 0 && ry >= -10 && ry <= 10) || (ry == 0 && rx >= -10 && rx <= 10)) {
-					col = pinkColor
+					r, g, b, a = pinkR, pinkG, pinkB, pinkA
 				}
 			}
-			mag.Set(dx, dy, col)
+			magPix[oi+0], magPix[oi+1], magPix[oi+2], magPix[oi+3] = r, g, b, a
 		}
 	}
 
-	// Determine info string to display in the bottom HUD bar
 	var infoStr string
 	if dragging {
 		w := int(math.Abs(float64(mx - startX)))
@@ -148,7 +152,6 @@ func (m *Magnifier) getMagnifierImage(rgbaImg *image.RGBA, mx, my, lx, ly, scree
 		infoStr = fmt.Sprintf("%d,%d", mx, my)
 	}
 
-	// Render HUD background bar inside the bottom of the magnifier (transparent black)
 	hudWidth := len(infoStr)*4 + 6
 	hudStartX := (120 - hudWidth) / 2
 	for ty := 95; ty < 103; ty++ {
@@ -156,12 +159,12 @@ func (m *Magnifier) getMagnifierImage(rgbaImg *image.RGBA, mx, my, lx, ly, scree
 			rx := tx - 60
 			ry := ty - 60
 			if rx*rx+ry*ry < 56*56 {
-				mag.Set(tx, ty, color.RGBA{R: 0, G: 0, B: 0, A: 220})
+				oi := ty*magStride + tx*4
+				magPix[oi+0], magPix[oi+1], magPix[oi+2], magPix[oi+3] = 0, 0, 0, 220
 			}
 		}
 	}
 
-	// Draw HUD text
 	annotation.DrawStringScaled(mag, infoStr, hudStartX+3, 90, color.White, 1)
 
 	return mag
