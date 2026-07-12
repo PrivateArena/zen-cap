@@ -4,7 +4,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"image/color"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -12,8 +11,6 @@ import (
 	"syscall"
 	"time"
 
-	"zen-cap/pkg/annotation"
-	"zen-cap/pkg/annotation/overlay"
 	"zen-cap/pkg/config"
 	"zen-cap/pkg/recorder"
 )
@@ -119,28 +116,6 @@ func handleRecord() error {
 	}
 
 	rec := recorder.NewRecorder(recCfg)
-
-	// Start annotation overlay (transparent, click-through for on-screen caption)
-	ann := annotation.NewAnnotator(nil, annotation.Config{
-		BrushThickness: 4,
-		FontScale:      4,
-		Color:          color.RGBA{R: 255, G: 0, B: 127, A: 255},
-	})
-
-	ov := overlay.NewX11Overlay(ann, overlay.OverlayConfig{
-		X:         x,
-		Y:         y,
-		Width:     w,
-		Height:    h,
-		TargetFPS: fpsVal,
-	})
-
-	if err := ov.Start(); err != nil {
-		fmt.Printf("[Record] Annotation overlay start failed (non-fatal): %v\n", err)
-	} else {
-		defer ov.Stop()
-		fmt.Printf("[Record] Annotation overlay active (%dx%d at %d,%d)\n", w, h, x, y)
-	}
 
 	if err := rec.Start(); err != nil {
 		return err

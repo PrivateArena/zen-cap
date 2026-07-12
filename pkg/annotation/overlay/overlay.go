@@ -16,6 +16,7 @@ import (
 type OverlayConfig struct {
 	X, Y, Width, Height int
 	TargetFPS           int
+	Display             string // X11 display (e.g. ":0.0"); empty = $DISPLAY
 }
 
 type X11Overlay struct {
@@ -54,20 +55,22 @@ func (ov *X11Overlay) Start() error {
 		return fmt.Errorf("overlay already started")
 	}
 
-	xu, err := xgbutil.NewConn()
+	display := ov.cfg.Display
+	if display == "" {
+		display = ":0.0"
+	}
+	xu, err := xgbutil.NewConnDisplay(display)
 	if err != nil {
 		return fmt.Errorf("overlay: NewConn: %w", err)
 	}
 	ov.xu = xu
 	screen := xu.Screen()
 
-	visual, depth := findARGBVisual(xu)
-	if visual == 0 {
-		visual = screen.RootVisual
-		depth = screen.RootDepth
-		fmt.Println("[Overlay] No ARGB visual; using opaque fallback")
-	}
-	ov.depth = depth
+	// Use root visual/depth — no ARGB transparency needed (frozen-frame
+	// annotation composites the image in software). This avoids BadMatch
+	// on WMs without a compositing manager, where depth-32 child windows
+	// are not allowed under a depth-24 root.
+	ov.depth = screen.RootDepth
 
 	winID, err := xproto.NewWindowId(xu.Conn())
 	if err != nil {
@@ -84,13 +87,16 @@ func (ov *X11Overlay) Start() error {
 		xproto.EventMaskExposure |
 		xproto.EventMaskStructureNotify
 
+	// Value-list must follow LSB-first mask-bit order:
+	//   CwBackPixel (bit1), CwBorderPixel (bit3),
+	//   CwOverrideRedirect (bit9), CwEventMask (bit11)
 	err = xproto.CreateWindowChecked(
-		xu.Conn(), depth, winID, screen.Root,
+		xu.Conn(), screen.RootDepth, winID, screen.Root,
 		int16(ov.cfg.X), int16(ov.cfg.Y),
 		uint16(ov.cfg.Width), uint16(ov.cfg.Height),
-		0, xproto.WindowClassInputOutput, visual,
+		0, xproto.WindowClassInputOutput, screen.RootVisual,
 		xproto.CwOverrideRedirect|xproto.CwEventMask|xproto.CwBackPixel|xproto.CwBorderPixel,
-		[]uint32{overrideRedirect, eventMask, 0x00000000, 0x00000000},
+		[]uint32{0x00000000, 0x00000000, overrideRedirect, eventMask},
 	).Check()
 	if err != nil {
 		xu.Conn().Close()
@@ -120,7 +126,7 @@ func (ov *X11Overlay) Start() error {
 		xu.Conn().Close()
 		return fmt.Errorf("overlay: NewPixmapId: %w", err)
 	}
-	if err := xproto.CreatePixmapChecked(xu.Conn(), depth, bufPix, xproto.Drawable(winID),
+	if err := xproto.CreatePixmapChecked(xu.Conn(), ov.depth, bufPix, xproto.Drawable(winID),
 		uint16(ov.cfg.Width), uint16(ov.cfg.Height)).Check(); err != nil {
 		xproto.FreePixmap(xu.Conn(), bufPix)
 		xproto.FreeGC(xu.Conn(), gcID)
@@ -130,9 +136,19 @@ func (ov *X11Overlay) Start() error {
 	}
 	ov.bufPix = bufPix
 
+	if ov.cfg.Width <= 0 || ov.cfg.Height <= 0 {
+		xu.Conn().Close()
+		return fmt.Errorf("overlay: invalid dimensions %dx%d", ov.cfg.Width, ov.cfg.Height)
+	}
+
 	xproto.MapWindow(xu.Conn(), winID)
 	xproto.ConfigureWindow(xu.Conn(), winID, xproto.ConfigWindowStackMode,
 		[]uint32{uint32(xproto.StackModeAbove)})
+
+	// Give the overlay keyboard focus so it can receive text input for
+	// annotations. Without this, an override-redirect window never gets
+	// keyboard events.
+	xproto.SetInputFocus(xu.Conn(), xproto.InputFocusParent, winID, xproto.TimeCurrentTime)
 
 	keybind.Initialize(xu)
 
@@ -232,9 +248,13 @@ func (ov *X11Overlay) WaitDone() error {
 func (ov *X11Overlay) render() {
 	ov.ann.ClearDirty()
 	composite := ov.ann.GetComposite()
-	bgra := imageToBGRA(composite)
+
+	bpp, pad := pixmapFormatFor(ov.xu, ov.depth)
+	stride := rowStrideBytes(ov.cfg.Width, bpp, pad)
+	pixels := imageToPixelData(composite, bpp/8, stride)
+
 	uploadImageChunked(ov.xu, xproto.Drawable(ov.bufPix), ov.gc, ov.depth,
-		ov.cfg.Width, ov.cfg.Height, bgra)
+		ov.cfg.Width, ov.cfg.Height, pixels)
 	xproto.CopyArea(ov.xu.Conn(),
 		xproto.Drawable(ov.bufPix),
 		xproto.Drawable(ov.win),

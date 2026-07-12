@@ -8,6 +8,7 @@
     "ocr_region_screenshot": "Mod1-F1",
     "ocr_window_screenshot": "Mod1-F2",
     "record_toggle": "Control-Shift-Mod1-F1",
+    "record_annotate": "Control-Shift-Mod1-a",
     "record_mark_fullscreen": "Control-Shift-Mod1-F4",
     "record_mark_region": "Control-Shift-Mod1-F2",
     "record_mark_window": "Control-Shift-Mod1-F3",

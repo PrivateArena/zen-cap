@@ -9,7 +9,7 @@ import (
 	"zen-cap/pkg/annotation/overlay"
 )
 
-func InteractiveAnnotate(img *image.RGBA, brushThickness uint32, fontScale int) (*image.RGBA, error) {
+func InteractiveAnnotate(img *image.RGBA, brushThickness uint32, fontScale int, display ...string) (*image.RGBA, error) {
 	ann := annotation.NewAnnotator(img, annotation.Config{
 		BrushThickness: brushThickness,
 		FontScale:      fontScale,
@@ -17,12 +17,17 @@ func InteractiveAnnotate(img *image.RGBA, brushThickness uint32, fontScale int) 
 	})
 
 	b := img.Bounds()
+	var dpy string
+	if len(display) > 0 {
+		dpy = display[0]
+	}
 	ov := overlay.NewX11Overlay(ann, overlay.OverlayConfig{
 		X:         0,
 		Y:         0,
 		Width:     b.Dx(),
 		Height:    b.Dy(),
 		TargetFPS: 30,
+		Display:   dpy,
 	})
 
 	if err := ov.Start(); err != nil {

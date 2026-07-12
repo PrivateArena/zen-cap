@@ -169,6 +169,7 @@ type HotkeysConfig struct {
 	OCRRegionScreenshot  string `json:"ocr_region_screenshot"`
 	OCRWindowScreenshot  string `json:"ocr_window_screenshot"`
 	RecordToggle         string `json:"record_toggle"`
+	RecordAnnotate       string `json:"record_annotate"`
 	RecordMarkFullscreen string `json:"record_mark_fullscreen"`
 	RecordMarkRegion     string `json:"record_mark_region"`
 	RecordMarkWindow     string `json:"record_mark_window"`
@@ -248,6 +249,7 @@ func DefaultConfig() *Config {
 			OCRRegionScreenshot:  "Control-Shift-p",
 			OCRWindowScreenshot:  "Shift-F3",
 			RecordToggle:         "Control-Shift-r",
+			RecordAnnotate:       "Control-Shift-Mod1-a",
 			RecordMarkFullscreen: "Control-Mod1-f",
 			RecordMarkRegion:     "Control-Mod1-r",
 			RecordMarkWindow:     "Control-Mod1-w",
@@ -403,6 +405,7 @@ func DefaultPortableConfig(binDir string) *Config {
 			OCRRegionScreenshot:  "Control-Shift-p",
 			OCRWindowScreenshot:  "Shift-F3",
 			RecordToggle:         "Control-Shift-r",
+			RecordAnnotate:       "Control-Shift-Mod1-a",
 			RecordMarkFullscreen: "Control-Mod1-f",
 			RecordMarkRegion:     "Control-Mod1-r",
 			RecordMarkWindow:     "Control-Mod1-w",
@@ -693,6 +696,9 @@ func readConfig(path string, binDir string, isPortable bool) (*Config, error) {
 	}
 	if cfg.Hotkeys.RecordToggle == "" {
 		cfg.Hotkeys.RecordToggle = defaults.Hotkeys.RecordToggle
+	}
+	if cfg.Hotkeys.RecordAnnotate == "" {
+		cfg.Hotkeys.RecordAnnotate = defaults.Hotkeys.RecordAnnotate
 	}
 	if cfg.Hotkeys.RecordMarkFullscreen == "" {
 		cfg.Hotkeys.RecordMarkFullscreen = defaults.Hotkeys.RecordMarkFullscreen

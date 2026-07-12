@@ -4,6 +4,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"image"
+	"image/draw"
 	"log"
 	"net/http"
 	"net/url"
@@ -89,6 +91,7 @@ func handleService() error {
 	fmt.Printf("  %-14s -> Grab Window Class to Clipboard\n", cfg.Hotkeys.WindowClassGrab)
 	fmt.Printf("  %-14s -> Color Picker (Grab Pixels to Clipboard)\n", cfg.Hotkeys.ColorPicker)
 	fmt.Printf("  %-14s -> Toggle Recording (Start/Stop)\n", cfg.Hotkeys.RecordToggle)
+	fmt.Printf("  %-14s -> Annotate Overlay (Fullscreen freeze-frame)\n", cfg.Hotkeys.RecordAnnotate)
 	fmt.Printf("  %-14s -> Mark Fullscreen for Recording\n", cfg.Hotkeys.RecordMarkFullscreen)
 	fmt.Printf("  %-14s -> Mark Region for Recording\n", cfg.Hotkeys.RecordMarkRegion)
 	fmt.Printf("  %-14s -> Mark Window for Recording\n", cfg.Hotkeys.RecordMarkWindow)
@@ -120,6 +123,7 @@ func handleService() error {
 	windowClassGrabChan := make(chan struct{}, 1)
 	colorPickerChan := make(chan struct{}, 1)
 	recordChan := make(chan struct{}, 1)
+	recordAnnotateChan := make(chan struct{}, 1)
 	recordMarkFullscreenChan := make(chan struct{}, 1)
 	recordMarkRegionChan := make(chan struct{}, 1)
 	recordMarkWindowChan := make(chan struct{}, 1)
@@ -223,6 +227,15 @@ func handleService() error {
 		fmt.Println("Hotkey pressed: Triggering recording toggle...")
 		select {
 		case recordChan <- struct{}{}:
+		default:
+		}
+	})
+
+	// Register Hotkey for on-demand annotation overlay
+	cm.Register(cfg.Hotkeys.RecordAnnotate, func() {
+		fmt.Println("Hotkey pressed: Triggering record annotation...")
+		select {
+		case recordAnnotateChan <- struct{}{}:
 		default:
 		}
 	})
@@ -1151,6 +1164,63 @@ func handleService() error {
 				fmt.Println("[Recorder] Recording area highlight overlay mapped")
 			}
 			activeBordersMu.Unlock()
+		}
+	}()
+
+	// Background loop for recordAnnotateChan — standalone annotation like Color Picker
+	var annotateMu sync.Mutex
+	var annotateRunning bool
+	go func() {
+		for range recordAnnotateChan {
+			annotateMu.Lock()
+			if annotateRunning {
+				annotateMu.Unlock()
+				continue
+			}
+			annotateRunning = true
+			annotateMu.Unlock()
+
+			go func() {
+				defer func() {
+					annotateMu.Lock()
+					annotateRunning = false
+					annotateMu.Unlock()
+				}()
+
+				if freshCfg, _, err := config.LoadConfig(); err == nil {
+					cfg = freshCfg
+				}
+
+				fmt.Println("Opening annotation overlay...")
+
+				capCfg := capture.CaptureConfig{
+					Display:     ":0.0",
+					X:           -1,
+					Y:           -1,
+					Interactive: false,
+				}
+				img, err := capture.CaptureScreen(capCfg)
+				if err != nil {
+					fmt.Printf("Annotation capture error: %v\n", err)
+					return
+				}
+
+				rgba, ok := img.(*image.RGBA)
+				if !ok {
+					b := img.Bounds()
+					rgba = image.NewRGBA(b)
+					draw.Draw(rgba, b, img, b.Min, draw.Src)
+				}
+
+				result, err := capture.InteractiveAnnotate(rgba, cfg.Edit.BrushThickness, cfg.Edit.FontScale)
+				if err != nil {
+					fmt.Printf("Annotation error: %v\n", err)
+				} else if result != nil {
+					fmt.Printf("Annotation committed\n")
+				} else {
+					fmt.Println("Annotation cancelled")
+				}
+			}()
 		}
 	}()
 
