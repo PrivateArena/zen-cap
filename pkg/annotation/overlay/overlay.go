@@ -3,7 +3,10 @@ package overlay
 import (
 	"fmt"
 	"image"
+	"image/color"
+	"math"
 	"sync"
+	"time"
 
 	"github.com/jezek/xgb/xproto"
 	"github.com/jezek/xgbutil"
@@ -28,6 +31,8 @@ type X11Overlay struct {
 	cfg    OverlayConfig
 	depth  byte
 	base   *image.RGBA
+
+	previewGC xproto.Gcontext // bright-color GC for transient shape outlines
 
 	stop    chan struct{}
 	done    chan error
@@ -119,6 +124,25 @@ func (ov *X11Overlay) Start() error {
 	}
 	ov.gc = gcID
 
+	// Create preview GC for transient shape outlines and text cursor
+	pGC, err := xproto.NewGcontextId(xu.Conn())
+	if err != nil {
+		xproto.FreeGC(xu.Conn(), gcID)
+		xproto.DestroyWindow(xu.Conn(), winID)
+		xu.Conn().Close()
+		return fmt.Errorf("overlay: NewGcontextId (preview): %w", err)
+	}
+	if err := xproto.CreateGCChecked(xu.Conn(), pGC, xproto.Drawable(winID),
+		xproto.GcForeground, []uint32{0x00FF69B4}, // neon pink
+	).Check(); err != nil {
+		xproto.FreeGC(xu.Conn(), pGC)
+		xproto.FreeGC(xu.Conn(), gcID)
+		xproto.DestroyWindow(xu.Conn(), winID)
+		xu.Conn().Close()
+		return fmt.Errorf("overlay: CreateGC (preview): %w", err)
+	}
+	ov.previewGC = pGC
+
 	bufPix, err := xproto.NewPixmapId(xu.Conn())
 	if err != nil {
 		xproto.FreeGC(xu.Conn(), gcID)
@@ -172,11 +196,43 @@ func (ov *X11Overlay) Start() error {
 	}).Connect(xu, winID)
 
 	xevent.MotionNotifyFun(func(X *xgbutil.XUtil, ev xevent.MotionNotifyEvent) {
-		ov.ann.HandleEvent(annotation.InputEvent{
+		evX, evY := int(ev.EventX), int(ev.EventY)
+
+		if ov.ann.IsDoodling() && ov.ann.Tool() == annotation.Doodle {
+			// Doodle fast path: snapshot last position, let Annotator
+			// draw on Go layer, then draw segment directly on bufPix
+			// via X11 PolyLine (avoids full composite upload per event).
+			last := ov.ann.DoodleLast()
+			ov.ann.HandleEvent(annotation.InputEvent{
+				Kind: annotation.Motion,
+				X:    evX,
+				Y:    evY,
+			})
+			xproto.PolyLine(ov.xu.Conn(),
+				xproto.CoordModeOrigin,
+				xproto.Drawable(ov.bufPix), ov.previewGC,
+				[]xproto.Point{
+					{X: int16(last.X), Y: int16(last.Y)},
+					{X: int16(evX), Y: int16(evY)},
+				},
+			)
+			xproto.CopyArea(ov.xu.Conn(),
+				xproto.Drawable(ov.bufPix),
+				xproto.Drawable(ov.win),
+				ov.gc, 0, 0, 0, 0,
+				uint16(ov.cfg.Width), uint16(ov.cfg.Height),
+			)
+			return
+		}
+
+		_, needsRedraw := ov.ann.HandleEvent(annotation.InputEvent{
 			Kind: annotation.Motion,
-			X:    int(ev.EventX),
-			Y:    int(ev.EventY),
+			X:    evX,
+			Y:    evY,
 		})
+		if needsRedraw {
+			ov.render()
+		}
 	}).Connect(xu, winID)
 
 	xevent.KeyPressFun(func(X *xgbutil.XUtil, ev xevent.KeyPressEvent) {
@@ -184,6 +240,23 @@ func (ov *X11Overlay) Start() error {
 		keycode := ev.Detail
 		keyStr := keybind.LookupString(xu, mods, keycode)
 
+		// Forward to Annotator first (handles text commit/cancel,
+		// undo, tool switching, etc.)
+		handled, needsRedraw := ov.ann.HandleEvent(annotation.InputEvent{
+			Kind:    annotation.Key,
+			KeyStr:  keyStr,
+			Keycode: uint8(keycode),
+			Mods:    mods,
+		})
+		if handled {
+			if needsRedraw {
+				ov.render()
+			}
+			return
+		}
+
+		// Only handle Enter/Escape for overlay dismissal if the
+		// Annotator didn't consume them (i.e., not in text mode).
 		if keyStr == "Return" || keyStr == "Enter" {
 			select {
 			case ov.done <- nil:
@@ -198,13 +271,6 @@ func (ov *X11Overlay) Start() error {
 			}
 			return
 		}
-
-		ov.ann.HandleEvent(annotation.InputEvent{
-			Kind:    annotation.Key,
-			KeyStr:  keyStr,
-			Keycode: uint8(keycode),
-			Mods:    mods,
-		})
 	}).Connect(xu, winID)
 
 	xevent.ExposeFun(func(X *xgbutil.XUtil, ev xevent.ExposeEvent) {
@@ -237,6 +303,7 @@ func (ov *X11Overlay) Stop() {
 
 	xproto.FreePixmap(ov.xu.Conn(), ov.bufPix)
 	xproto.FreeGC(ov.xu.Conn(), ov.gc)
+	xproto.FreeGC(ov.xu.Conn(), ov.previewGC)
 	xproto.DestroyWindow(ov.xu.Conn(), ov.win)
 	ov.xu.Conn().Close()
 }
@@ -255,10 +322,97 @@ func (ov *X11Overlay) render() {
 
 	uploadImageChunked(ov.xu, xproto.Drawable(ov.bufPix), ov.gc, ov.depth,
 		ov.cfg.Width, ov.cfg.Height, pixels)
+
+	ov.renderTransient()
+
 	xproto.CopyArea(ov.xu.Conn(),
 		xproto.Drawable(ov.bufPix),
 		xproto.Drawable(ov.win),
 		ov.gc, 0, 0, 0, 0,
 		uint16(ov.cfg.Width), uint16(ov.cfg.Height),
 	)
+}
+
+// renderTransient draws shape outlines and text cursor preview on bufPix
+// on top of the committed composite. Called from render() before CopyArea.
+func (ov *X11Overlay) renderTransient() {
+	bpp, _ := pixmapFormatFor(ov.xu, ov.depth)
+	pixelBytes := bpp / 8
+	if pixelBytes < 4 {
+		pixelBytes = 4
+	}
+
+	// Shape outline preview during drag
+	if ov.ann.IsDoodling() {
+		tool := ov.ann.Tool()
+		if tool == annotation.Rect {
+			start := ov.ann.DoodleStart()
+			last := ov.ann.DoodleLast()
+			x1 := int(math.Min(float64(start.X), float64(last.X)))
+			y1 := int(math.Min(float64(start.Y), float64(last.Y)))
+			w := int(math.Abs(float64(last.X - start.X)))
+			h := int(math.Abs(float64(last.Y - start.Y)))
+			if w > 0 && h > 0 {
+				rect := xproto.Rectangle{
+					X: int16(x1), Y: int16(y1),
+					Width: uint16(w), Height: uint16(h),
+				}
+				xproto.PolyRectangle(ov.xu.Conn(),
+					xproto.Drawable(ov.bufPix), ov.previewGC,
+					[]xproto.Rectangle{rect})
+			}
+		} else if tool == annotation.Circle {
+			start := ov.ann.DoodleStart()
+			last := ov.ann.DoodleLast()
+			dx := last.X - start.X
+			dy := last.Y - start.Y
+			r := int(math.Sqrt(float64(dx*dx + dy*dy)))
+			if r > 0 {
+				arc := xproto.Arc{
+					X: int16(start.X - r), Y: int16(start.Y - r),
+					Width: uint16(r * 2), Height: uint16(r * 2),
+					Angle1: 0, Angle2: 360 * 64,
+				}
+				xproto.PolyArc(ov.xu.Conn(),
+					xproto.Drawable(ov.bufPix), ov.previewGC,
+					[]xproto.Arc{arc})
+			}
+		}
+	}
+
+	// Text cursor preview
+	if ov.ann.IsTextActive() {
+		cfg := ov.ann.Config()
+		text := ov.ann.TextBuffer()
+		cursor := " "
+		if time.Now().UnixNano()/500000000%2 == 0 {
+			cursor = "_"
+		}
+		textToShow := text + cursor
+		scale := cfg.FontScale
+		textW := len(textToShow)*6*scale + 6
+		textH := 7*scale + 4
+		if textW <= 0 || textH <= 0 {
+			return
+		}
+		textImg := image.NewRGBA(image.Rect(0, 0, textW, textH))
+		pink := color.RGBA{R: 255, G: 0, B: 127, A: 255}
+		for dy := 0; dy < textH; dy++ {
+			for dx := 0; dx < textW; dx++ {
+				textImg.Set(dx, dy, color.Black)
+			}
+		}
+		annotation.DrawStringScaled(textImg, textToShow, 3, 2, pink, scale)
+
+		stride := rowStrideBytes(textW, bpp, 32) // scanlinePad=32 always for depth≥24
+		textPixels := imageToPixelData(textImg, pixelBytes, stride)
+		xproto.PutImage(ov.xu.Conn(),
+			xproto.ImageFormatZPixmap,
+			xproto.Drawable(ov.bufPix), ov.gc,
+			uint16(textW), uint16(textH),
+			int16(ov.ann.TextAnchor().X), int16(ov.ann.TextAnchor().Y),
+			0, ov.depth,
+			textPixels,
+		)
+	}
 }
