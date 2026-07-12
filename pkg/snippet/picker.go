@@ -19,6 +19,7 @@ import (
 	"golang.org/x/image/font/opentype"
 	"golang.org/x/image/math/fixed"
 
+	"zen-cap/pkg/annotation"
 	"zen-cap/pkg/capture"
 	"zen-cap/pkg/config"
 )
@@ -834,7 +835,7 @@ func (s *pickerState) drawText(img draw.Image, text string, x, y int, col color.
 			log.Printf("[SnippetPicker] Recovered from font draw panic: %v. Falling back to bitmap font.", r)
 			s.faceNormal = nil
 			s.faceSmall = nil
-			capture.DrawStringScaled(img, text, x, y, col, scale)
+			annotation.DrawStringScaled(img, text, x, y, col, scale)
 		}
 	}()
 
@@ -846,7 +847,7 @@ func (s *pickerState) drawText(img draw.Image, text string, x, y int, col color.
 	}
 
 	if face == nil {
-		capture.DrawStringScaled(img, text, x, y, col, scale)
+		annotation.DrawStringScaled(img, text, x, y, col, scale)
 		return
 	}
 

@@ -3,14 +3,18 @@ package capture
 import (
 	"fmt"
 	"image"
+	"image/color"
 	"image/draw"
 	"log"
 	"math"
+	"time"
 
 	"github.com/jezek/xgb/xproto"
 	"github.com/jezek/xgbutil"
 	"github.com/jezek/xgbutil/keybind"
 	"github.com/jezek/xgbutil/xevent"
+
+	"zen-cap/pkg/annotation"
 )
 
 // TestHookWindowID is a global hook used by automated tests to locate the selection window.
@@ -37,8 +41,9 @@ type regionState struct {
 	aborted         bool
 	clipboardAction string // "image", "path", "ocr", "translate"
 
-	notations *NotationState
-	magnifier *Magnifier
+	ann          *annotation.Annotator
+	magnifier    *Magnifier
+	displayCache *image.RGBA // cached GetComposite() to avoid double allocation per redraw
 }
 
 // InteractiveSelectRegion is a backward-compatible wrapper around InteractiveSelectRegionExt.
@@ -311,7 +316,11 @@ func InteractiveSelectRegionExt(fullImg image.Image, outClipboardAction *string,
 		screenWidth:     screenWidth,
 		screenHeight:    screenHeight,
 		screen:          screen,
-		notations:       NewNotationState(rgbaImg, brushThickness, 4),
+		ann: annotation.NewAnnotator(rgbaImg, annotation.Config{
+			BrushThickness: brushThickness,
+			FontScale:      4,
+			Color:          color.RGBA{R: 255, G: 0, B: 127, A: 255},
+		}),
 		magnifier:       NewMagnifier(),
 	}
 
@@ -380,7 +389,8 @@ func InteractiveSelectRegionExt(fullImg image.Image, outClipboardAction *string,
 	}
 
 	// Crop the annotated fullscreen screenshot image
-	cropped := state.notations.GetImage().SubImage(image.Rect(x1, y1, x1+w, y1+h))
+	composite := state.ann.GetComposite()
+	cropped := composite.SubImage(image.Rect(x1, y1, x1+w, y1+h))
 	if outClipboardAction != nil {
 		*outClipboardAction = state.clipboardAction
 	}
@@ -389,66 +399,74 @@ func InteractiveSelectRegionExt(fullImg image.Image, outClipboardAction *string,
 
 // Redraw function using double buffering
 func (s *regionState) redraw() {
-	// Copy base screenshot (with doodles drawn directly to it) from bgPixmap to buffer pixmap
+	// 1. Always start from clean background
 	xproto.CopyArea(
 		s.xu.Conn(),
 		xproto.Drawable(s.bgPixmapID),
 		xproto.Drawable(s.bufPixmapID),
 		s.gcID,
-		0, 0, // srcX, srcY
-		0, 0, // dstX, dstY
+		0, 0,
+		0, 0,
 		uint16(s.screenWidth), uint16(s.screenHeight),
 	)
 
+	// 2. Fetch composite once, cache for upload + magnifier; avoid double allocation
+	if s.ann.IsDirty() {
+		s.displayCache = s.ann.GetComposite()
+		s.ann.ClearDirty()
+	}
+	if s.displayCache != nil {
+		bgra := imageToBGRA(s.displayCache)
+		_ = uploadImageChunked(s.xu, xproto.Drawable(s.bufPixmapID), s.gcID, s.screen.RootDepth, s.screenWidth, s.screenHeight, bgra)
+	}
+
+	// 3. Selection overlay
 	if s.dragStart {
 		x1 := int(math.Min(float64(s.startX), float64(s.currX)))
 		y1 := int(math.Min(float64(s.startY), float64(s.currY)))
 		w := int(math.Abs(float64(s.currX - s.startX)))
 		h := int(math.Abs(float64(s.currY - s.startY)))
 
-		// Draw 50% gray overlay on the four outer areas surrounding the selection
 		if y1 > 0 {
-			// Top band
 			rect := xproto.Rectangle{X: 0, Y: 0, Width: uint16(s.screenWidth), Height: uint16(y1)}
 			xproto.PolyFillRectangle(s.xu.Conn(), xproto.Drawable(s.bufPixmapID), s.overlayGCID, []xproto.Rectangle{rect})
 		}
 		if y1+h < s.screenHeight {
-			// Bottom band
 			rect := xproto.Rectangle{X: 0, Y: int16(y1 + h), Width: uint16(s.screenWidth), Height: uint16(s.screenHeight - (y1 + h))}
 			xproto.PolyFillRectangle(s.xu.Conn(), xproto.Drawable(s.bufPixmapID), s.overlayGCID, []xproto.Rectangle{rect})
 		}
 		if x1 > 0 && h > 0 {
-			// Left band
 			rect := xproto.Rectangle{X: 0, Y: int16(y1), Width: uint16(x1), Height: uint16(h)}
 			xproto.PolyFillRectangle(s.xu.Conn(), xproto.Drawable(s.bufPixmapID), s.overlayGCID, []xproto.Rectangle{rect})
 		}
 		if x1+w < s.screenWidth && h > 0 {
-			// Right band
 			rect := xproto.Rectangle{X: int16(x1 + w), Y: int16(y1), Width: uint16(s.screenWidth - (x1 + w)), Height: uint16(h)}
 			xproto.PolyFillRectangle(s.xu.Conn(), xproto.Drawable(s.bufPixmapID), s.overlayGCID, []xproto.Rectangle{rect})
 		}
 
-		// Draw neon-cyan selection border rectangle
 		if w > 0 && h > 0 {
 			rect := xproto.Rectangle{X: int16(x1), Y: int16(y1), Width: uint16(w), Height: uint16(h)}
 			xproto.PolyRectangle(s.xu.Conn(), xproto.Drawable(s.bufPixmapID), s.cyanGCID, []xproto.Rectangle{rect})
 		}
 	} else {
-		// No active crop drag: dark overlay over entire screen
 		rect := xproto.Rectangle{X: 0, Y: 0, Width: uint16(s.screenWidth), Height: uint16(s.screenHeight)}
 		xproto.PolyFillRectangle(s.xu.Conn(), xproto.Drawable(s.bufPixmapID), s.overlayGCID, []xproto.Rectangle{rect})
 	}
 
-	// Draw preview of active shape drawing and text input box using Notations helper
-	s.notations.DrawPreview(s.xu, s.bufPixmapID, s.pinkGCID, s.gcID, s.screen.RootDepth, s.currX, s.currY)
+	// 4. Transient annotation preview (text cursor, shape outlines)
+	s.drawAnnotationPreview()
 
-	// Render magnifier using Magnifier helper
+	// 5. Magnifier (use cached composite if available to avoid allocation)
+	displayImg := s.displayCache
+	if displayImg == nil {
+		displayImg = s.ann.GetComposite()
+	}
 	s.magnifier.Render(
 		s.xu,
 		s.bufPixmapID,
 		s.gcID,
 		s.screen.RootDepth,
-		s.notations.GetImage(),
+		displayImg,
 		s.currX,
 		s.currY,
 		s.screenWidth,
@@ -458,7 +476,7 @@ func (s *regionState) redraw() {
 		s.startY,
 	)
 
-	// Copy complete buffer pixmap to the fullscreen window
+	// 6. Copy to window
 	xproto.CopyArea(
 		s.xu.Conn(),
 		xproto.Drawable(s.bufPixmapID),
@@ -470,9 +488,85 @@ func (s *regionState) redraw() {
 	)
 }
 
+// drawAnnotationPreview draws transient shape outlines and text cursor on the buffer pixmap.
+func (s *regionState) drawAnnotationPreview() {
+	if !s.ann.IsDoodling() && !s.ann.IsTextActive() {
+		return
+	}
+
+	// Draw rect/circle preview outline during drag
+	if s.ann.IsDoodling() {
+		tool := s.ann.Tool()
+		if tool == annotation.Rect || tool == annotation.Circle {
+			start := s.ann.DoodleStart()
+			if tool == annotation.Rect {
+				x1 := int(math.Min(float64(start.X), float64(s.currX)))
+				y1 := int(math.Min(float64(start.Y), float64(s.currY)))
+				w := int(math.Abs(float64(s.currX - start.X)))
+				h := int(math.Abs(float64(s.currY - start.Y)))
+				if w > 0 && h > 0 {
+					rect := xproto.Rectangle{X: int16(x1), Y: int16(y1), Width: uint16(w), Height: uint16(h)}
+					xproto.PolyRectangle(s.xu.Conn(), xproto.Drawable(s.bufPixmapID), s.pinkGCID, []xproto.Rectangle{rect})
+				}
+			} else if tool == annotation.Circle {
+				dx := s.currX - start.X
+				dy := s.currY - start.Y
+				r := int(math.Sqrt(float64(dx*dx + dy*dy)))
+				if r > 0 {
+					arc := xproto.Arc{
+						X: int16(start.X - r), Y: int16(start.Y - r),
+						Width: uint16(r * 2), Height: uint16(r * 2),
+						Angle1: 0, Angle2: 360 * 64,
+					}
+					xproto.PolyArc(s.xu.Conn(), xproto.Drawable(s.bufPixmapID), s.pinkGCID, []xproto.Arc{arc})
+				}
+			}
+		}
+	}
+
+	// Draw text input cursor indicator
+	if s.ann.IsTextActive() {
+		cfg := s.ann.Config()
+		text := s.ann.TextBuffer()
+		cursor := " "
+		if time.Now().UnixNano()/500000000%2 == 0 {
+			cursor = "_"
+		}
+		textToShow := text + cursor
+		scale := cfg.FontScale
+		textW := len(textToShow)*6*scale + 6
+		textH := 7*scale + 4
+		textImg := image.NewRGBA(image.Rect(0, 0, textW, textH))
+		pinkColorRGBA := color.RGBA{R: 255, G: 0, B: 127, A: 255}
+
+		for dy := 0; dy < textH; dy++ {
+			for dx := 0; dx < textW; dx++ {
+				textImg.Set(dx, dy, color.Black)
+			}
+		}
+		annotation.DrawStringScaled(textImg, textToShow, 3, 2, pinkColorRGBA, scale)
+
+		anchor := s.ann.TextAnchor()
+		textBGRA := imageToBGRA(textImg)
+		xproto.PutImage(
+			s.xu.Conn(),
+			xproto.ImageFormatZPixmap,
+			xproto.Drawable(s.bufPixmapID),
+			s.gcID,
+			uint16(textW),
+			uint16(textH),
+			int16(anchor.X),
+			int16(anchor.Y),
+			0,
+			s.screen.RootDepth,
+			textBGRA,
+		)
+	}
+}
+
 func (s *regionState) handleButtonPress(X *xgbutil.XUtil, ev xevent.ButtonPressEvent) {
 	if ev.Detail == 1 { // Left Mouse Button -> Crop Selection
-		if !s.notations.IsDoodling() && !s.notations.IsTextInputActive() {
+		if !s.ann.IsDoodling() && !s.ann.IsTextActive() {
 			s.dragStart = true
 			s.startX = int(ev.EventX)
 			s.startY = int(ev.EventY)
@@ -481,7 +575,14 @@ func (s *regionState) handleButtonPress(X *xgbutil.XUtil, ev xevent.ButtonPressE
 			s.redraw()
 		}
 	} else if ev.Detail == 3 { // Right Mouse Button -> Annotate/Doodle
-		if s.notations.HandleButtonPress(ev, s.dragStart, s.currX, s.currY) {
+		consumed, _ := s.ann.HandleEvent(annotation.InputEvent{
+			Kind:   annotation.Press,
+			X:      int(ev.EventX),
+			Y:      int(ev.EventY),
+			Button: 3,
+			Mods:   ev.State,
+		})
+		if consumed {
 			s.currX = int(ev.EventX)
 			s.currY = int(ev.EventY)
 			s.redraw()
@@ -496,8 +597,14 @@ func (s *regionState) handleButtonRelease(X *xgbutil.XUtil, ev xevent.ButtonRele
 		s.currY = int(ev.EventY)
 		s.selected = true
 		xevent.Quit(s.xu)
-	} else if ev.Detail == 3 && s.notations.IsDoodling() { // Right Mouse Button release
-		if s.notations.HandleButtonRelease(s.xu, s.bgPixmapID, s.pinkGCID, ev) {
+	} else if ev.Detail == 3 && s.ann.IsDoodling() { // Right Mouse Button release
+		consumed, _ := s.ann.HandleEvent(annotation.InputEvent{
+			Kind:   annotation.Release,
+			X:      int(ev.EventX),
+			Y:      int(ev.EventY),
+			Button: 3,
+		})
+		if consumed {
 			s.redraw()
 		}
 	}
@@ -509,12 +616,42 @@ func (s *regionState) handleMotionNotify(X *xgbutil.XUtil, ev xevent.MotionNotif
 
 	if s.dragStart {
 		s.redraw()
-	} else if s.notations.IsDoodling() {
-		if s.notations.HandleMotionNotify(s.xu, s.bgPixmapID, s.pinkGCID, ev) {
-			s.redraw()
+	} else if s.ann.IsDoodling() {
+		// Snapshot last position before HandleEvent updates it
+		last := s.ann.DoodleLast()
+		consumed, _ := s.ann.HandleEvent(annotation.InputEvent{
+			Kind: annotation.Motion,
+			X:    int(ev.EventX),
+			Y:    int(ev.EventY),
+		})
+		if consumed {
+			if s.ann.Tool() == annotation.Doodle {
+				// Doodle: fast path — draw segment directly with X11 PolyLine.
+				// Avoids full composite upload + Go allocation per motion event.
+				xproto.PolyLine(
+					s.xu.Conn(),
+					xproto.CoordModeOrigin,
+					xproto.Drawable(s.bufPixmapID),
+					s.pinkGCID,
+					[]xproto.Point{
+						{X: int16(last.X), Y: int16(last.Y)},
+						{X: int16(s.currX), Y: int16(s.currY)},
+					},
+				)
+				xproto.CopyArea(
+					s.xu.Conn(),
+					xproto.Drawable(s.bufPixmapID),
+					xproto.Drawable(s.winID),
+					s.gcID,
+					0, 0, 0, 0,
+					uint16(s.screenWidth), uint16(s.screenHeight),
+				)
+			} else {
+				// Rect/Circle: use full redraw (reset + preview outline)
+				s.redraw()
+			}
 		}
 	} else {
-		// Just moving: redraw to update magnifier position
 		s.redraw()
 	}
 }
@@ -524,21 +661,14 @@ func (s *regionState) handleKeyPress(X *xgbutil.XUtil, ev xevent.KeyPressEvent) 
 	keycode := ev.Detail
 	keyStr := keybind.LookupString(s.xu, mods, keycode)
 
-	// Delegate key presses to notations manager
-	handled, redraw := s.notations.HandleKeyPress(
-		s.xu,
-		s.bgPixmapID,
-		s.gcID,
-		s.screen.RootDepth,
-		s.screenWidth,
-		s.screenHeight,
-		s.pinkGCID,
-		keyStr,
-		keycode,
-		mods,
-	)
+	handled, needsRedraw := s.ann.HandleEvent(annotation.InputEvent{
+		Kind:    annotation.Key,
+		KeyStr:  keyStr,
+		Keycode: uint8(keycode),
+		Mods:    mods,
+	})
 	if handled {
-		if redraw {
+		if needsRedraw {
 			s.redraw()
 		}
 		return

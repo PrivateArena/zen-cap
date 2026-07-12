@@ -8,6 +8,8 @@ import (
 
 	"github.com/jezek/xgb/xproto"
 	"github.com/jezek/xgbutil"
+
+	"zen-cap/pkg/annotation"
 )
 
 // Magnifier handles magnifier positioning and rendering for pixel-level feedback.
@@ -159,8 +161,8 @@ func (m *Magnifier) getMagnifierImage(rgbaImg *image.RGBA, mx, my, lx, ly, scree
 		}
 	}
 
-	// Draw custom 3x5 pixel font coordinates/dims centered
-	drawString(mag, infoStr, hudStartX+3, 97, color.White)
+	// Draw HUD text
+	annotation.DrawStringScaled(mag, infoStr, hudStartX+3, 90, color.White, 1)
 
 	return mag
 }

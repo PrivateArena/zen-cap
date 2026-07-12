@@ -14,6 +14,7 @@ import (
 	"github.com/jezek/xgbutil/keybind"
 	"github.com/jezek/xgbutil/xevent"
 
+	"zen-cap/pkg/annotation"
 	"zen-cap/pkg/capture"
 	"zen-cap/pkg/config"
 )
@@ -233,7 +234,7 @@ func (s *pickerState) redraw() {
 	drawRect(img, 3, 3, s.width-4, s.height-4, accentColor)
 
 	// Draw Header
-	capture.DrawStringScaled(img, "SELECT AUTOMATION", 30, 20, borderColor, 2)
+	annotation.DrawStringScaled(img, "SELECT AUTOMATION", 30, 20, borderColor, 2)
 
 	// Separator line
 	for x := 20; x < s.width-20; x++ {
@@ -241,8 +242,8 @@ func (s *pickerState) redraw() {
 	}
 
 	if len(s.scripts) == 0 {
-		capture.DrawStringScaled(img, "NO AUTOMATIONS FOUND.", 40, 120, mutedColor, 2)
-		capture.DrawStringScaled(img, "Add to automations.yaml", 40, 160, mutedColor, 2)
+		annotation.DrawStringScaled(img, "NO AUTOMATIONS FOUND.", 40, 120, mutedColor, 2)
+		annotation.DrawStringScaled(img, "Add to automations.yaml", 40, 160, mutedColor, 2)
 	} else {
 		startY := 60
 		itemHeight := 38
@@ -286,7 +287,7 @@ func (s *pickerState) redraw() {
 			if isActive {
 				nameColor = accentColor
 			}
-			capture.DrawStringScaled(img, displayName, 30, yPos+4, nameColor, 2)
+			annotation.DrawStringScaled(img, displayName, 30, yPos+4, nameColor, 2)
 		}
 	}
 

@@ -3,13 +3,38 @@ package capture
 import (
 	"fmt"
 	"image"
+	"image/color"
+
+	"zen-cap/pkg/annotation"
+	"zen-cap/pkg/annotation/overlay"
 )
 
-// InteractiveAnnotate opens a fullscreen X11 overlay seeded with img, lets
-// the user doodle/rect/circle/text-annotate it via NotationState, and
-// returns the final image once the user confirms (Enter) or cancels
-// (Escape, returns the original img unmodified).
 func InteractiveAnnotate(img *image.RGBA, brushThickness uint32, fontScale int) (*image.RGBA, error) {
-	// TODO: implement full X11 event loop and window setup using xgbutil.
-	return nil, fmt.Errorf("InteractiveAnnotate not yet implemented")
+	ann := annotation.NewAnnotator(img, annotation.Config{
+		BrushThickness: brushThickness,
+		FontScale:      fontScale,
+		Color:          color.RGBA{R: 255, G: 0, B: 127, A: 255},
+	})
+
+	b := img.Bounds()
+	ov := overlay.NewX11Overlay(ann, overlay.OverlayConfig{
+		X:         0,
+		Y:         0,
+		Width:     b.Dx(),
+		Height:    b.Dy(),
+		TargetFPS: 30,
+	})
+
+	if err := ov.Start(); err != nil {
+		return nil, fmt.Errorf("InteractiveAnnotate: overlay start: %w", err)
+	}
+
+	err := ov.WaitDone()
+	ov.Stop()
+
+	if err != nil {
+		return img, nil
+	}
+
+	return ann.GetComposite(), nil
 }

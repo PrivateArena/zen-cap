@@ -366,15 +366,15 @@ Critique source: `browser.chat` (Claude), 2026-07-12.
 ## Open Questions
 
 1. **[UNCERTAIN]** Does the target deployment run a compositor? If not, should `overlay.Start()` hard-fail or degrade gracefully with an opaque window?
-
+> Ideally I want the live anotation to be live compatible (no freezing screen live capturing - for valid purpose)
 2. **[UNCERTAIN]** Which OBS capture source is configured — XShm, XComposite, or PipeWire portal? Needs confirmation before Mode B (OBS) is marked fully supported.
-
+> Focus on compatibility with pkg/recorder first, OBS next.
 3. Input toggle hotkey: integrate with existing `pkg/automation` hotkey system, or maintain an independent `xgbutil` global grab in the overlay?
-
+> Existing hotkey system, as it's matured
 4. Should `InteractiveAnnotate` (pipeline `edit_task.go`) and the realtime overlay share one `Annotator` instance, or are they always independent sessions?
-
+> Choose easier and flexible solution
 5. `pkg/capture/x11.go` dependency from `pkg/annotation/overlay`: (a) import directly, (b) copy into overlay, or (c) extract into a shared `pkg/x11` utility? Option (a) works now; revisit if import cycles emerge.
-
+> Keep as is and we will focus on it later
 ---
 
 ## Implementation Phases

@@ -11,6 +11,7 @@ import (
 	"github.com/jezek/xgbutil"
 	"github.com/jezek/xgbutil/keybind"
 	"github.com/jezek/xgbutil/xevent"
+	"zen-cap/pkg/annotation"
 	"zen-cap/pkg/display"
 )
 
@@ -372,7 +373,7 @@ func (s *windowState) redraw() {
 		textH := 11
 		textImg := image.NewRGBA(image.Rect(0, 0, textW, textH))
 		draw.Draw(textImg, textImg.Bounds(), &image.Uniform{color.RGBA{R: 26, G: 26, B: 36, A: 220}}, image.Point{}, draw.Src)
-		drawString(textImg, hudText, 3, 3, color.RGBA{R: 0, G: 240, B: 255, A: 255})
+		annotation.DrawStringScaled(textImg, hudText, 3, 2, color.RGBA{R: 0, G: 240, B: 255, A: 255}, 1)
 
 		textBGRA := imageToBGRA(textImg)
 		_ = xproto.PutImage(

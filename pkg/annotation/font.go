@@ -1,4 +1,4 @@
-package capture
+package annotation
 
 import (
 	"image/color"
@@ -6,9 +6,8 @@ import (
 	"strings"
 )
 
-// Character bitmaps for custom 3x5 pixel font (used by magnifier HUD)
 var charBitmaps = map[rune][5]byte{
-	'0': {0x7, 0x5, 0x5, 0x5, 0x7}, // 111, 101, 101, 101, 111
+	'0': {0x7, 0x5, 0x5, 0x5, 0x7},
 	'1': {0x2, 0x6, 0x2, 0x2, 0x7},
 	'2': {0x7, 0x1, 0x7, 0x4, 0x7},
 	'3': {0x7, 0x1, 0x7, 0x1, 0x7},
@@ -24,11 +23,9 @@ var charBitmaps = map[rune][5]byte{
 	'#': {0x5, 0x7, 0x5, 0x7, 0x5},
 }
 
-// Complete 5x7 pixel font bitmap table (used by annotation text inputs)
-// 7 bytes per character, each byte represents a row of 5 bits.
 var font5x7 = map[rune][7]byte{
 	' ': {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
-	'A': {0x0e, 0x11, 0x11, 0x1f, 0x11, 0x11, 0x11}, // 01110, 10001, 10001, 11111, 10001, 10001, 10001
+	'A': {0x0e, 0x11, 0x11, 0x1f, 0x11, 0x11, 0x11},
 	'B': {0x1e, 0x11, 0x11, 0x1e, 0x11, 0x11, 0x1e},
 	'C': {0x0e, 0x11, 0x10, 0x10, 0x10, 0x11, 0x0e},
 	'D': {0x1c, 0x12, 0x11, 0x11, 0x11, 0x12, 0x1c},
@@ -79,7 +76,6 @@ var font5x7 = map[rune][7]byte{
 	')': {0x08, 0x04, 0x02, 0x02, 0x02, 0x04, 0x08},
 }
 
-// drawChar draws a single character in our 3x5 font
 func drawChar(img draw.Image, char rune, x, y int, col color.Color) {
 	bitmap, ok := charBitmaps[char]
 	if !ok {
@@ -95,32 +91,26 @@ func drawChar(img draw.Image, char rune, x, y int, col color.Color) {
 	}
 }
 
-// drawString draws a string in our 3x5 font (centered at y, starts at x)
 func drawString(img draw.Image, s string, x, y int, col color.Color) {
 	currX := x
 	for _, char := range strings.ToUpper(s) {
 		drawChar(img, char, currX, y, col)
-		currX += 4 // 3 pixels width + 1 pixel spacing
+		currX += 4
 	}
 }
 
-// drawCharScaled draws a single character scaled by a factor using the full 5x7 font table
 func drawCharScaled(img draw.Image, char rune, x, y int, col color.Color, scale int) {
-	// Convert lowercase to uppercase
 	if char >= 'a' && char <= 'z' {
 		char = char - 'a' + 'A'
 	}
 	bitmap, ok := font5x7[char]
 	if !ok {
-		// Fallback to space
 		bitmap = font5x7[' ']
 	}
 	for row := 0; row < 7; row++ {
 		val := bitmap[row]
 		for colIdx := 0; colIdx < 5; colIdx++ {
-			// Extract 5 bits from MSB (4th bit down to 0th bit)
 			if (val >> (4 - colIdx))&1 == 1 {
-				// Draw a scale x scale block
 				for sy := 0; sy < scale; sy++ {
 					for sx := 0; sx < scale; sx++ {
 						img.Set(x+colIdx*scale+sx, y+row*scale+sy, col)
@@ -131,17 +121,14 @@ func drawCharScaled(img draw.Image, char rune, x, y int, col color.Color, scale 
 	}
 }
 
-// drawStringScaled draws a string scaled by a factor using the full 5x7 font table
 func drawStringScaled(img draw.Image, s string, x, y int, col color.Color, scale int) {
 	currX := x
 	for _, char := range s {
 		drawCharScaled(img, char, currX, y, col, scale)
-		currX += 6 * scale // 5 pixels width + 1 pixel spacing * scale
+		currX += 6 * scale
 	}
 }
 
-// DrawStringScaled is an exported wrapper around drawStringScaled
 func DrawStringScaled(img draw.Image, s string, x, y int, col color.Color, scale int) {
 	drawStringScaled(img, s, x, y, col, scale)
 }
-
