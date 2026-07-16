@@ -2,34 +2,22 @@
 package main
 
 import (
-	"context"
 	"fmt"
-	"image"
-	"image/draw"
 	"log"
-	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
-	"path/filepath"
-	"strings"
-	"sync"
 	"syscall"
-	"time"
 
 	"github.com/jezek/xgb/xproto"
 	"github.com/jezek/xgbutil"
 	"github.com/jezek/xgbutil/keybind"
 	"github.com/jezek/xgbutil/xevent"
 
-	"zen-cap/pkg/capture"
 	"zen-cap/pkg/clipboard"
 	"zen-cap/pkg/config"
 	"zen-cap/pkg/hotkey"
 	"zen-cap/pkg/magnifier"
-	"zen-cap/pkg/pipeline"
-	"zen-cap/pkg/recorder"
 )
 
 func handleService() error {
@@ -81,57 +69,9 @@ func handleService() error {
 		fmt.Printf("  %-14s -> Zoom In/Out (while magnifier active)\n", cfg.Magnifier.ScrollModifier+"+Wheel")
 	}
 
-	fmt.Println("Zen-Cap hotkey service running in background...")
-	fmt.Println("Hotkeys:")
-	fmt.Printf("  %-14s -> Fullscreen Screenshot\n", cfg.Hotkeys.Screenshot)
-	fmt.Printf("  %-14s -> Interactive Region Screenshot\n", cfg.Hotkeys.RegionScreenshot)
-	fmt.Printf("  %-14s -> Interactive Window Screenshot\n", cfg.Hotkeys.WindowScreenshot)
-	fmt.Printf("  %-14s -> Fullscreen OCR / Translation Overlay\n", cfg.Hotkeys.OCRScreenshot)
-	fmt.Printf("  %-14s -> Interactive Region OCR / Translation Overlay\n", cfg.Hotkeys.OCRRegionScreenshot)
-	fmt.Printf("  %-14s -> Interactive Window OCR / Translation Overlay\n", cfg.Hotkeys.OCRWindowScreenshot)
-	fmt.Printf("  %-14s -> Grab Window Class to Clipboard\n", cfg.Hotkeys.WindowClassGrab)
-	fmt.Printf("  %-14s -> Color Picker (Grab Pixels to Clipboard)\n", cfg.Hotkeys.ColorPicker)
-	fmt.Printf("  %-14s -> Toggle Recording (Start/Stop)\n", cfg.Hotkeys.RecordToggle)
-	fmt.Printf("  %-14s -> Annotate Overlay (Fullscreen freeze-frame)\n", cfg.Hotkeys.RecordAnnotate)
-	fmt.Printf("  %-14s -> Mark Fullscreen for Recording\n", cfg.Hotkeys.RecordMarkFullscreen)
-	fmt.Printf("  %-14s -> Mark Region for Recording\n", cfg.Hotkeys.RecordMarkRegion)
-	fmt.Printf("  %-14s -> Mark Window for Recording\n", cfg.Hotkeys.RecordMarkWindow)
-	fmt.Printf("  %-14s -> Show/Hide Recording Area Overlay\n", cfg.Hotkeys.RecordShowArea)
-	fmt.Printf("  %-14s -> Toggle Audio-Only Recording Mode\n", cfg.Hotkeys.RecordAudioOnly)
-	fmt.Printf("  %-14s -> Clipboard Manager: Copy (0-9)\n", cfg.Hotkeys.ClipboardCopyMod+"-[0-9]")
-	fmt.Printf("  %-14s -> Clipboard Manager: Paste (0-9)\n", cfg.Hotkeys.ClipboardPasteMod+"-[0-9]")
-	fmt.Printf("  %-14s -> Clipboard Manager: Cycle Transform Rules\n", cfg.Hotkeys.ClipboardCycleRule)
-	fmt.Printf("  %-14s -> OCR Manager: Cycle OCR Model/Language\n", cfg.Hotkeys.OcrCycleModel)
-	fmt.Printf("  %-14s -> Snippet Picker: Open GUI\n", cfg.Hotkeys.SnippetPicker)
-	fmt.Printf("  %-14s -> Snippet Editor: Open snippets.yaml\n", "Shift-"+cfg.Hotkeys.SnippetPicker)
-	fmt.Printf("  %-14s -> Snippet Mode: Cycle (Paste vs Human Typing)\n", cfg.Hotkeys.SnippetCycleMode)
-	fmt.Printf("  %-14s -> Automation Picker: Open GUI\n", cfg.Hotkeys.AutomationPicker)
-	fmt.Printf("  %-14s -> Automation Editor: Open automations.yaml\n", "Shift-"+cfg.Hotkeys.AutomationPicker)
-	fmt.Println("UNIX Signals:")
-	fmt.Println("  SIGUSR1       -> Fullscreen Screenshot")
-	fmt.Println("  SIGUSR2       -> Toggle Fullscreen Recording")
-	fmt.Println("Safety Net:")
-	fmt.Println("  Ctrl+Shift+X  -> Instantly kill zen-cap service (emergency fallback)")
-	fmt.Println("Press Ctrl+C in terminal to exit service.")
+	printHotkeyBanner(cfg)
 
-	screenshotChan := make(chan struct{}, 1)
-	regionScreenshotChan := make(chan struct{}, 1)
-	windowScreenshotChan := make(chan struct{}, 1)
-	ocrScreenshotChan := make(chan struct{}, 1)
-	ocrRegionScreenshotChan := make(chan struct{}, 1)
-	ocrWindowScreenshotChan := make(chan struct{}, 1)
-	ocrCycleModelChan := make(chan struct{}, 1)
-	windowClassGrabChan := make(chan struct{}, 1)
-	colorPickerChan := make(chan struct{}, 1)
-	recordChan := make(chan struct{}, 1)
-	recordAnnotateChan := make(chan struct{}, 1)
-	recordMarkFullscreenChan := make(chan struct{}, 1)
-	recordMarkRegionChan := make(chan struct{}, 1)
-	recordMarkWindowChan := make(chan struct{}, 1)
-	recordShowAreaChan := make(chan struct{}, 1)
-	recordAudioOnlyChan := make(chan struct{}, 1)
-	snippetCycleModeChan := make(chan struct{}, 1)
-	taskProfileCycleChan := make(chan struct{}, 1)
+	ch := newServiceChannels()
 
 	// Initialize X11 connection for global hotkeys
 	X, err := xgbutil.NewConn()
@@ -146,7 +86,7 @@ func handleService() error {
 	cm.Register(cfg.Hotkeys.Screenshot, func() {
 		fmt.Println("Hotkey pressed: Triggering screenshot...")
 		select {
-		case screenshotChan <- struct{}{}:
+		case ch.Screenshot <- struct{}{}:
 		default:
 		}
 	})
@@ -155,7 +95,7 @@ func handleService() error {
 	cm.Register(cfg.Hotkeys.RegionScreenshot, func() {
 		fmt.Println("Hotkey pressed: Triggering interactive region screenshot...")
 		select {
-		case regionScreenshotChan <- struct{}{}:
+		case ch.RegionScreenshot <- struct{}{}:
 		default:
 		}
 	})
@@ -164,7 +104,7 @@ func handleService() error {
 	cm.Register(cfg.Hotkeys.WindowScreenshot, func() {
 		fmt.Println("Hotkey pressed: Triggering interactive window screenshot...")
 		select {
-		case windowScreenshotChan <- struct{}{}:
+		case ch.WindowScreenshot <- struct{}{}:
 		default:
 		}
 	})
@@ -173,7 +113,7 @@ func handleService() error {
 	cm.Register(cfg.Hotkeys.OCRScreenshot, func() {
 		fmt.Println("Hotkey pressed: Triggering fullscreen OCR/Translation overlay...")
 		select {
-		case ocrScreenshotChan <- struct{}{}:
+		case ch.OCRScreenshot <- struct{}{}:
 		default:
 		}
 	})
@@ -182,7 +122,7 @@ func handleService() error {
 	cm.Register(cfg.Hotkeys.OCRRegionScreenshot, func() {
 		fmt.Println("Hotkey pressed: Triggering region OCR/Translation overlay...")
 		select {
-		case ocrRegionScreenshotChan <- struct{}{}:
+		case ch.OCRRegionScreenshot <- struct{}{}:
 		default:
 		}
 	})
@@ -191,7 +131,7 @@ func handleService() error {
 	cm.Register(cfg.Hotkeys.OCRWindowScreenshot, func() {
 		fmt.Println("Hotkey pressed: Triggering window OCR/Translation overlay...")
 		select {
-		case ocrWindowScreenshotChan <- struct{}{}:
+		case ch.OCRWindowScreenshot <- struct{}{}:
 		default:
 		}
 	})
@@ -200,7 +140,7 @@ func handleService() error {
 	cm.Register(cfg.Hotkeys.OcrCycleModel, func() {
 		fmt.Println("Hotkey pressed: Triggering OCR model cycle...")
 		select {
-		case ocrCycleModelChan <- struct{}{}:
+		case ch.OCRCycleModel <- struct{}{}:
 		default:
 		}
 	})
@@ -209,7 +149,7 @@ func handleService() error {
 	cm.Register(cfg.Hotkeys.WindowClassGrab, func() {
 		fmt.Println("Hotkey pressed: Triggering interactive window class grab...")
 		select {
-		case windowClassGrabChan <- struct{}{}:
+		case ch.WindowClassGrab <- struct{}{}:
 		default:
 		}
 	})
@@ -218,7 +158,7 @@ func handleService() error {
 	cm.Register(cfg.Hotkeys.ColorPicker, func() {
 		fmt.Println("Hotkey pressed: Triggering interactive color picker...")
 		select {
-		case colorPickerChan <- struct{}{}:
+		case ch.ColorPicker <- struct{}{}:
 		default:
 		}
 	})
@@ -227,7 +167,7 @@ func handleService() error {
 	cm.Register(cfg.Hotkeys.RecordToggle, func() {
 		fmt.Println("Hotkey pressed: Triggering recording toggle...")
 		select {
-		case recordChan <- struct{}{}:
+		case ch.Record <- struct{}{}:
 		default:
 		}
 	})
@@ -236,7 +176,7 @@ func handleService() error {
 	cm.Register(cfg.Hotkeys.RecordAnnotate, func() {
 		fmt.Println("Hotkey pressed: Triggering record annotation...")
 		select {
-		case recordAnnotateChan <- struct{}{}:
+		case ch.RecordAnnotate <- struct{}{}:
 		default:
 		}
 	})
@@ -245,7 +185,7 @@ func handleService() error {
 	cm.Register(cfg.Hotkeys.RecordMarkFullscreen, func() {
 		fmt.Println("Hotkey pressed: Triggering record mark fullscreen...")
 		select {
-		case recordMarkFullscreenChan <- struct{}{}:
+		case ch.RecordMarkFullscreen <- struct{}{}:
 		default:
 		}
 	})
@@ -254,7 +194,7 @@ func handleService() error {
 	cm.Register(cfg.Hotkeys.RecordAudioOnly, func() {
 		fmt.Println("Hotkey pressed: Triggering record audio only toggle...")
 		select {
-		case recordAudioOnlyChan <- struct{}{}:
+		case ch.RecordAudioOnly <- struct{}{}:
 		default:
 		}
 	})
@@ -263,7 +203,7 @@ func handleService() error {
 	cm.Register(cfg.Hotkeys.RecordMarkRegion, func() {
 		fmt.Println("Hotkey pressed: Triggering record mark region...")
 		select {
-		case recordMarkRegionChan <- struct{}{}:
+		case ch.RecordMarkRegion <- struct{}{}:
 		default:
 		}
 	})
@@ -272,7 +212,7 @@ func handleService() error {
 	cm.Register(cfg.Hotkeys.RecordMarkWindow, func() {
 		fmt.Println("Hotkey pressed: Triggering record mark window...")
 		select {
-		case recordMarkWindowChan <- struct{}{}:
+		case ch.RecordMarkWindow <- struct{}{}:
 		default:
 		}
 	})
@@ -281,7 +221,7 @@ func handleService() error {
 	cm.Register(cfg.Hotkeys.RecordShowArea, func() {
 		fmt.Println("Hotkey pressed: Triggering record show/hide area...")
 		select {
-		case recordShowAreaChan <- struct{}{}:
+		case ch.RecordShowArea <- struct{}{}:
 		default:
 		}
 	})
@@ -360,7 +300,7 @@ func handleService() error {
 	cm.Register(cfg.Hotkeys.SnippetCycleMode, func() {
 		fmt.Println("Hotkey pressed: Triggering snippet mode cycle...")
 		select {
-		case snippetCycleModeChan <- struct{}{}:
+		case ch.SnippetCycleMode <- struct{}{}:
 		default:
 		}
 	})
@@ -369,7 +309,7 @@ func handleService() error {
 	cm.Register(cfg.Hotkeys.CycleTaskProfile, func() {
 		fmt.Println("Hotkey pressed: Triggering task profile cycle...")
 		select {
-		case taskProfileCycleChan <- struct{}{}:
+		case ch.TaskProfileCycle <- struct{}{}:
 		default:
 		}
 	})
@@ -408,909 +348,60 @@ func handleService() error {
 
 	cm.Start()
 
-	var activeRec *recorder.Recorder
-	var recordAudioOnly bool
-	var recMu sync.Mutex
-
-	type MarkedArea struct {
-		X        int
-		Y        int
-		Width    int
-		Height   int
-		WindowID uint32
-		Type     string // "fullscreen", "region", "window"
+	s := &serviceState{
+		cfg: cfg,
+		X:   X,
+		markedArea: MarkedArea{
+			X:      -1,
+			Y:      -1,
+			Width:  -1,
+			Height: -1,
+			Type:   "fullscreen",
+		},
 	}
 
-	markedArea := MarkedArea{
-		X:      -1,
-		Y:      -1,
-		Width:  -1,
-		Height: -1,
-		Type:   "fullscreen",
-	}
-	var markedAreaMu sync.Mutex
-
-	// Monitor OS signals for termination, screenshot, and recording
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM, syscall.SIGUSR1, syscall.SIGUSR2)
+	go s.runSignalHandler(sigChan, ch)
 
-	go func() {
-		for sig := range sigChan {
-			switch sig {
-			case os.Interrupt, syscall.SIGTERM:
-				fmt.Println("\nShutting down service...")
-				recMu.Lock()
-				if activeRec != nil {
-					fmt.Println("Stopping active recording before exit...")
-					activeRec.Stop()
-				}
-				recMu.Unlock()
-				os.Exit(0)
-			case syscall.SIGUSR1:
-				fmt.Println("Received SIGUSR1: Triggering screenshot...")
-				select {
-				case screenshotChan <- struct{}{}:
-				default:
-				}
-			case syscall.SIGUSR2:
-				fmt.Println("Received SIGUSR2: Triggering recording toggle...")
-				select {
-				case recordChan <- struct{}{}:
-				default:
-				}
-			}
-		}
-	}()
+	go s.runScreenshotLoop(ch.Screenshot)
 
-	go func() {
-		for range screenshotChan {
-			go func() {
-				if freshCfg, _, err := config.LoadConfig(); err == nil {
-					cfg = freshCfg
-				}
-				timestamp := time.Now().Format("20060102_150405")
-				filename := filepath.Join(cfg.OutputDir, fmt.Sprintf("screenshot_%s.png", timestamp))
-				fmt.Printf("[%s] Capturing fullscreen to %s...\n", time.Now().Format("15:04:05"), filename)
+	go s.runRegionScreenshotLoop(ch.RegionScreenshot)
 
-				// Ensure folder exists (e.g. if deleted mid-run)
-				_ = os.MkdirAll(cfg.OutputDir, 0755)
+	go s.runWindowScreenshotLoop(ch.WindowScreenshot)
 
-				capCfg := capture.CaptureConfig{
-					Display: ":0.0",
-					X:       -1,
-					Y:       -1,
-				}
-				img, err := capture.CaptureScreen(capCfg)
-				if err != nil {
-					fmt.Printf("Error capturing screenshot: %v\n", err)
-					return
-				}
-				if err := capture.SavePNG(img, filename); err != nil {
-					fmt.Printf("Error saving screenshot: %v\n", err)
-					return
-				}
-				fmt.Printf("Screenshot saved successfully to %s\n", filename)
-				
-				absPath, err := filepath.Abs(filename)
-				if err != nil {
-					absPath = filename
-				}
-				pipeline.Run(context.Background(), cfg, img, absPath, "")
-			}()
-		}
-	}()
+	go s.runOCRScreenshotLoop(ch.OCRScreenshot)
 
-	go func() {
-		for range regionScreenshotChan {
-			go func() {
-				if freshCfg, _, err := config.LoadConfig(); err == nil {
-					cfg = freshCfg
-				}
-				timestamp := time.Now().Format("20060102_150405")
-				filename := filepath.Join(cfg.OutputDir, fmt.Sprintf("screenshot_region_%s.png", timestamp))
-				fmt.Printf("[%s] Launching interactive region screenshot to %s...\n", time.Now().Format("15:04:05"), filename)
+	go s.runOCRRegionScreenshotLoop(ch.OCRRegionScreenshot)
 
-				// Ensure folder exists
-				_ = os.MkdirAll(cfg.OutputDir, 0755)
+	go s.runOCRWindowScreenshotLoop(ch.OCRWindowScreenshot)
 
-				var chosenAction string
-				capCfg := capture.CaptureConfig{
-					Display:         ":0.0",
-					X:               -1,
-					Y:               -1,
-					Interactive:     true,
-					ClipboardAction: &chosenAction,
-				}
-				img, err := capture.CaptureScreen(capCfg)
-				if err != nil {
-					fmt.Printf("Error capturing region screenshot: %v\n", err)
-					return
-				}
-				if err := capture.SavePNG(img, filename); err != nil {
-					fmt.Printf("Error saving region screenshot: %v\n", err)
-					return
-				}
-				fmt.Printf("Region screenshot saved successfully to %s\n", filename)
+	go s.runOCRCycleModelLoop(ch.OCRCycleModel)
 
-				absPath, err := filepath.Abs(filename)
-				if err != nil {
-					absPath = filename
-				}
-				pipeline.Run(context.Background(), cfg, img, absPath, chosenAction)
-			}()
-		}
-	}()
+	go s.runSnippetCycleModeLoop(ch.SnippetCycleMode)
 
-	go func() {
-		for range windowScreenshotChan {
-			go func() {
-				if freshCfg, _, err := config.LoadConfig(); err == nil {
-					cfg = freshCfg
-				}
-				timestamp := time.Now().Format("20060102_150405")
-				filename := filepath.Join(cfg.OutputDir, fmt.Sprintf("screenshot_window_%s.png", timestamp))
-				fmt.Printf("[%s] Launching interactive window screenshot to %s...\n", time.Now().Format("15:04:05"), filename)
+	go s.runTaskProfileCycleLoop(ch.TaskProfileCycle)
 
-				// Ensure folder exists
-				_ = os.MkdirAll(cfg.OutputDir, 0755)
+	go s.runWindowClassGrabLoop(ch.WindowClassGrab)
 
-				var chosenAction string
-				capCfg := capture.CaptureConfig{
-					Display:         ":0.0",
-					X:               -1,
-					Y:               -1,
-					Interactive:     true,
-					WindowSelect:    true,
-					ClipboardAction: &chosenAction,
-				}
-				img, err := capture.CaptureScreen(capCfg)
-				if err != nil {
-					fmt.Printf("Error capturing window screenshot: %v\n", err)
-					return
-				}
-				if err := capture.SavePNG(img, filename); err != nil {
-					fmt.Printf("Error saving window screenshot: %v\n", err)
-					return
-				}
-				fmt.Printf("Window screenshot saved successfully to %s\n", filename)
+	go s.runColorPickerLoop(ch.ColorPicker)
 
-				absPath, err := filepath.Abs(filename)
-				if err != nil {
-					absPath = filename
-				}
-				pipeline.Run(context.Background(), cfg, img, absPath, chosenAction)
-			}()
-		}
-	}()
+	go s.runRecordMarkFullscreenLoop(ch.RecordMarkFullscreen)
 
-	go func() {
-		for range ocrScreenshotChan {
-			go func() {
-				if freshCfg, _, err := config.LoadConfig(); err == nil {
-					cfg = freshCfg
-				}
-				fmt.Println("Launching fullscreen OCR/Translation...")
-				capCfg := capture.CaptureConfig{
-					Display: ":0.0",
-					X:       -1,
-					Y:       -1,
-				}
-				img, err := capture.CaptureScreen(capCfg)
-				if err != nil {
-					fmt.Printf("Error capturing fullscreen for OCR: %v\n", err)
-					return
-				}
-				if err := capture.PerformOCROverlay(img, cfg.OCRAddress, cfg.OCRLanguage, cfg.TranslationTarget, cfg.TranslationEngine, cfg.AutoTranslate, cfg.OutputDir); err != nil {
-					fmt.Printf("OCR Overlay error: %v\n", err)
-				}
-			}()
-		}
-	}()
+	// Background loop for ch.RecordAudioOnly
+	go s.runRecordAudioOnlyLoop(ch.RecordAudioOnly)
 
-	go func() {
-		for range ocrRegionScreenshotChan {
-			go func() {
-				if freshCfg, _, err := config.LoadConfig(); err == nil {
-					cfg = freshCfg
-				}
-				fmt.Println("Launching region OCR/Translation...")
-				var chosenAction string
-				capCfg := capture.CaptureConfig{
-					Display:         ":0.0",
-					X:               -1,
-					Y:               -1,
-					Interactive:     true,
-					ClipboardAction: &chosenAction,
-				}
-				img, err := capture.CaptureScreen(capCfg)
-				if err != nil {
-					fmt.Printf("Error capturing region for OCR: %v\n", err)
-					return
-				}
-				if err := capture.PerformOCROverlay(img, cfg.OCRAddress, cfg.OCRLanguage, cfg.TranslationTarget, cfg.TranslationEngine, cfg.AutoTranslate, cfg.OutputDir); err != nil {
-					fmt.Printf("OCR Overlay error: %v\n", err)
-				}
-			}()
-		}
-	}()
+	go s.runRecordMarkRegionLoop(ch.RecordMarkRegion)
 
-	go func() {
-		for range ocrWindowScreenshotChan {
-			go func() {
-				if freshCfg, _, err := config.LoadConfig(); err == nil {
-					cfg = freshCfg
-				}
-				fmt.Println("Launching window OCR/Translation...")
-				var chosenAction string
-				capCfg := capture.CaptureConfig{
-					Display:         ":0.0",
-					X:               -1,
-					Y:               -1,
-					Interactive:     true,
-					WindowSelect:    true,
-					ClipboardAction: &chosenAction,
-				}
-				img, err := capture.CaptureScreen(capCfg)
-				if err != nil {
-					fmt.Printf("Error capturing window for OCR: %v\n", err)
-					return
-				}
-				if err := capture.PerformOCROverlay(img, cfg.OCRAddress, cfg.OCRLanguage, cfg.TranslationTarget, cfg.TranslationEngine, cfg.AutoTranslate, cfg.OutputDir); err != nil {
-					fmt.Printf("OCR Overlay error: %v\n", err)
-				}
-			}()
-		}
-	}()
+	go s.runRecordMarkWindowLoop(ch.RecordMarkWindow)
 
-	go func() {
-		for range ocrCycleModelChan {
-			go func() {
-				// 1. Load latest config
-				freshCfg, cfgPath, err := config.LoadConfig()
-				if err != nil {
-					fmt.Printf("[OCR Cycle] Error loading config: %v\n", err)
-					return
-				}
-				cfg = freshCfg
+	go s.runRecordShowAreaLoop(ch.RecordShowArea)
 
-				if len(cfg.OCRLanguages) == 0 {
-					fmt.Println("[OCR Cycle] No OCR models/languages defined in config")
-					return
-				}
+	// Background loop for ch.RecordAnnotate — standalone annotation like Color Picker
+	go s.runRecordAnnotateLoop(ch.RecordAnnotate)
 
-				// 2. Find index of current ocr_language
-				currentIndex := -1
-				for i, lang := range cfg.OCRLanguages {
-					if lang == cfg.OCRLanguage {
-						currentIndex = i
-						break
-					}
-				}
-
-				// 3. Cycle to next
-				nextIndex := (currentIndex + 1) % len(cfg.OCRLanguages)
-				nextLang := cfg.OCRLanguages[nextIndex]
-				cfg.OCRLanguage = nextLang
-
-				// 4. Save config
-				if cfgPath != "" {
-					if err := config.SaveConfig(cfg, cfgPath); err != nil {
-						fmt.Printf("[OCR Cycle] Error saving config: %v\n", err)
-					} else {
-						fmt.Printf("[OCR Cycle] Updated config.json: ocr_language = %s\n", nextLang)
-					}
-				}
-
-				// 5. Notify the OCR server
-				resolvedAddress, err := capture.EnsureOCRServer(cfg.OCRAddress)
-				if err == nil {
-					updateURL := fmt.Sprintf("%s/ocr?model=%s", strings.TrimSuffix(resolvedAddress, "/"), url.QueryEscape(nextLang))
-					resp, err := http.Post(updateURL, "application/json", nil)
-					if err == nil {
-						resp.Body.Close()
-						fmt.Printf("[OCR Cycle] Successfully notified OCR server to switch default model to: %s\n", nextLang)
-					} else {
-						fmt.Printf("[OCR Cycle] Failed to notify OCR server: %v\n", err)
-					}
-				} else {
-					fmt.Printf("[OCR Cycle] OCR server is down or not found, updated local setting only: %v\n", err)
-				}
-
-				// 6. Send desktop notification
-				sendNotification("Zen-Cap OCR", fmt.Sprintf("Cycled OCR model to: %s", nextLang))
-			}()
-		}
-	}()
-
-	go func() {
-		for range snippetCycleModeChan {
-			go func() {
-				// 1. Load latest config
-				freshCfg, cfgPath, err := config.LoadConfig()
-				if err != nil {
-					fmt.Printf("[Snippet Mode Cycle] Error loading config: %v\n", err)
-					return
-				}
-				cfg = freshCfg
-
-				// 2. Cycle mode
-				newMode := "type"
-				if cfg.SnippetMode == "type" {
-					newMode = "paste"
-				}
-				cfg.SnippetMode = newMode
-
-				// 3. Save config
-				if cfgPath != "" {
-					if err := config.SaveConfig(cfg, cfgPath); err != nil {
-						fmt.Printf("[Snippet Mode Cycle] Error saving config: %v\n", err)
-					} else {
-						fmt.Printf("[Snippet Mode Cycle] Updated config.json: snippet_mode = %s\n", newMode)
-					}
-				}
-
-				// 4. Send desktop notification
-				modeLabel := "Normal Paste"
-				if newMode == "type" {
-					modeLabel = "Human Typing"
-				}
-				sendNotification("Zen-Cap Snippets", fmt.Sprintf("Cycled snippet mode to: %s", modeLabel))
-			}()
-		}
-	}()
-
-	go func() {
-		for range taskProfileCycleChan {
-			go func() {
-				// 1. Load latest config
-				freshCfg, cfgPath, err := config.LoadConfig()
-				if err != nil {
-					fmt.Printf("[Profile Cycle] Error loading config: %v\n", err)
-					return
-				}
-				cfg = freshCfg
-
-				if len(cfg.TaskProfiles) == 0 {
-					fmt.Println("[Profile Cycle] No task profiles defined in config")
-					return
-				}
-
-				// 2. Find index of current task profile
-				currentIndex := -1
-				for i, p := range cfg.TaskProfiles {
-					if p.Name == cfg.CurrentTaskProfile {
-						currentIndex = i
-						break
-					}
-				}
-
-				// 3. Cycle to next
-				nextIndex := (currentIndex + 1) % len(cfg.TaskProfiles)
-				nextProfile := cfg.TaskProfiles[nextIndex]
-				cfg.CurrentTaskProfile = nextProfile.Name
-
-				// 4. Save config
-				if cfgPath != "" {
-					if err := config.SaveConfig(cfg, cfgPath); err != nil {
-						fmt.Printf("[Profile Cycle] Error saving config: %v\n", err)
-					} else {
-						fmt.Printf("[Profile Cycle] Updated config.json: current_task_profile = %s\n", nextProfile.Name)
-					}
-				}
-
-				// 5. Send desktop notification
-				sendNotification("Zen-Cap Profile", fmt.Sprintf("Cycled task profile to: %s", nextProfile.Name))
-			}()
-		}
-	}()
-
-	var windowClassGrabMu sync.Mutex
-	var windowClassGrabRunning bool
-
-	go func() {
-		for range windowClassGrabChan {
-			windowClassGrabMu.Lock()
-			if windowClassGrabRunning {
-				windowClassGrabMu.Unlock()
-				continue
-			}
-			windowClassGrabRunning = true
-			windowClassGrabMu.Unlock()
-
-			go func() {
-				defer func() {
-					windowClassGrabMu.Lock()
-					windowClassGrabRunning = false
-					windowClassGrabMu.Unlock()
-				}()
-
-				if freshCfg, _, err := config.LoadConfig(); err == nil {
-					cfg = freshCfg
-				}
-				fmt.Println("Launching interactive window class grab...")
-
-				wClass, err := capture.InteractiveSelectWindowClass(":0.0")
-				if err != nil {
-					fmt.Printf("Error grabbing window class: %v\n", err)
-					return
-				}
-
-				if wClass == "" {
-					return
-				}
-
-				if err := capture.SpawnClipboardDaemon("--text", wClass); err != nil {
-					fmt.Printf("Error spawning clipboard daemon for window class: %v\n", err)
-				} else {
-					fmt.Printf("[Clipboard] Copied window class to clipboard: %s\n", wClass)
-					sendNotification("Zen-Cap", fmt.Sprintf("Copied window class %q to clipboard!", wClass))
-				}
-			}()
-		}
-	}()
-
-	var colorPickerMu sync.Mutex
-	var colorPickerRunning bool
-
-	go func() {
-		for range colorPickerChan {
-			colorPickerMu.Lock()
-			if colorPickerRunning {
-				colorPickerMu.Unlock()
-				continue
-			}
-			colorPickerRunning = true
-			colorPickerMu.Unlock()
-
-			go func() {
-				defer func() {
-					colorPickerMu.Lock()
-					colorPickerRunning = false
-					colorPickerMu.Unlock()
-				}()
-
-				if freshCfg, _, err := config.LoadConfig(); err == nil {
-					cfg = freshCfg
-				}
-				fmt.Println("Launching interactive color picker...")
-
-				// Capture base fullscreen screen first
-				capCfg := capture.CaptureConfig{
-					Display:     ":0.0",
-					X:           -1,
-					Y:           -1,
-					Interactive: false,
-				}
-				img, err := capture.CaptureScreen(capCfg)
-				if err != nil {
-					fmt.Printf("Error capturing fullscreen for color picker: %v\n", err)
-					return
-				}
-
-				colorsText, err := capture.InteractiveColorPicker(img, cfg.ColorPickerFormat)
-				if err != nil {
-					fmt.Printf("Color picker error: %v\n", err)
-					return
-				}
-
-				if colorsText == "" {
-					return
-				}
-
-				fmt.Printf("[ColorPicker] Copied colors to clipboard: %s\n", colorsText)
-				numColors := strings.Count(colorsText, "\n") + 1
-				if numColors == 1 {
-					sendNotification("Zen-Cap Color Picker", fmt.Sprintf("Copied color %s to clipboard!", colorsText))
-				} else {
-					sendNotification("Zen-Cap Color Picker", fmt.Sprintf("Copied %d colors to clipboard!", numColors))
-				}
-			}()
-		}
-	}()
-
-	var activeBorders []xproto.Window
-	var activeBordersMu sync.Mutex
-
-	// Background loop for recordMarkFullscreenChan
-	go func() {
-		for range recordMarkFullscreenChan {
-			markedAreaMu.Lock()
-			markedArea = MarkedArea{
-				X:      -1,
-				Y:      -1,
-				Width:  -1,
-				Height: -1,
-				Type:   "fullscreen",
-			}
-			markedAreaMu.Unlock()
-			fmt.Println("[Recorder] Marked fullscreen area for recording")
-			sendNotification("Zen-Cap", "Marked fullscreen for video recording!")
-		}
-	}()
-
-	// Background loop for recordAudioOnlyChan
-	go func() {
-		for range recordAudioOnlyChan {
-			recMu.Lock()
-			recordAudioOnly = !recordAudioOnly
-			status := recordAudioOnly
-			recMu.Unlock()
-
-			var msg string
-			if status {
-				msg = "Audio-only recording enabled!"
-			} else {
-				msg = "Audio-only recording disabled (video + audio)!"
-			}
-			fmt.Printf("[Recorder] %s\n", msg)
-			sendNotification("Zen-Cap", msg)
-		}
-	}()
-
-	// Background loop for recordMarkRegionChan
-	go func() {
-		for range recordMarkRegionChan {
-			go func() {
-				if freshCfg, _, err := config.LoadConfig(); err == nil {
-					cfg = freshCfg
-				}
-				fmt.Println("[Recorder] Launching interactive region select to mark recording area...")
-				var action string
-				var chosenX, chosenY, chosenW, chosenH int
-				capCfg := capture.CaptureConfig{
-					Display:         ":0.0",
-					X:               -1,
-					Y:               -1,
-					Interactive:     true,
-					ClipboardAction: &action,
-					OutX:            &chosenX,
-					OutY:            &chosenY,
-					OutWidth:        &chosenW,
-					OutHeight:       &chosenH,
-				}
-				_, err := capture.CaptureScreen(capCfg)
-				if err != nil {
-					fmt.Printf("[Recorder] Error marking region: %v\n", err)
-					return
-				}
-				
-				// Ensure even dimensions for h264 compatibility
-				if chosenW % 2 != 0 {
-					chosenW--
-				}
-				if chosenH % 2 != 0 {
-					chosenH--
-				}
-
-				markedAreaMu.Lock()
-				markedArea = MarkedArea{
-					X:      chosenX,
-					Y:      chosenY,
-					Width:  chosenW,
-					Height: chosenH,
-					Type:   "region",
-				}
-				markedAreaMu.Unlock()
-
-				msg := fmt.Sprintf("Marked region %dx%d at (%d, %d) for recording!", chosenW, chosenH, chosenX, chosenY)
-				fmt.Printf("[Recorder] %s\n", msg)
-				sendNotification("Zen-Cap", msg)
-			}()
-		}
-	}()
-
-	// Background loop for recordMarkWindowChan
-	go func() {
-		for range recordMarkWindowChan {
-			go func() {
-				if freshCfg, _, err := config.LoadConfig(); err == nil {
-					cfg = freshCfg
-				}
-				fmt.Println("[Recorder] Launching interactive window select to mark recording area...")
-				var action string
-				var chosenX, chosenY, chosenW, chosenH int
-				var chosenWinID uint32
-				capCfg := capture.CaptureConfig{
-					Display:         ":0.0",
-					X:               -1,
-					Y:               -1,
-					Interactive:     true,
-					WindowSelect:    true,
-					ClipboardAction: &action,
-					OutX:            &chosenX,
-					OutY:            &chosenY,
-					OutWidth:        &chosenW,
-					OutHeight:       &chosenH,
-					OutWindowID:     &chosenWinID,
-				}
-				_, err := capture.CaptureScreen(capCfg)
-				if err != nil {
-					fmt.Printf("[Recorder] Error marking window: %v\n", err)
-					return
-				}
-
-				// Ensure even dimensions
-				if chosenW % 2 != 0 {
-					chosenW--
-				}
-				if chosenH % 2 != 0 {
-					chosenH--
-				}
-
-				markedAreaMu.Lock()
-				markedArea = MarkedArea{
-					X:        chosenX,
-					Y:        chosenY,
-					Width:    chosenW,
-					Height:   chosenH,
-					WindowID: chosenWinID,
-					Type:     "window",
-				}
-				markedAreaMu.Unlock()
-
-				msg := fmt.Sprintf("Marked window (ID 0x%x) %dx%d at (%d, %d) for recording!", chosenWinID, chosenW, chosenH, chosenX, chosenY)
-				fmt.Printf("[Recorder] %s\n", msg)
-				sendNotification("Zen-Cap", msg)
-			}()
-		}
-	}()
-
-	// Background loop for recordShowAreaChan
-	go func() {
-		for range recordShowAreaChan {
-			activeBordersMu.Lock()
-			if len(activeBorders) > 0 {
-				// Destroy existing borders
-				for _, w := range activeBorders {
-					xproto.DestroyWindow(X.Conn(), w)
-				}
-				activeBorders = nil
-				activeBordersMu.Unlock()
-				fmt.Println("[Recorder] Cleared recording area highlight overlay")
-				continue
-			}
-
-			// Get current marked area
-			markedAreaMu.Lock()
-			area := markedArea
-			markedAreaMu.Unlock()
-
-			// Resolve actual coordinates
-			screen := X.Screen()
-			screenW := int(screen.WidthInPixels)
-			screenH := int(screen.HeightInPixels)
-
-			x, y, w, h := area.X, area.Y, area.Width, area.Height
-			if area.Type == "fullscreen" || x < 0 || y < 0 || w <= 0 || h <= 0 {
-				x, y, w, h = 0, 0, screenW, screenH
-			}
-
-			fmt.Printf("[Recorder] Highlighting recording area: %dx%d at (%d, %d)\n", w, h, x, y)
-
-			// Create 4 thin border windows around the area
-			borderThickness := 3
-			borders := []struct{ x, y, width, height int }{
-				{x, y - borderThickness, w, borderThickness},
-				{x, y + h, w, borderThickness},
-				{x - borderThickness, y, borderThickness, h},
-				{x + w, y, borderThickness, h},
-			}
-
-			var created []xproto.Window
-			success := true
-
-			for _, b := range borders {
-				bx := b.x
-				by := b.y
-				bw := b.width
-				bh := b.height
-
-				if bx < 0 {
-					bw += bx
-					bx = 0
-				}
-				if by < 0 {
-					bh += by
-					by = 0
-				}
-				if bw <= 0 || bh <= 0 {
-					continue
-				}
-
-				winID, err := xproto.NewWindowId(X.Conn())
-				if err != nil {
-					success = false
-					break
-				}
-
-				var backPixel uint32 = 0x00F0FF // Neon cyan
-				var overrideRedirect uint32 = 1
-
-				err = xproto.CreateWindowChecked(
-					X.Conn(),
-					screen.RootDepth,
-					winID,
-					screen.Root,
-					int16(bx), int16(by), uint16(bw), uint16(bh),
-					0,
-					xproto.WindowClassInputOutput,
-					screen.RootVisual,
-					xproto.CwOverrideRedirect|xproto.CwBackPixel,
-					[]uint32{overrideRedirect, backPixel},
-				).Check()
-
-				if err != nil {
-					success = false
-					break
-				}
-
-				err = xproto.MapWindowChecked(X.Conn(), winID).Check()
-				if err != nil {
-					success = false
-					break
-				}
-
-				created = append(created, winID)
-			}
-
-			if !success {
-				// Rollback
-				for _, w := range created {
-					xproto.DestroyWindow(X.Conn(), w)
-				}
-				activeBorders = nil
-				fmt.Println("[Recorder] Failed to create highlight overlay windows")
-			} else {
-				activeBorders = created
-				fmt.Println("[Recorder] Recording area highlight overlay mapped")
-			}
-			activeBordersMu.Unlock()
-		}
-	}()
-
-	// Background loop for recordAnnotateChan — standalone annotation like Color Picker
-	var annotateMu sync.Mutex
-	var annotateRunning bool
-	go func() {
-		for range recordAnnotateChan {
-			annotateMu.Lock()
-			if annotateRunning {
-				annotateMu.Unlock()
-				continue
-			}
-			annotateRunning = true
-			annotateMu.Unlock()
-
-			go func() {
-				defer func() {
-					annotateMu.Lock()
-					annotateRunning = false
-					annotateMu.Unlock()
-				}()
-
-				if freshCfg, _, err := config.LoadConfig(); err == nil {
-					cfg = freshCfg
-				}
-
-				fmt.Println("Opening annotation overlay...")
-
-				capCfg := capture.CaptureConfig{
-					Display:     ":0.0",
-					X:           -1,
-					Y:           -1,
-					Interactive: false,
-				}
-				img, err := capture.CaptureScreen(capCfg)
-				if err != nil {
-					fmt.Printf("Annotation capture error: %v\n", err)
-					return
-				}
-
-				rgba, ok := img.(*image.RGBA)
-				if !ok {
-					b := img.Bounds()
-					rgba = image.NewRGBA(b)
-					draw.Draw(rgba, b, img, b.Min, draw.Src)
-				}
-
-				result, err := capture.InteractiveAnnotate(rgba, cfg.Edit.BrushThickness, cfg.Edit.FontScale)
-				if err != nil {
-					fmt.Printf("Annotation error: %v\n", err)
-				} else if result != nil {
-					fmt.Printf("Annotation committed\n")
-				} else {
-					fmt.Println("Annotation cancelled")
-				}
-			}()
-		}
-	}()
-
-	go func() {
-		for range recordChan {
-			recMu.Lock()
-			if activeRec == nil {
-				if freshCfg, _, err := config.LoadConfig(); err == nil {
-					cfg = freshCfg
-				}
-				timestamp := time.Now().Format("20060102_150405")
-				ext := ".mp4"
-				if recordAudioOnly {
-					ext = ".m4a"
-				}
-				filename := filepath.Join(cfg.OutputDir, fmt.Sprintf("recording_%s%s", timestamp, ext))
-
-				markedAreaMu.Lock()
-				area := markedArea
-				markedAreaMu.Unlock()
-
-				var recordingMsg string
-				recCfg := recorder.RecorderConfigFromConfig(cfg)
-				recCfg.OutputPath = filename
-				recCfg.AudioOnly = recordAudioOnly
-
-				if recordAudioOnly {
-					recCfg.AudioEnabled = true
-					recordingMsg = fmt.Sprintf("[%s] Starting audio-only recording to %s...", time.Now().Format("15:04:05"), filename)
-				} else if area.Type == "fullscreen" || area.X < 0 || area.Y < 0 || area.Width <= 0 || area.Height <= 0 {
-					recCfg.X = -1
-					recCfg.Y = -1
-					recCfg.InternalWidth = -1
-					recCfg.InternalHeight = -1
-					recordingMsg = fmt.Sprintf("[%s] Starting fullscreen recording to %s...", time.Now().Format("15:04:05"), filename)
-				} else {
-					recCfg.X = area.X
-					recCfg.Y = area.Y
-					recCfg.InternalWidth = area.Width
-					recCfg.InternalHeight = area.Height
-					recCfg.WindowID = area.WindowID
-					if area.Type == "window" && area.WindowID != 0 {
-						recordingMsg = fmt.Sprintf("[%s] Starting window recording (ID: 0x%x, %dx%d at %d,%d) to %s...", time.Now().Format("15:04:05"), area.WindowID, area.Width, area.Height, area.X, area.Y, filename)
-					} else {
-						recordingMsg = fmt.Sprintf("[%s] Starting region recording (%dx%d at %d,%d) to %s...", time.Now().Format("15:04:05"), area.Width, area.Height, area.X, area.Y, filename)
-					}
-				}
-
-				// Hide preview overlay if visible
-				activeBordersMu.Lock()
-				if len(activeBorders) > 0 {
-					for _, w := range activeBorders {
-						xproto.DestroyWindow(X.Conn(), w)
-					}
-					activeBorders = nil
-					fmt.Println("[Recorder] Hidden preview overlay before starting recording")
-				}
-				activeBordersMu.Unlock()
-
-				fmt.Println(recordingMsg)
-
-				// Ensure folder exists (e.g. if deleted mid-run)
-				_ = os.MkdirAll(cfg.OutputDir, 0755)
-
-				rec := recorder.NewRecorder(recCfg)
-				if err := rec.Start(); err != nil {
-					fmt.Printf("Error starting recorder: %v\n", err)
-					recMu.Unlock()
-					continue
-				}
-				activeRec = rec
-			} else {
-				fmt.Printf("[%s] Stopping recording...\n", time.Now().Format("15:04:05"))
-				rec := activeRec
-				activeRec = nil
-				go func() {
-					if err := rec.Stop(); err != nil {
-						fmt.Printf("Error stopping recorder: %v\n", err)
-					} else {
-						fmt.Printf("Recording saved successfully\n")
-					}
-				}()
-			}
-			recMu.Unlock()
-		}
-	}()
+	go s.runRecordToggleLoop(ch.Record)
 
 	xevent.Main(X)
 	return nil
 }
-
-
