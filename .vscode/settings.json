@@ -1,0 +1,14 @@
+{
+  "go.toolsEnvVars": {
+    "PKG_CONFIG_PATH": "/media/jang/home/Deve/zen-cap/ffmpeg8/lib/pkgconfig",
+    "CGO_CFLAGS": "-I/media/jang/home/Deve/zen-cap/ffmpeg8/include",
+    "CGO_LDFLAGS": "-L/media/jang/home/Deve/zen-cap/ffmpeg8/lib -Wl,-rpath,/media/jang/home/Deve/zen-cap/ffmpeg8/lib"
+  },
+  "gopls": {
+    "build.env": {
+      "PKG_CONFIG_PATH": "/media/jang/home/Deve/zen-cap/ffmpeg8/lib/pkgconfig",
+      "CGO_CFLAGS": "-I/media/jang/home/Deve/zen-cap/ffmpeg8/include",
+      "CGO_LDFLAGS": "-L/media/jang/home/Deve/zen-cap/ffmpeg8/lib -Wl,-rpath,/media/jang/home/Deve/zen-cap/ffmpeg8/lib"
+    }
+  }
+}
