@@ -219,10 +219,5 @@ zen-cap/
 
 | Command | Purpose |
 |---|---|
-| `go build .` | Build zen-cap binary |
-| `go run .` | Run directly (detects `go run`, uses CWD for portable paths) |
-| `go run . --service` | Start in daemon/service mode with hotkeys |
-| `go run . --api` | Start HTTP API server |
-| `go run . --record` | Start screen recording |
-| `go run . --screenshot` | Take a single screenshot |
-| `go test ./...` | Run all tests |
+| `build.sh` | Build zen-cap binary |
+

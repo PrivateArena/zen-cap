@@ -405,8 +405,8 @@ func PerformOCRWithDetails(img image.Image, ocrAddress string, lang string) ([]O
 }
 
 // PerformOCROverlay executes the OCR pipeline, overlays the recognized/translated text onto the image,
-// saves it as a PNG file in OutputDir, and displays it in an interactive overlay window.
-func PerformOCROverlay(img image.Image, ocrAddress, ocrLanguage, translationTarget, translationEngine string, autoTranslate bool, outputDir string) error {
+// saves it as a PNG file in OutputDir, and displays it in an interactive overlay window at regionOffsetX, regionOffsetY.
+func PerformOCROverlay(img image.Image, ocrAddress, ocrLanguage, translationTarget, translationEngine string, autoTranslate bool, outputDir string, regionOffsetX, regionOffsetY int) error {
 	results, err := PerformOCRWithDetails(img, ocrAddress, ocrLanguage)
 	if err != nil {
 		return fmt.Errorf("OCR failed: %w", err)
@@ -562,7 +562,7 @@ func PerformOCROverlay(img image.Image, ocrAddress, ocrLanguage, translationTarg
 	}
 	fmt.Printf("[OCR Overlay] Saved overlay image to %s\n", filename)
 
-	if err := ShowOCROverlayWindow(rgbaImg); err != nil {
+	if err := ShowOCROverlayWindow(rgbaImg, regionOffsetX, regionOffsetY); err != nil {
 		return fmt.Errorf("failed to show OCR overlay window: %w", err)
 	}
 

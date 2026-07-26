@@ -28,7 +28,7 @@ func (s *serviceState) runOCRScreenshotLoop(ch <-chan struct{}) {
 				fmt.Printf("Error capturing fullscreen for OCR: %v\n", err)
 				return
 			}
-			if err := capture.PerformOCROverlay(img, s.cfg.OCRAddress, s.cfg.OCRLanguage, s.cfg.TranslationTarget, s.cfg.TranslationEngine, s.cfg.AutoTranslate, s.cfg.OutputDir); err != nil {
+			if err := capture.PerformOCROverlay(img, s.cfg.OCRAddress, s.cfg.OCRLanguage, s.cfg.TranslationTarget, s.cfg.TranslationEngine, s.cfg.AutoTranslate, s.cfg.OutputDir, 0, 0); err != nil {
 				fmt.Printf("OCR Overlay error: %v\n", err)
 			}
 		}()
@@ -43,19 +43,24 @@ func (s *serviceState) runOCRRegionScreenshotLoop(ch <-chan struct{}) {
 			}
 			fmt.Println("Launching region OCR/Translation...")
 			var chosenAction string
+			var chosenX, chosenY, chosenW, chosenH int
 			capCfg := capture.CaptureConfig{
 				Display:         ":0.0",
 				X:               -1,
 				Y:               -1,
 				Interactive:     true,
 				ClipboardAction: &chosenAction,
+				OutX:            &chosenX,
+				OutY:            &chosenY,
+				OutWidth:        &chosenW,
+				OutHeight:       &chosenH,
 			}
 			img, err := capture.CaptureScreen(capCfg)
 			if err != nil {
 				fmt.Printf("Error capturing region for OCR: %v\n", err)
 				return
 			}
-			if err := capture.PerformOCROverlay(img, s.cfg.OCRAddress, s.cfg.OCRLanguage, s.cfg.TranslationTarget, s.cfg.TranslationEngine, s.cfg.AutoTranslate, s.cfg.OutputDir); err != nil {
+			if err := capture.PerformOCROverlay(img, s.cfg.OCRAddress, s.cfg.OCRLanguage, s.cfg.TranslationTarget, s.cfg.TranslationEngine, s.cfg.AutoTranslate, s.cfg.OutputDir, chosenX, chosenY); err != nil {
 				fmt.Printf("OCR Overlay error: %v\n", err)
 			}
 		}()
@@ -70,6 +75,7 @@ func (s *serviceState) runOCRWindowScreenshotLoop(ch <-chan struct{}) {
 			}
 			fmt.Println("Launching window OCR/Translation...")
 			var chosenAction string
+			var chosenX, chosenY, chosenW, chosenH int
 			capCfg := capture.CaptureConfig{
 				Display:         ":0.0",
 				X:               -1,
@@ -77,13 +83,17 @@ func (s *serviceState) runOCRWindowScreenshotLoop(ch <-chan struct{}) {
 				Interactive:     true,
 				WindowSelect:    true,
 				ClipboardAction: &chosenAction,
+				OutX:            &chosenX,
+				OutY:            &chosenY,
+				OutWidth:        &chosenW,
+				OutHeight:       &chosenH,
 			}
 			img, err := capture.CaptureScreen(capCfg)
 			if err != nil {
 				fmt.Printf("Error capturing window for OCR: %v\n", err)
 				return
 			}
-			if err := capture.PerformOCROverlay(img, s.cfg.OCRAddress, s.cfg.OCRLanguage, s.cfg.TranslationTarget, s.cfg.TranslationEngine, s.cfg.AutoTranslate, s.cfg.OutputDir); err != nil {
+			if err := capture.PerformOCROverlay(img, s.cfg.OCRAddress, s.cfg.OCRLanguage, s.cfg.TranslationTarget, s.cfg.TranslationEngine, s.cfg.AutoTranslate, s.cfg.OutputDir, chosenX, chosenY); err != nil {
 				fmt.Printf("OCR Overlay error: %v\n", err)
 			}
 		}()

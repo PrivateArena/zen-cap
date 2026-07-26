@@ -730,9 +730,9 @@ func InteractiveSelectWindowClassExt(fullImg image.Image) (string, error) {
 	return state.windows[state.hoveredIdx].Class, nil
 }
 
-// ShowOCROverlayWindow displays the captured screen/region with OCR/translation overlays in a centered window.
+// ShowOCROverlayWindow displays the captured screen/region with OCR/translation overlays in an overlay window.
 // The window blocks until the user clicks or presses a key, dismissing it instantly.
-func ShowOCROverlayWindow(img image.Image) error {
+func ShowOCROverlayWindow(img image.Image, winX, winY int) error {
 	xu, err := xgbutil.NewConn()
 	if err != nil {
 		return fmt.Errorf("failed to connect to X server: %w", err)
@@ -740,16 +740,11 @@ func ShowOCROverlayWindow(img image.Image) error {
 	defer xu.Conn().Close()
 
 	screen := xu.Screen()
-	screenWidth := int(screen.WidthInPixels)
-	screenHeight := int(screen.HeightInPixels)
 
 	imgBounds := img.Bounds()
 	imgWidth := imgBounds.Dx()
 	imgHeight := imgBounds.Dy()
 
-	// Center the window on the screen
-	winX := (screenWidth - imgWidth) / 2
-	winY := (screenHeight - imgHeight) / 2
 	if winX < 0 {
 		winX = 0
 	}
