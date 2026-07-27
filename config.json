@@ -34,12 +34,12 @@
   "clipboard_mode": "image",
   "ocr_address": "http://localhost:8765",
   "api_address": "localhost:4444",
-  "ocr_language": "en",
+  "ocr_language": "en-paddle",
   "ocr_languages": [
-    "en",
-    "ja",
-    "ko",
-    "ch"
+    "en-paddle",
+    "ja-paddle",
+    "ko-paddle",
+    "ch-paddle"
   ],
   "translation_target": "en",
   "translation_engine": "google",
