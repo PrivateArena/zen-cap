@@ -42,4 +42,9 @@ type serviceState struct {
 
 	annotateMu      sync.Mutex
 	annotateRunning bool
+
+	ocrAutoMu      sync.Mutex
+	ocrAutoRunning bool
+	ocrAutoFPS     float64
+	ocrAutoCancel  chan struct{}
 }

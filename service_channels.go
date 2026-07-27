@@ -9,6 +9,8 @@ type serviceChannels struct {
 	OCRRegionScreenshot  chan struct{}
 	OCRWindowScreenshot  chan struct{}
 	OCRCycleModel        chan struct{}
+	OCRAutoToggle        chan struct{}
+	OCRAutoFPS           chan struct{}
 	WindowClassGrab      chan struct{}
 	ColorPicker          chan struct{}
 	Record               chan struct{}
@@ -31,6 +33,8 @@ func newServiceChannels() *serviceChannels {
 		OCRRegionScreenshot:  make(chan struct{}, 1),
 		OCRWindowScreenshot:  make(chan struct{}, 1),
 		OCRCycleModel:        make(chan struct{}, 1),
+		OCRAutoToggle:        make(chan struct{}, 1),
+		OCRAutoFPS:           make(chan struct{}, 1),
 		WindowClassGrab:      make(chan struct{}, 1),
 		ColorPicker:          make(chan struct{}, 1),
 		Record:               make(chan struct{}, 1),

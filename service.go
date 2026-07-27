@@ -145,6 +145,24 @@ func handleService() error {
 		}
 	})
 
+	// Register OCR Auto Toggle Hotkey
+	cm.Register(cfg.Hotkeys.OCRAutoToggle, func() {
+		fmt.Println("Hotkey pressed: Triggering OCR auto toggle...")
+		select {
+		case ch.OCRAutoToggle <- struct{}{}:
+		default:
+		}
+	})
+
+	// Register OCR Auto FPS Hotkey
+	cm.Register(cfg.Hotkeys.OCRAutoFPS, func() {
+		fmt.Println("Hotkey pressed: Triggering OCR auto FPS cycle...")
+		select {
+		case ch.OCRAutoFPS <- struct{}{}:
+		default:
+		}
+	})
+
 	// Register Window Class Grab Hotkey
 	cm.Register(cfg.Hotkeys.WindowClassGrab, func() {
 		fmt.Println("Hotkey pressed: Triggering interactive window class grab...")
@@ -377,6 +395,10 @@ func handleService() error {
 	go s.runOCRWindowScreenshotLoop(ch.OCRWindowScreenshot)
 
 	go s.runOCRCycleModelLoop(ch.OCRCycleModel)
+
+	go s.runOCRAutoToggleLoop(ch.OCRAutoToggle)
+
+	go s.runOCRAutoFPSLoop(ch.OCRAutoFPS)
 
 	go s.runSnippetCycleModeLoop(ch.SnippetCycleMode)
 

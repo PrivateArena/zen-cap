@@ -132,6 +132,7 @@ type Config struct {
 	APIAddress           string              `json:"api_address"`           // Default: "localhost:4444"
 	OCRLanguage          string              `json:"ocr_language"`          // Default: "ch"
 	OCRLanguages         []string            `json:"ocr_languages"`         // Default: ["en", "ja", "ko", "ch"]
+	OCRAutoFPS           float64             `json:"ocr_auto_fps"`          // Default: 1.0
 	TranslationTarget    string              `json:"translation_target"`    // Default: "en"
 	TranslationEngine    string              `json:"translation_engine"`    // "google" or "local" (default: "google")
 	AutoTranslate        bool                `json:"auto_translate"`        // Default: false
@@ -179,6 +180,8 @@ type HotkeysConfig struct {
 	ClipboardPasteMod    string `json:"clipboard_paste_mod"`  // e.g. "Mod1-Shift"
 	ClipboardCycleRule   string `json:"clipboard_cycle_rule"` // e.g. "Control-grave"
 	OcrCycleModel        string `json:"ocr_cycle_model"`      // e.g. "Control-Mod1-grave"
+	OCRAutoToggle        string `json:"ocr_auto_toggle"`      // e.g. "Control-Mod1-F1"
+	OCRAutoFPS           string `json:"ocr_auto_fps"`         // e.g. "Control-Mod1-F2"
 	SnippetPicker        string `json:"snippet_picker"`       // e.g. "Mod1-grave" (Alt+`)
 	AutomationPicker     string `json:"automation_picker"`    // e.g. "Mod1-a" (Alt+a)
 	WindowClassGrab      string `json:"window_class_grab"`    // e.g. "Shift-F4"
@@ -259,6 +262,8 @@ func DefaultConfig() *Config {
 			ClipboardPasteMod:    "Mod1-Shift",
 			ClipboardCycleRule:   "Control-grave",
 			OcrCycleModel:        "Control-Mod1-grave",
+			OCRAutoToggle:        "Control-Mod1-F1",
+			OCRAutoFPS:           "Control-Mod1-F2",
 			SnippetPicker:        "Mod1-grave",
 			AutomationPicker:     "Mod1-a",
 			WindowClassGrab:      "Shift-F4",
@@ -273,6 +278,7 @@ func DefaultConfig() *Config {
 		APIAddress:           "localhost:4444",
 		OCRLanguage:          "ch",
 		OCRLanguages:         []string{"en", "ja", "ko", "ch"},
+		OCRAutoFPS:           1.0,
 		TranslationTarget:    "en",
 		TranslationEngine:    "google",
 		AutoTranslate:        false,
@@ -415,6 +421,8 @@ func DefaultPortableConfig(binDir string) *Config {
 			ClipboardPasteMod:    "Mod1-Shift",
 			ClipboardCycleRule:   "Control-grave",
 			OcrCycleModel:        "Control-Mod1-grave",
+			OCRAutoToggle:        "Control-Mod1-F1",
+			OCRAutoFPS:           "Control-Mod1-F2",
 			SnippetPicker:        "Mod1-grave",
 			AutomationPicker:     "Mod1-a",
 			WindowClassGrab:      "Shift-F4",
@@ -429,6 +437,7 @@ func DefaultPortableConfig(binDir string) *Config {
 		APIAddress:           "localhost:4444",
 		OCRLanguage:          "ch",
 		OCRLanguages:         []string{"en", "ja", "ko", "ch"},
+		OCRAutoFPS:           1.0,
 		TranslationTarget:    "en",
 		TranslationEngine:    "google",
 		AutoTranslate:        false,

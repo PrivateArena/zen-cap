@@ -29,6 +29,8 @@ func printHotkeyBanner(cfg *config.Config) {
 	fmt.Printf("  %-14s -> Clipboard Manager: Paste (0-9)\n", cfg.Hotkeys.ClipboardPasteMod+"-[0-9]")
 	fmt.Printf("  %-14s -> Clipboard Manager: Cycle Transform Rules\n", cfg.Hotkeys.ClipboardCycleRule)
 	fmt.Printf("  %-14s -> OCR Manager: Cycle OCR Model/Language\n", cfg.Hotkeys.OcrCycleModel)
+	fmt.Printf("  %-14s -> OCR Auto: Start/Stop Realtime OCR\n", cfg.Hotkeys.OCRAutoToggle)
+	fmt.Printf("  %-14s -> OCR Auto: Cycle Capture FPS\n", cfg.Hotkeys.OCRAutoFPS)
 	fmt.Printf("  %-14s -> Snippet Picker: Open GUI\n", cfg.Hotkeys.SnippetPicker)
 	fmt.Printf("  %-14s -> Snippet Editor: Open snippets.yaml\n", "Shift-"+cfg.Hotkeys.SnippetPicker)
 	fmt.Printf("  %-14s -> Snippet Mode: Cycle (Paste vs Human Typing)\n", cfg.Hotkeys.SnippetCycleMode)

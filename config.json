@@ -18,6 +18,8 @@
     "clipboard_paste_mod": "Control-Mod1",
     "clipboard_cycle_rule": "Control-grave",
     "ocr_cycle_model": "Mod1-grave",
+    "ocr_auto_toggle": "Control-Shift-Mod4-F1",
+    "ocr_auto_fps": "Control-Shift-Mod4-F2",
     "snippet_picker": "Mod1-w",
     "automation_picker": "Mod1-a",
     "window_class_grab": "Shift-F4",
@@ -41,6 +43,7 @@
     "ko-paddle",
     "ch-paddle"
   ],
+  "ocr_auto_fps": 0.5,
   "translation_target": "en",
   "translation_engine": "google",
   "auto_translate": false,
