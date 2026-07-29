@@ -1,4 +1,3 @@
-// [VERIFIED]
 package capture
 
 import (
@@ -7,12 +6,13 @@ import (
 	"image/color"
 	"image/draw"
 
+	"zen-cap/pkg/annotation"
+	"zen-cap/pkg/display"
+
 	"github.com/jezek/xgb/xproto"
 	"github.com/jezek/xgbutil"
 	"github.com/jezek/xgbutil/keybind"
 	"github.com/jezek/xgbutil/xevent"
-	"zen-cap/pkg/annotation"
-	"zen-cap/pkg/display"
 )
 
 type windowState struct {

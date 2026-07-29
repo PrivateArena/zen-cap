@@ -1,4 +1,3 @@
-// [VERIFIED]
 package display
 
 import (

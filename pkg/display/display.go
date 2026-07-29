@@ -1,4 +1,3 @@
-// [VERIFIED]
 package display
 
 type Geometry struct {

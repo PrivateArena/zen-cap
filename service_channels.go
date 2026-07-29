@@ -1,4 +1,3 @@
-// [VERIFIED]
 package main
 
 type serviceChannels struct {

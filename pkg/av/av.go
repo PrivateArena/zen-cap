@@ -1,4 +1,3 @@
-// [VERIFIED]
 package av
 
 import (
