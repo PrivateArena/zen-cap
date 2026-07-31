@@ -219,5 +219,5 @@ zen-cap/
 
 | Command | Purpose |
 |---|---|
-| `build.sh` | Build zen-cap binary |
+| `build.sh` | Build zen-cap binary - DO NOT BUILD WITHOUT RUNNING THIS FILE, IT IS REQUIRED TO BUILD ffmpeg with the binary. |
 

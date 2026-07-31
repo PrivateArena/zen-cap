@@ -26,7 +26,7 @@ func (s *serviceState) runWindowClassGrabLoop(ch <-chan struct{}) {
 			}()
 
 			if freshCfg, _, err := config.LoadConfig(); err == nil {
-				s.cfg = freshCfg
+				s.setCfg(freshCfg)
 			}
 			fmt.Println("Launching interactive window class grab...")
 
@@ -68,7 +68,7 @@ func (s *serviceState) runColorPickerLoop(ch <-chan struct{}) {
 			}()
 
 			if freshCfg, _, err := config.LoadConfig(); err == nil {
-				s.cfg = freshCfg
+				s.setCfg(freshCfg)
 			}
 			fmt.Println("Launching interactive color picker...")
 
@@ -84,7 +84,7 @@ func (s *serviceState) runColorPickerLoop(ch <-chan struct{}) {
 				return
 			}
 
-			colorsText, err := capture.InteractiveColorPicker(img, s.cfg.ColorPickerFormat)
+			colorsText, err := capture.InteractiveColorPicker(img, s.getCfg().ColorPickerFormat)
 			if err != nil {
 				fmt.Printf("Color picker error: %v\n", err)
 				return

@@ -15,9 +15,15 @@ type VisionTask struct{}
 
 func (VisionTask) Name() string { return "vision" }
 
-func (VisionTask) Enabled(cfg *config.Config) bool { return cfg.Vision.Enabled }
+func (VisionTask) Requires() []string { return nil }
 
-func (VisionTask) Run(ctx context.Context, r *Result, cfg *config.Config) error {
+func (VisionTask) Terminal() bool { return false }
+
+func (VisionTask) Enabled(cfg *config.Config, r *Result) bool {
+	return cfg.Vision.Enabled && r.Image != nil && r.FilePath != ""
+}
+
+func (VisionTask) Run(ctx context.Context, r *Result, cfg *config.Config, opts *Options) error {
 	address := cfg.BrowserBridge.Address
 	if address == "" {
 		address = "127.0.0.1"
@@ -46,14 +52,14 @@ func (VisionTask) Run(ctx context.Context, r *Result, cfg *config.Config) error 
 	defer cancel()
 
 	fmt.Printf("[Vision] Requesting visual analysis from browser bridge at %s using %s...\n", endpoint, provider)
-	text, err := browser_bridge.CallChat(reqCtx, endpoint, provider, prompt, []string{r.OutputPath})
+	text, err := browser_bridge.CallChat(reqCtx, endpoint, provider, prompt, []string{r.FilePath})
 	if err != nil {
 		return err
 	}
 	r.LLMText = text
 
 	if cfg.Vision.SaveSidecar {
-		sidecar := strings.TrimSuffix(r.OutputPath, ".png") + ".txt"
+		sidecar := strings.TrimSuffix(r.FilePath, ".png") + ".txt"
 		if werr := os.WriteFile(sidecar, []byte(text), 0644); werr != nil {
 			fmt.Printf("[Vision] failed to write sidecar %s: %v\n", sidecar, werr)
 		} else {

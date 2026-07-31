@@ -366,8 +366,7 @@ func handleService() error {
 	cm.Start()
 
 	s := &serviceState{
-		cfg: cfg,
-		X:   X,
+		X: X,
 		markedArea: MarkedArea{
 			X:      -1,
 			Y:      -1,
@@ -376,6 +375,7 @@ func handleService() error {
 			Type:   "fullscreen",
 		},
 	}
+	s.setCfg(cfg)
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM, syscall.SIGUSR1, syscall.SIGUSR2)

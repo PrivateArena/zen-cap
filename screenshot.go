@@ -126,16 +126,23 @@ func handleScreenshot() error {
 	fmt.Printf("Screenshot saved successfully to %s\n", outputPath)
 
 	// CLI flag overrides config; the in-crop dynamic choice (chosenAction)
-	// overrides both and is passed through as the pipeline override.
-	if *clipMode != "" {
-		cfg.ClipboardMode = *clipMode
+	// takes precedence and is passed through as the chain override.
+	chosen := chosenAction
+	if chosen == "" && *clipMode != "" {
+		chosen = *clipMode
 	}
 
 	absPath, err := filepath.Abs(outputPath)
 	if err != nil {
 		absPath = outputPath
 	}
-	pipeline.Run(context.Background(), cfg, img, absPath, chosenAction)
+	pipeline.Run(context.Background(), cfg, pipeline.Seed{
+		Source:   pipeline.SourceCapture,
+		Kind:     pipeline.KindImage,
+		Image:    img,
+		FilePath: absPath,
+		Chosen:   chosen,
+	})
 
 	return nil
 }

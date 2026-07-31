@@ -33,7 +33,6 @@
     "font_size": 24,
     "font_face": ""
   },
-  "clipboard_mode": "image",
   "ocr_address": "http://localhost:8765",
   "api_address": "localhost:4444",
   "ocr_language": "en-paddle",
@@ -112,8 +111,22 @@
     "edit",
     "upload",
     "vision",
-    "clipboard"
+    "copy_image"
   ],
+  "after_ocr_tasks": [
+    "ocr",
+    "translate",
+    "display"
+  ],
+  "after_ocr_auto_tasks": [
+    "ocr",
+    "translate",
+    "display_live"
+  ],
+  "after_record_tasks": [
+    "copy_path"
+  ],
+  "ocr_auto_copy": false,
   "edit": {
     "enabled": false,
     "mode": "builtin",
@@ -144,39 +157,64 @@
   "task_profiles": [
     {
       "name": "LLM Vision",
-      "after_capture_tasks": [
+      "tasks": [
         "vision",
-        "clipboard"
+        "copy_llm"
       ],
-      "clipboard_mode": "llm-text"
+      "applies_to": [
+        "capture"
+      ]
     },
     {
       "name": "Copy Path",
-      "after_capture_tasks": [
-        "clipboard"
+      "tasks": [
+        "copy_path"
       ],
-      "clipboard_mode": "path"
+      "applies_to": [
+        "capture"
+      ]
     },
     {
       "name": "Copy Image",
-      "after_capture_tasks": [
-        "clipboard"
+      "tasks": [
+        "copy_image"
       ],
-      "clipboard_mode": "image"
+      "applies_to": [
+        "capture"
+      ]
     },
     {
       "name": "OCR",
-      "after_capture_tasks": [
-        "clipboard"
+      "tasks": [
+        "ocr",
+        "copy_text"
       ],
-      "clipboard_mode": "ocr"
+      "applies_to": [
+        "capture"
+      ]
     },
     {
       "name": "Translate",
-      "after_capture_tasks": [
-        "clipboard"
+      "tasks": [
+        "ocr",
+        "translate",
+        "copy_text"
       ],
-      "clipboard_mode": "translate"
+      "applies_to": [
+        "capture"
+      ]
+    },
+    {
+      "name": "Realtime Translate",
+      "tasks": [
+        "ocr",
+        "translate",
+        "copy_text",
+        "display_live"
+      ],
+      "applies_to": [
+        "ocr_auto"
+      ]
     }
   ],
   "current_task_profile": "Copy Image",

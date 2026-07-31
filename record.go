@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"zen-cap/pkg/config"
+	"zen-cap/pkg/pipeline"
 	"zen-cap/pkg/recorder"
 )
 
@@ -143,5 +145,15 @@ func handleRecord() error {
 	}
 
 	fmt.Printf("Recording saved successfully to %s\n", outputPath)
+
+	absPath, err := filepath.Abs(outputPath)
+	if err != nil {
+		absPath = outputPath
+	}
+	pipeline.Run(context.Background(), cfg, pipeline.Seed{
+		Source:   pipeline.SourceRecord,
+		Kind:     pipeline.KindFile,
+		FilePath: absPath,
+	})
 	return nil
 }

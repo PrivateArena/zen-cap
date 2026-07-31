@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/image/font"
@@ -193,6 +194,9 @@ func PerformOCR(img image.Image, ocrAddress string, lang string) (string, error)
 }
 
 // TranslateText translates the given text using the configured translation engine ("google" or "local").
+// TranslateTextFn is an injectable seam for tests.
+var TranslateTextFn = TranslateText
+
 func TranslateText(engine, ocrAddress, text, targetLang string) (string, error) {
 	if text == "" {
 		return "", nil
@@ -302,7 +306,24 @@ func hasCJK(s string) bool {
 	return false
 }
 
+// fontCache memoizes parsed font faces keyed by "size|preferCJK" so the
+// per-tick font-fit loop in RenderOCRBoxes does not re-parse TTFs (OQ1).
+var fontCache sync.Map
+
 func loadSystemFont(fontSize float64, preferCJK bool) (font.Face, error) {
+	key := fmt.Sprintf("%.1f|%v", fontSize, preferCJK)
+	if cached, ok := fontCache.Load(key); ok {
+		return cached.(font.Face), nil
+	}
+	face, err := loadSystemFontUncached(fontSize, preferCJK)
+	if err != nil {
+		return face, err
+	}
+	fontCache.Store(key, face)
+	return face, nil
+}
+
+func loadSystemFontUncached(fontSize float64, preferCJK bool) (font.Face, error) {
 	var fontPaths []string
 	if preferCJK {
 		fontPaths = []string{
@@ -404,14 +425,10 @@ func PerformOCRWithDetails(img image.Image, ocrAddress string, lang string) ([]O
 	return ocrResp.Results, nil
 }
 
-// PerformOCROverlay executes the OCR pipeline, overlays the recognized/translated text onto the image,
-// saves it as a PNG file in OutputDir, and displays it in an interactive overlay window at regionOffsetX, regionOffsetY.
-func PerformOCROverlay(img image.Image, ocrAddress, ocrLanguage, translationTarget, translationEngine string, autoTranslate bool, outputDir string, regionOffsetX, regionOffsetY int) error {
-	results, err := PerformOCRWithDetails(img, ocrAddress, ocrLanguage)
-	if err != nil {
-		return fmt.Errorf("OCR failed: %w", err)
-	}
-
+// RenderOCRBoxes composites recognized/translated text boxes onto a copy of img
+// and returns the result as an *image.RGBA. The per-box Text is drawn verbatim
+// (any translation is applied by the pipeline before this is called).
+func RenderOCRBoxes(img image.Image, results []OCRResult) *image.RGBA {
 	bounds := img.Bounds()
 	rgbaImg := image.NewRGBA(bounds)
 	draw.Draw(rgbaImg, bounds, img, bounds.Min, draw.Src)
@@ -422,12 +439,6 @@ func PerformOCROverlay(img image.Image, ocrAddress, ocrLanguage, translationTarg
 		}
 
 		text := res.Text
-		if autoTranslate {
-			translated, err := TranslateText(translationEngine, ocrAddress, text, translationTarget)
-			if err == nil && translated != "" {
-				text = translated
-			}
-		}
 
 		minX := res.Bounds.Min.X + bounds.Min.X
 		minY := res.Bounds.Min.Y + bounds.Min.Y
@@ -554,17 +565,5 @@ func PerformOCROverlay(img image.Image, ocrAddress, ocrLanguage, translationTarg
 		d.DrawString(text)
 	}
 
-	timestamp := time.Now().Format("20060102_150405")
-	filename := filepath.Join(outputDir, fmt.Sprintf("ocr_overlay_%s.png", timestamp))
-	_ = os.MkdirAll(outputDir, 0755)
-	if err := SavePNG(rgbaImg, filename); err != nil {
-		return fmt.Errorf("failed to save OCR overlay image: %w", err)
-	}
-	fmt.Printf("[OCR Overlay] Saved overlay image to %s\n", filename)
-
-	if err := ShowOCROverlayWindow(rgbaImg, regionOffsetX, regionOffsetY); err != nil {
-		return fmt.Errorf("failed to show OCR overlay window: %w", err)
-	}
-
-	return nil
+	return rgbaImg
 }

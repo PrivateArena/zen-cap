@@ -20,11 +20,15 @@ type UploadTask struct{}
 
 func (UploadTask) Name() string { return "upload" }
 
-func (UploadTask) Enabled(cfg *config.Config) bool {
-	return cfg.Uploader.Enabled && cfg.Uploader.Endpoint != ""
+func (UploadTask) Requires() []string { return nil }
+
+func (UploadTask) Terminal() bool { return false }
+
+func (UploadTask) Enabled(cfg *config.Config, r *Result) bool {
+	return cfg.Uploader.Enabled && cfg.Uploader.Endpoint != "" && r.Image != nil
 }
 
-func (UploadTask) Run(ctx context.Context, r *Result, cfg *config.Config) error {
+func (UploadTask) Run(ctx context.Context, r *Result, cfg *config.Config, opts *Options) error {
 	var imgBuf bytes.Buffer
 	if err := png.Encode(&imgBuf, r.Image); err != nil {
 		return fmt.Errorf("failed to encode image for upload: %w", err)
@@ -37,7 +41,7 @@ func (UploadTask) Run(ctx context.Context, r *Result, cfg *config.Config) error 
 	if fieldName == "" {
 		fieldName = "file"
 	}
-	part, err := writer.CreateFormFile(fieldName, baseName(r.OutputPath))
+	part, err := writer.CreateFormFile(fieldName, baseName(r.FilePath))
 	if err != nil {
 		return fmt.Errorf("failed to create multipart field: %w", err)
 	}

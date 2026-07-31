@@ -2,10 +2,8 @@ package main
 
 import (
 	"fmt"
-	"image"
 	"strconv"
 
-	"zen-cap/pkg/capture"
 	"zen-cap/pkg/config"
 	"zen-cap/pkg/display"
 )
@@ -95,74 +93,6 @@ func parseWindowID(str string) (uint32, error) {
 		return 0, fmt.Errorf("invalid window ID %q: %w", str, err)
 	}
 	return uint32(id), nil
-}
-
-func processClipboardAction(img image.Image, absPath string, action string, cfg *config.Config) {
-	if action == "" || action == "none" {
-		return
-	}
-
-	switch action {
-	case "image":
-		if err := capture.SpawnClipboardDaemon("--image", absPath); err != nil {
-			fmt.Printf("Error spawning clipboard daemon for image: %v\n", err)
-		} else {
-			fmt.Println("[Clipboard] Copied image to clipboard.")
-			sendNotification("Zen-Cap", "Copied captured image to clipboard!")
-		}
-	case "path":
-		if err := capture.SpawnClipboardDaemon("--text", absPath); err != nil {
-			fmt.Printf("Error spawning clipboard daemon for path: %v\n", err)
-		} else {
-			fmt.Printf("[Clipboard] Copied path to clipboard: %s\n", absPath)
-			sendNotification("Zen-Cap", "Copied image file path to clipboard!")
-		}
-	case "ocr":
-		fmt.Println("[OCR] Running OCR on captured region...")
-		text, err := capture.PerformOCR(img, cfg.OCRAddress, cfg.OCRLanguage)
-		if err != nil {
-			fmt.Printf("OCR failed: %v\n", err)
-			sendNotification("Zen-Cap OCR", fmt.Sprintf("OCR failed: %v", err))
-			return
-		}
-		if text == "" {
-			fmt.Println("[OCR] No text was detected in region.")
-			sendNotification("Zen-Cap OCR", "No text was detected in captured region.")
-			return
-		}
-		if err := capture.SpawnClipboardDaemon("--text", text); err != nil {
-			fmt.Printf("Error spawning clipboard daemon for OCR text: %v\n", err)
-		} else {
-			fmt.Printf("[OCR] Copied extracted text to clipboard:\n%s\n", text)
-			sendNotification("Zen-Cap OCR", fmt.Sprintf("Copied extracted text to clipboard (%d chars)!", len(text)))
-		}
-	case "translate":
-		fmt.Println("[OCR] Running OCR for translation...")
-		text, err := capture.PerformOCR(img, cfg.OCRAddress, cfg.OCRLanguage)
-		if err != nil {
-			fmt.Printf("OCR failed: %v\n", err)
-			sendNotification("Zen-Cap Translate", fmt.Sprintf("OCR failed: %v", err))
-			return
-		}
-		if text == "" {
-			fmt.Println("[OCR] No text was detected for translation.")
-			sendNotification("Zen-Cap Translate", "No text was detected in captured region.")
-			return
-		}
-		fmt.Printf("[Translate] Translating extracted text to %s...\n", cfg.TranslationTarget)
-		translated, err := capture.TranslateText(cfg.TranslationEngine, cfg.OCRAddress, text, cfg.TranslationTarget)
-		if err != nil {
-			fmt.Printf("Translation failed: %v\n", err)
-			sendNotification("Zen-Cap Translate", fmt.Sprintf("Translation failed: %v", err))
-			return
-		}
-		if err := capture.SpawnClipboardDaemon("--text", translated); err != nil {
-			fmt.Printf("Error spawning clipboard daemon for translation: %v\n", err)
-		} else {
-			fmt.Printf("[Translate] Copied translated text to clipboard:\n%s\n", translated)
-			sendNotification("Zen-Cap Translate", "Copied translated text to clipboard!")
-		}
-	}
 }
 
 func sendNotification(title, message string) {

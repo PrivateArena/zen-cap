@@ -17,9 +17,15 @@ type EditTask struct{}
 
 func (EditTask) Name() string { return "edit" }
 
-func (EditTask) Enabled(cfg *config.Config) bool { return cfg.Edit.Enabled }
+func (EditTask) Requires() []string { return nil }
 
-func (EditTask) Run(ctx context.Context, r *Result, cfg *config.Config) error {
+func (EditTask) Terminal() bool { return false }
+
+func (EditTask) Enabled(cfg *config.Config, r *Result) bool {
+	return cfg.Edit.Enabled && r.Image != nil
+}
+
+func (EditTask) Run(ctx context.Context, r *Result, cfg *config.Config, opts *Options) error {
 	if cfg.Edit.Mode == "external" {
 		return runExternalEditor(r, cfg)
 	}
@@ -32,7 +38,7 @@ func runExternalEditor(r *Result, cfg *config.Config) error {
 	if cfg.Edit.ExternalCmd == "" {
 		return fmt.Errorf("edit.mode is 'external' but edit.external_cmd is empty")
 	}
-	cmdline := strings.ReplaceAll(cfg.Edit.ExternalCmd, "{file}", r.OutputPath)
+	cmdline := strings.ReplaceAll(cfg.Edit.ExternalCmd, "{file}", r.FilePath)
 	parts := strings.Fields(cmdline)
 	if len(parts) == 0 {
 		return fmt.Errorf("edit.external_cmd resolved to an empty command")
@@ -41,7 +47,7 @@ func runExternalEditor(r *Result, cfg *config.Config) error {
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("external editor failed: %w", err)
 	}
-	f, err := os.Open(r.OutputPath)
+	f, err := os.Open(r.FilePath)
 	if err != nil {
 		return fmt.Errorf("failed to reopen edited file: %w", err)
 	}
@@ -75,7 +81,7 @@ func runBuiltinAnnotator(r *Result, cfg *config.Config) error {
 	}
 	r.Image = edited
 
-	f, err := os.Create(r.OutputPath)
+	f, err := os.Create(r.FilePath)
 	if err != nil {
 		return fmt.Errorf("failed to reopen output file for re-save: %w", err)
 	}

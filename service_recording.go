@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"image"
 	"image/draw"
@@ -12,6 +13,7 @@ import (
 
 	"zen-cap/pkg/capture"
 	"zen-cap/pkg/config"
+	"zen-cap/pkg/pipeline"
 	"zen-cap/pkg/recorder"
 )
 
@@ -53,7 +55,7 @@ func (s *serviceState) runRecordMarkRegionLoop(ch <-chan struct{}) {
 	for range ch {
 		go func() {
 			if freshCfg, _, err := config.LoadConfig(); err == nil {
-				s.cfg = freshCfg
+				s.setCfg(freshCfg)
 			}
 			fmt.Println("[Recorder] Launching interactive region select to mark recording area...")
 			var action string
@@ -103,7 +105,7 @@ func (s *serviceState) runRecordMarkWindowLoop(ch <-chan struct{}) {
 	for range ch {
 		go func() {
 			if freshCfg, _, err := config.LoadConfig(); err == nil {
-				s.cfg = freshCfg
+				s.setCfg(freshCfg)
 			}
 			fmt.Println("[Recorder] Launching interactive window select to mark recording area...")
 			var action string
@@ -278,7 +280,7 @@ func (s *serviceState) runRecordAnnotateLoop(ch <-chan struct{}) {
 			}()
 
 			if freshCfg, _, err := config.LoadConfig(); err == nil {
-				s.cfg = freshCfg
+				s.setCfg(freshCfg)
 			}
 
 			fmt.Println("Opening annotation overlay...")
@@ -302,7 +304,7 @@ func (s *serviceState) runRecordAnnotateLoop(ch <-chan struct{}) {
 				draw.Draw(rgba, b, img, b.Min, draw.Src)
 			}
 
-			result, err := capture.InteractiveAnnotate(rgba, s.cfg.Edit.BrushThickness, s.cfg.Edit.FontScale)
+			result, err := capture.InteractiveAnnotate(rgba, s.getCfg().Edit.BrushThickness, s.getCfg().Edit.FontScale)
 			if err != nil {
 				fmt.Printf("Annotation error: %v\n", err)
 			} else if result != nil {
@@ -319,21 +321,21 @@ func (s *serviceState) runRecordToggleLoop(ch <-chan struct{}) {
 		s.recMu.Lock()
 		if s.activeRec == nil {
 			if freshCfg, _, err := config.LoadConfig(); err == nil {
-				s.cfg = freshCfg
+				s.setCfg(freshCfg)
 			}
 			timestamp := time.Now().Format("20060102_150405")
 			ext := ".mp4"
 			if s.recordAudioOnly {
 				ext = ".m4a"
 			}
-			filename := filepath.Join(s.cfg.OutputDir, fmt.Sprintf("recording_%s%s", timestamp, ext))
+			filename := filepath.Join(s.getCfg().OutputDir, fmt.Sprintf("recording_%s%s", timestamp, ext))
 
 			s.markedAreaMu.Lock()
 			area := s.markedArea
 			s.markedAreaMu.Unlock()
 
 			var recordingMsg string
-			recCfg := recorder.RecorderConfigFromConfig(s.cfg)
+			recCfg := recorder.RecorderConfigFromConfig(s.getCfg())
 			recCfg.OutputPath = filename
 			recCfg.AudioOnly = s.recordAudioOnly
 
@@ -371,7 +373,7 @@ func (s *serviceState) runRecordToggleLoop(ch <-chan struct{}) {
 
 			fmt.Println(recordingMsg)
 
-			_ = os.MkdirAll(s.cfg.OutputDir, 0755)
+			_ = os.MkdirAll(s.getCfg().OutputDir, 0755)
 
 			rec := recorder.NewRecorder(recCfg)
 			if err := rec.Start(); err != nil {
@@ -380,16 +382,23 @@ func (s *serviceState) runRecordToggleLoop(ch <-chan struct{}) {
 				continue
 			}
 			s.activeRec = rec
+			s.activeRecPath = filename
 		} else {
 			fmt.Printf("[%s] Stopping recording...\n", time.Now().Format("15:04:05"))
 			rec := s.activeRec
 			s.activeRec = nil
+			path := s.activeRecPath
 			go func() {
 				if err := rec.Stop(); err != nil {
 					fmt.Printf("Error stopping recorder: %v\n", err)
-				} else {
-					fmt.Printf("Recording saved successfully\n")
+					return
 				}
+				fmt.Printf("Recording saved successfully\n")
+				pipeline.Run(context.Background(), s.getCfg(), pipeline.Seed{
+					Source:   pipeline.SourceRecord,
+					Kind:     pipeline.KindFile,
+					FilePath: path,
+				})
 			}()
 		}
 		s.recMu.Unlock()

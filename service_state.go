@@ -2,6 +2,7 @@ package main
 
 import (
 	"sync"
+	"sync/atomic"
 
 	"github.com/jezek/xgb/xproto"
 	"github.com/jezek/xgbutil"
@@ -20,11 +21,12 @@ type MarkedArea struct {
 }
 
 type serviceState struct {
-	cfg *config.Config
+	cfg atomic.Pointer[config.Config]
 	X   *xgbutil.XUtil
 
 	recMu           sync.Mutex
 	activeRec       *recorder.Recorder
+	activeRecPath   string
 	recordAudioOnly bool
 
 	markedAreaMu sync.Mutex
@@ -46,4 +48,15 @@ type serviceState struct {
 	ocrAutoRunning bool
 	ocrAutoFPS     float64
 	ocrAutoCancel  chan struct{}
+}
+
+func (s *serviceState) getCfg() *config.Config {
+	if cfg := s.cfg.Load(); cfg != nil {
+		return cfg
+	}
+	return config.DefaultConfig()
+}
+
+func (s *serviceState) setCfg(cfg *config.Config) {
+	s.cfg.Store(cfg)
 }

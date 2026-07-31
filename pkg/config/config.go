@@ -110,9 +110,9 @@ type VisionConfig struct {
 }
 
 type TaskProfile struct {
-	Name              string   `json:"name"`
-	AfterCaptureTasks []string `json:"after_capture_tasks"`
-	ClipboardMode     string   `json:"clipboard_mode"`
+	Name      string   `json:"name"`
+	Tasks     []string `json:"tasks"`
+	AppliesTo []string `json:"applies_to"` // "capture","ocr","ocr_auto","record"; empty -> ["capture"]
 }
 
 type BrowserBridgeConfig struct {
@@ -126,7 +126,6 @@ type Config struct {
 	OutputDir            string              `json:"output_dir"`
 	Hotkeys              HotkeysConfig       `json:"hotkeys"`
 	SnippetPicker        SnippetPickerConfig `json:"snippet_picker"`
-	ClipboardMode        string              `json:"clipboard_mode"`        // "image", "path", "ocr", "translate", "none"
 	OCRAddress           string              `json:"ocr_address"`           // Default: "http://localhost:8765"
 	APIAddress           string              `json:"api_address"`           // Default: "localhost:4444"
 	OCRLanguage          string              `json:"ocr_language"`          // Default: "ch"
@@ -148,7 +147,11 @@ type Config struct {
 	SkillsPath           string              `json:"skills_path"`  // abs path to skills directory
 
 	// --- new: post-capture task pipeline ---
-	AfterCaptureTasks []string       `json:"after_capture_tasks"` // ordered task names, e.g. ["edit","upload","vision","clipboard"]
+	AfterCaptureTasks []string       `json:"after_capture_tasks"`     // ordered task names, e.g. ["edit","upload","vision","copy_image"]
+	AfterOCRTasks     []string       `json:"after_ocr_tasks"`         // ordered task names for one-shot OCR
+	AfterOCRAutoTasks []string       `json:"after_ocr_auto_tasks"`    // ordered task names for the realtime OCR loop
+	AfterRecordTasks  []string       `json:"after_record_tasks"`      // ordered task names after a recording stops
+	OCRAutoCopy       bool           `json:"ocr_auto_copy"`           // append copy_text to the ocr_auto chain
 	Edit              EditConfig     `json:"edit"`
 	Uploader          UploaderConfig `json:"uploader"`
 	Vision            VisionConfig   `json:"vision"`
@@ -270,7 +273,6 @@ func DefaultConfig() *Config {
 			SnippetCycleMode:     "Mod4-w",
 			CycleTaskProfile:     "Control-Mod1-p",
 		},
-		ClipboardMode:        "image",
 		SnippetMode:          "paste",
 		ColorPickerFormat:    "hex",
 		OCRAddress:           "http://localhost:8765",
@@ -333,7 +335,11 @@ func DefaultConfig() *Config {
 		},
 		PromptsPath: "/media/jang/home/Deve/web-reader-mcp-master/src/resources/prompts",
 		SkillsPath:  "/media/jang/home/Deve/web-reader-mcp-master/src/resources/skills",
-		AfterCaptureTasks: []string{"edit", "upload", "vision", "clipboard"},
+		AfterCaptureTasks:  []string{"edit", "upload", "vision", "copy_image"},
+		AfterOCRTasks:      []string{"ocr", "translate", "display"},
+		AfterOCRAutoTasks:  []string{"ocr", "translate", "display_live"},
+		AfterRecordTasks:   []string{"copy_path"},
+		OCRAutoCopy:        false,
 		Edit: EditConfig{
 			Enabled:        false,
 			Mode:           "builtin",
@@ -363,29 +369,34 @@ func DefaultConfig() *Config {
 		},
 		TaskProfiles: []TaskProfile{
 			{
-				Name:              "LLM Vision",
-				AfterCaptureTasks: []string{"vision", "clipboard"},
-				ClipboardMode:     "llm-text",
+				Name:      "LLM Vision",
+				Tasks:     []string{"vision", "copy_llm"},
+				AppliesTo: []string{"capture"},
 			},
 			{
-				Name:              "Copy Path",
-				AfterCaptureTasks: []string{"clipboard"},
-				ClipboardMode:     "path",
+				Name:      "Copy Path",
+				Tasks:     []string{"copy_path"},
+				AppliesTo: []string{"capture"},
 			},
 			{
-				Name:              "Copy Image",
-				AfterCaptureTasks: []string{"clipboard"},
-				ClipboardMode:     "image",
+				Name:      "Copy Image",
+				Tasks:     []string{"copy_image"},
+				AppliesTo: []string{"capture"},
 			},
 			{
-				Name:              "OCR",
-				AfterCaptureTasks: []string{"clipboard"},
-				ClipboardMode:     "ocr",
+				Name:      "OCR",
+				Tasks:     []string{"ocr", "copy_text"},
+				AppliesTo: []string{"capture"},
 			},
 			{
-				Name:              "Translate",
-				AfterCaptureTasks: []string{"clipboard"},
-				ClipboardMode:     "translate",
+				Name:      "Translate",
+				Tasks:     []string{"ocr", "translate", "copy_text"},
+				AppliesTo: []string{"capture"},
+			},
+			{
+				Name:      "Realtime Translate",
+				Tasks:     []string{"ocr", "translate", "copy_text", "display_live"},
+				AppliesTo: []string{"ocr_auto"},
 			},
 		},
 		CurrentTaskProfile: "Copy Image",
@@ -429,7 +440,6 @@ func DefaultPortableConfig(binDir string) *Config {
 			SnippetCycleMode:     "Mod4-w",
 			CycleTaskProfile:     "Control-Mod1-p",
 		},
-		ClipboardMode:        "image",
 		SnippetMode:          "paste",
 		ColorPickerFormat:    "hex",
 		OCRAddress:           "http://localhost:8765",
@@ -492,7 +502,11 @@ func DefaultPortableConfig(binDir string) *Config {
 		},
 		PromptsPath: "/media/jang/home/Deve/web-reader-mcp-master/src/resources/prompts",
 		SkillsPath:  "/media/jang/home/Deve/web-reader-mcp-master/src/resources/skills",
-		AfterCaptureTasks: []string{"edit", "upload", "vision", "clipboard"},
+		AfterCaptureTasks:  []string{"edit", "upload", "vision", "copy_image"},
+		AfterOCRTasks:      []string{"ocr", "translate", "display"},
+		AfterOCRAutoTasks:  []string{"ocr", "translate", "display_live"},
+		AfterRecordTasks:   []string{"copy_path"},
+		OCRAutoCopy:        false,
 		Edit: EditConfig{
 			Enabled:        false,
 			Mode:           "builtin",
@@ -522,29 +536,34 @@ func DefaultPortableConfig(binDir string) *Config {
 		},
 		TaskProfiles: []TaskProfile{
 			{
-				Name:              "LLM Vision",
-				AfterCaptureTasks: []string{"vision", "clipboard"},
-				ClipboardMode:     "llm-text",
+				Name:      "LLM Vision",
+				Tasks:     []string{"vision", "copy_llm"},
+				AppliesTo: []string{"capture"},
 			},
 			{
-				Name:              "Copy Path",
-				AfterCaptureTasks: []string{"clipboard"},
-				ClipboardMode:     "path",
+				Name:      "Copy Path",
+				Tasks:     []string{"copy_path"},
+				AppliesTo: []string{"capture"},
 			},
 			{
-				Name:              "Copy Image",
-				AfterCaptureTasks: []string{"clipboard"},
-				ClipboardMode:     "image",
+				Name:      "Copy Image",
+				Tasks:     []string{"copy_image"},
+				AppliesTo: []string{"capture"},
 			},
 			{
-				Name:              "OCR",
-				AfterCaptureTasks: []string{"clipboard"},
-				ClipboardMode:     "ocr",
+				Name:      "OCR",
+				Tasks:     []string{"ocr", "copy_text"},
+				AppliesTo: []string{"capture"},
 			},
 			{
-				Name:              "Translate",
-				AfterCaptureTasks: []string{"clipboard"},
-				ClipboardMode:     "translate",
+				Name:      "Translate",
+				Tasks:     []string{"ocr", "translate", "copy_text"},
+				AppliesTo: []string{"capture"},
+			},
+			{
+				Name:      "Realtime Translate",
+				Tasks:     []string{"ocr", "translate", "copy_text", "display_live"},
+				AppliesTo: []string{"ocr_auto"},
 			},
 		},
 		CurrentTaskProfile: "Copy Image",
@@ -750,9 +769,6 @@ func readConfig(path string, binDir string, isPortable bool) (*Config, error) {
 	if cfg.Hotkeys.SnippetCycleMode == "" {
 		cfg.Hotkeys.SnippetCycleMode = defaults.Hotkeys.SnippetCycleMode
 	}
-	if cfg.ClipboardMode == "" {
-		cfg.ClipboardMode = defaults.ClipboardMode
-	}
 	if cfg.SnippetMode == "" {
 		cfg.SnippetMode = defaults.SnippetMode
 	}
@@ -836,6 +852,20 @@ func readConfig(path string, binDir string, isPortable bool) (*Config, error) {
 
 	if len(cfg.AfterCaptureTasks) == 0 {
 		cfg.AfterCaptureTasks = defaults.AfterCaptureTasks
+	}
+	if len(cfg.AfterOCRTasks) == 0 {
+		cfg.AfterOCRTasks = defaults.AfterOCRTasks
+	}
+	if len(cfg.AfterOCRAutoTasks) == 0 {
+		cfg.AfterOCRAutoTasks = defaults.AfterOCRAutoTasks
+	}
+	if len(cfg.AfterRecordTasks) == 0 {
+		cfg.AfterRecordTasks = defaults.AfterRecordTasks
+	}
+	for i := range cfg.TaskProfiles {
+		if len(cfg.TaskProfiles[i].AppliesTo) == 0 {
+			cfg.TaskProfiles[i].AppliesTo = []string{"capture"}
+		}
 	}
 	if cfg.Edit.Mode == "" {
 		cfg.Edit.Mode = defaults.Edit.Mode

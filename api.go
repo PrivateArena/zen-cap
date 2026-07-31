@@ -231,10 +231,17 @@ func captureScreenshotWithOptions(opts ScreenshotOptions, cfg *config.Config) (s
 		absPath = outputPath
 	}
 
-	if opts.ClipMode != "" {
-		cfg.ClipboardMode = opts.ClipMode
+	chosen := chosenAction
+	if chosen == "" && opts.ClipMode != "" {
+		chosen = opts.ClipMode
 	}
-	pipeline.Run(context.Background(), cfg, img, absPath, chosenAction)
+	pipeline.Run(context.Background(), cfg, pipeline.Seed{
+		Source:   pipeline.SourceCapture,
+		Kind:     pipeline.KindImage,
+		Image:    img,
+		FilePath: absPath,
+		Chosen:   chosen,
+	})
 
 	return absPath, nil
 }

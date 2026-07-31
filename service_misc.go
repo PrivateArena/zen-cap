@@ -44,16 +44,16 @@ func (s *serviceState) runSnippetCycleModeLoop(ch <-chan struct{}) {
 				fmt.Printf("[Snippet Mode Cycle] Error loading config: %v\n", err)
 				return
 			}
-			s.cfg = freshCfg
 
 			newMode := "type"
-			if s.cfg.SnippetMode == "type" {
+			if freshCfg.SnippetMode == "type" {
 				newMode = "paste"
 			}
-			s.cfg.SnippetMode = newMode
+			freshCfg.SnippetMode = newMode
+			s.setCfg(freshCfg)
 
 			if cfgPath != "" {
-				if err := config.SaveConfig(s.cfg, cfgPath); err != nil {
+				if err := config.SaveConfig(freshCfg, cfgPath); err != nil {
 					fmt.Printf("[Snippet Mode Cycle] Error saving config: %v\n", err)
 				} else {
 					fmt.Printf("[Snippet Mode Cycle] Updated config.json: snippet_mode = %s\n", newMode)
@@ -77,27 +77,27 @@ func (s *serviceState) runTaskProfileCycleLoop(ch <-chan struct{}) {
 				fmt.Printf("[Profile Cycle] Error loading config: %v\n", err)
 				return
 			}
-			s.cfg = freshCfg
 
-			if len(s.cfg.TaskProfiles) == 0 {
+			if len(freshCfg.TaskProfiles) == 0 {
 				fmt.Println("[Profile Cycle] No task profiles defined in config")
 				return
 			}
 
 			currentIndex := -1
-			for i, p := range s.cfg.TaskProfiles {
-				if p.Name == s.cfg.CurrentTaskProfile {
+			for i, p := range freshCfg.TaskProfiles {
+				if p.Name == freshCfg.CurrentTaskProfile {
 					currentIndex = i
 					break
 				}
 			}
 
-			nextIndex := (currentIndex + 1) % len(s.cfg.TaskProfiles)
-			nextProfile := s.cfg.TaskProfiles[nextIndex]
-			s.cfg.CurrentTaskProfile = nextProfile.Name
+			nextIndex := (currentIndex + 1) % len(freshCfg.TaskProfiles)
+			nextProfile := freshCfg.TaskProfiles[nextIndex]
+			freshCfg.CurrentTaskProfile = nextProfile.Name
+			s.setCfg(freshCfg)
 
 			if cfgPath != "" {
-				if err := config.SaveConfig(s.cfg, cfgPath); err != nil {
+				if err := config.SaveConfig(freshCfg, cfgPath); err != nil {
 					fmt.Printf("[Profile Cycle] Error saving config: %v\n", err)
 				} else {
 					fmt.Printf("[Profile Cycle] Updated config.json: current_task_profile = %s\n", nextProfile.Name)

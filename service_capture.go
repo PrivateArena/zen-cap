@@ -16,13 +16,13 @@ func (s *serviceState) runScreenshotLoop(ch <-chan struct{}) {
 	for range ch {
 		go func() {
 			if freshCfg, _, err := config.LoadConfig(); err == nil {
-				s.cfg = freshCfg
+				s.setCfg(freshCfg)
 			}
 			timestamp := time.Now().Format("20060102_150405")
-			filename := filepath.Join(s.cfg.OutputDir, fmt.Sprintf("screenshot_%s.png", timestamp))
+			filename := filepath.Join(s.getCfg().OutputDir, fmt.Sprintf("screenshot_%s.png", timestamp))
 			fmt.Printf("[%s] Capturing fullscreen to %s...\n", time.Now().Format("15:04:05"), filename)
 
-			_ = os.MkdirAll(s.cfg.OutputDir, 0755)
+			_ = os.MkdirAll(s.getCfg().OutputDir, 0755)
 
 			capCfg := capture.CaptureConfig{
 				Display: ":0.0",
@@ -44,7 +44,12 @@ func (s *serviceState) runScreenshotLoop(ch <-chan struct{}) {
 			if err != nil {
 				absPath = filename
 			}
-			pipeline.Run(context.Background(), s.cfg, img, absPath, "")
+			pipeline.Run(context.Background(), s.getCfg(), pipeline.Seed{
+				Source:   pipeline.SourceCapture,
+				Kind:     pipeline.KindImage,
+				Image:    img,
+				FilePath: absPath,
+			})
 		}()
 	}
 }
@@ -53,13 +58,13 @@ func (s *serviceState) runRegionScreenshotLoop(ch <-chan struct{}) {
 	for range ch {
 		go func() {
 			if freshCfg, _, err := config.LoadConfig(); err == nil {
-				s.cfg = freshCfg
+				s.setCfg(freshCfg)
 			}
 			timestamp := time.Now().Format("20060102_150405")
-			filename := filepath.Join(s.cfg.OutputDir, fmt.Sprintf("screenshot_region_%s.png", timestamp))
+			filename := filepath.Join(s.getCfg().OutputDir, fmt.Sprintf("screenshot_region_%s.png", timestamp))
 			fmt.Printf("[%s] Launching interactive region screenshot to %s...\n", time.Now().Format("15:04:05"), filename)
 
-			_ = os.MkdirAll(s.cfg.OutputDir, 0755)
+			_ = os.MkdirAll(s.getCfg().OutputDir, 0755)
 
 			var chosenAction string
 			capCfg := capture.CaptureConfig{
@@ -84,7 +89,13 @@ func (s *serviceState) runRegionScreenshotLoop(ch <-chan struct{}) {
 			if err != nil {
 				absPath = filename
 			}
-			pipeline.Run(context.Background(), s.cfg, img, absPath, chosenAction)
+			pipeline.Run(context.Background(), s.getCfg(), pipeline.Seed{
+				Source:   pipeline.SourceCapture,
+				Kind:     pipeline.KindImage,
+				Image:    img,
+				FilePath: absPath,
+				Chosen:   chosenAction,
+			})
 		}()
 	}
 }
@@ -93,13 +104,13 @@ func (s *serviceState) runWindowScreenshotLoop(ch <-chan struct{}) {
 	for range ch {
 		go func() {
 			if freshCfg, _, err := config.LoadConfig(); err == nil {
-				s.cfg = freshCfg
+				s.setCfg(freshCfg)
 			}
 			timestamp := time.Now().Format("20060102_150405")
-			filename := filepath.Join(s.cfg.OutputDir, fmt.Sprintf("screenshot_window_%s.png", timestamp))
+			filename := filepath.Join(s.getCfg().OutputDir, fmt.Sprintf("screenshot_window_%s.png", timestamp))
 			fmt.Printf("[%s] Launching interactive window screenshot to %s...\n", time.Now().Format("15:04:05"), filename)
 
-			_ = os.MkdirAll(s.cfg.OutputDir, 0755)
+			_ = os.MkdirAll(s.getCfg().OutputDir, 0755)
 
 			var chosenAction string
 			capCfg := capture.CaptureConfig{
@@ -125,7 +136,13 @@ func (s *serviceState) runWindowScreenshotLoop(ch <-chan struct{}) {
 			if err != nil {
 				absPath = filename
 			}
-			pipeline.Run(context.Background(), s.cfg, img, absPath, chosenAction)
+			pipeline.Run(context.Background(), s.getCfg(), pipeline.Seed{
+				Source:   pipeline.SourceCapture,
+				Kind:     pipeline.KindImage,
+				Image:    img,
+				FilePath: absPath,
+				Chosen:   chosenAction,
+			})
 		}()
 	}
 }

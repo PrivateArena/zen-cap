@@ -1,21 +1,24 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
 	"zen-cap/pkg/capture"
 	"zen-cap/pkg/config"
+	"zen-cap/pkg/pipeline"
 )
 
 func (s *serviceState) runOCRScreenshotLoop(ch <-chan struct{}) {
 	for range ch {
 		go func() {
 			if freshCfg, _, err := config.LoadConfig(); err == nil {
-				s.cfg = freshCfg
+				s.setCfg(freshCfg)
 			}
 			fmt.Println("Launching fullscreen OCR/Translation...")
 			capCfg := capture.CaptureConfig{
@@ -28,9 +31,11 @@ func (s *serviceState) runOCRScreenshotLoop(ch <-chan struct{}) {
 				fmt.Printf("Error capturing fullscreen for OCR: %v\n", err)
 				return
 			}
-			if err := capture.PerformOCROverlay(img, s.cfg.OCRAddress, s.cfg.OCRLanguage, s.cfg.TranslationTarget, s.cfg.TranslationEngine, s.cfg.AutoTranslate, s.cfg.OutputDir, 0, 0); err != nil {
-				fmt.Printf("OCR Overlay error: %v\n", err)
-			}
+			pipeline.Run(context.Background(), s.getCfg(), pipeline.Seed{
+				Source: pipeline.SourceOCR,
+				Kind:   pipeline.KindImage,
+				Image:  img,
+			})
 		}()
 	}
 }
@@ -39,7 +44,7 @@ func (s *serviceState) runOCRRegionScreenshotLoop(ch <-chan struct{}) {
 	for range ch {
 		go func() {
 			if freshCfg, _, err := config.LoadConfig(); err == nil {
-				s.cfg = freshCfg
+				s.setCfg(freshCfg)
 			}
 			fmt.Println("Launching region OCR/Translation...")
 			var chosenAction string
@@ -60,9 +65,14 @@ func (s *serviceState) runOCRRegionScreenshotLoop(ch <-chan struct{}) {
 				fmt.Printf("Error capturing region for OCR: %v\n", err)
 				return
 			}
-			if err := capture.PerformOCROverlay(img, s.cfg.OCRAddress, s.cfg.OCRLanguage, s.cfg.TranslationTarget, s.cfg.TranslationEngine, s.cfg.AutoTranslate, s.cfg.OutputDir, chosenX, chosenY); err != nil {
-				fmt.Printf("OCR Overlay error: %v\n", err)
-			}
+			pipeline.Run(context.Background(), s.getCfg(), pipeline.Seed{
+				Source:  pipeline.SourceOCR,
+				Kind:    pipeline.KindImage,
+				Image:   img,
+				Chosen:  chosenAction,
+				OffsetX: chosenX,
+				OffsetY: chosenY,
+			})
 		}()
 	}
 }
@@ -71,7 +81,7 @@ func (s *serviceState) runOCRWindowScreenshotLoop(ch <-chan struct{}) {
 	for range ch {
 		go func() {
 			if freshCfg, _, err := config.LoadConfig(); err == nil {
-				s.cfg = freshCfg
+				s.setCfg(freshCfg)
 			}
 			fmt.Println("Launching window OCR/Translation...")
 			var chosenAction string
@@ -93,9 +103,14 @@ func (s *serviceState) runOCRWindowScreenshotLoop(ch <-chan struct{}) {
 				fmt.Printf("Error capturing window for OCR: %v\n", err)
 				return
 			}
-			if err := capture.PerformOCROverlay(img, s.cfg.OCRAddress, s.cfg.OCRLanguage, s.cfg.TranslationTarget, s.cfg.TranslationEngine, s.cfg.AutoTranslate, s.cfg.OutputDir, chosenX, chosenY); err != nil {
-				fmt.Printf("OCR Overlay error: %v\n", err)
-			}
+			pipeline.Run(context.Background(), s.getCfg(), pipeline.Seed{
+				Source:  pipeline.SourceOCR,
+				Kind:    pipeline.KindImage,
+				Image:   img,
+				Chosen:  chosenAction,
+				OffsetX: chosenX,
+				OffsetY: chosenY,
+			})
 		}()
 	}
 }
@@ -108,34 +123,34 @@ func (s *serviceState) runOCRCycleModelLoop(ch <-chan struct{}) {
 				fmt.Printf("[OCR Cycle] Error loading config: %v\n", err)
 				return
 			}
-			s.cfg = freshCfg
 
-			if len(s.cfg.OCRLanguages) == 0 {
+			if len(freshCfg.OCRLanguages) == 0 {
 				fmt.Println("[OCR Cycle] No OCR models/languages defined in config")
 				return
 			}
 
 			currentIndex := -1
-			for i, lang := range s.cfg.OCRLanguages {
-				if lang == s.cfg.OCRLanguage {
+			for i, lang := range freshCfg.OCRLanguages {
+				if lang == freshCfg.OCRLanguage {
 					currentIndex = i
 					break
 				}
 			}
 
-			nextIndex := (currentIndex + 1) % len(s.cfg.OCRLanguages)
-			nextLang := s.cfg.OCRLanguages[nextIndex]
-			s.cfg.OCRLanguage = nextLang
+			nextIndex := (currentIndex + 1) % len(freshCfg.OCRLanguages)
+			nextLang := freshCfg.OCRLanguages[nextIndex]
+			freshCfg.OCRLanguage = nextLang
+			s.setCfg(freshCfg)
 
 			if cfgPath != "" {
-				if err := config.SaveConfig(s.cfg, cfgPath); err != nil {
+				if err := config.SaveConfig(freshCfg, cfgPath); err != nil {
 					fmt.Printf("[OCR Cycle] Error saving config: %v\n", err)
 				} else {
 					fmt.Printf("[OCR Cycle] Updated config.json: ocr_language = %s\n", nextLang)
 				}
 			}
 
-			resolvedAddress, err := capture.EnsureOCRServer(s.cfg.OCRAddress)
+			resolvedAddress, err := capture.EnsureOCRServer(freshCfg.OCRAddress)
 			if err == nil {
 				updateURL := fmt.Sprintf("%s/ocr?model=%s", strings.TrimSuffix(resolvedAddress, "/"), url.QueryEscape(nextLang))
 				resp, err := http.Post(updateURL, "application/json", nil)
@@ -159,7 +174,7 @@ func (s *serviceState) runOCRAutoToggleLoop(ch <-chan struct{}) {
 		go func() {
 			freshCfg, _, err := config.LoadConfig()
 			if err == nil {
-				s.cfg = freshCfg
+				s.setCfg(freshCfg)
 			}
 
 			s.ocrAutoMu.Lock()
@@ -193,6 +208,17 @@ func (s *serviceState) runOCRAutoToggleLoop(ch <-chan struct{}) {
 			ticker := time.NewTicker(time.Duration(float64(time.Second) / fps))
 			defer ticker.Stop()
 
+			var overlay *capture.PersistentOverlay
+			overlayNotified := false
+			defer func() {
+				if overlay != nil {
+					overlay.Close()
+				}
+			}()
+
+			var cfgPath string
+			var cfgMtime time.Time
+
 			for {
 				select {
 				case <-cancel:
@@ -200,8 +226,21 @@ func (s *serviceState) runOCRAutoToggleLoop(ch <-chan struct{}) {
 				default:
 				}
 
-				if freshCfg2, _, err2 := config.LoadConfig(); err2 == nil {
-					s.cfg = freshCfg2
+				// Reload config only when the file on disk actually changed (red-team #13)
+				if freshCfg, p, err := config.LoadConfig(); err == nil {
+					changed := p != cfgPath
+					if !changed {
+						if st, statErr := os.Stat(p); statErr == nil {
+							changed = !st.ModTime().Equal(cfgMtime)
+						}
+					}
+					if changed {
+						s.setCfg(freshCfg)
+						cfgPath = p
+						if st, statErr := os.Stat(p); statErr == nil {
+							cfgMtime = st.ModTime()
+						}
+					}
 				}
 
 				s.markedAreaMu.Lock()
@@ -247,9 +286,38 @@ func (s *serviceState) runOCRAutoToggleLoop(ch <-chan struct{}) {
 					continue
 				}
 
-				if err := capture.PerformOCROverlay(img, s.cfg.OCRAddress, s.cfg.OCRLanguage, s.cfg.TranslationTarget, s.cfg.TranslationEngine, s.cfg.AutoTranslate, s.cfg.OutputDir, offsetX, offsetY); err != nil {
-					fmt.Printf("[OCR Auto] OCR error: %v\n", err)
+				// Lazy-create the overlay sized to the region, or recreate if dims changed (F8/F13)
+				b := img.Bounds()
+				if overlay == nil || overlay.Width() != b.Dx() || overlay.Height() != b.Dy() {
+					if overlay != nil {
+						overlay.Close()
+						overlay = nil
+					}
+					ov, err := capture.NewPersistentOverlay(img, offsetX, offsetY)
+					if err != nil {
+						if !overlayNotified {
+							fmt.Printf("[OCR Auto] Failed to create overlay: %v\n", err)
+							sendNotification("Zen-Cap OCR", "Auto-OCR overlay unavailable; continuing without display")
+							overlayNotified = true
+						}
+					} else {
+						overlay = ov
+						overlayNotified = false
+					}
 				}
+
+				opts := &pipeline.Options{}
+				if overlay != nil {
+					opts.DisplaySink = overlay
+				}
+				pipeline.Run(context.Background(), s.getCfg(), pipeline.Seed{
+					Source:  pipeline.SourceOCRAuto,
+					Kind:    pipeline.KindImage,
+					Image:   img,
+					Quiet:   true,
+					OffsetX: offsetX,
+					OffsetY: offsetY,
+				}, opts)
 
 				select {
 				case <-cancel:
@@ -270,9 +338,8 @@ func (s *serviceState) runOCRAutoFPSLoop(ch <-chan struct{}) {
 				fmt.Printf("[OCR Auto FPS] Error loading config: %v\n", err)
 				return
 			}
-			s.cfg = freshCfg
 
-			current := s.cfg.OCRAutoFPS
+			current := freshCfg.OCRAutoFPS
 			if current <= 0 {
 				current = 1.0
 			}
@@ -285,14 +352,16 @@ func (s *serviceState) runOCRAutoFPSLoop(ch <-chan struct{}) {
 				}
 			}
 			next := presets[(idx+1)%len(presets)]
-			s.cfg.OCRAutoFPS = next
 
 			s.ocrAutoMu.Lock()
 			s.ocrAutoFPS = next
 			s.ocrAutoMu.Unlock()
 
+			freshCfg.OCRAutoFPS = next
+			s.setCfg(freshCfg)
+
 			if cfgPath != "" {
-				if err := config.SaveConfig(s.cfg, cfgPath); err != nil {
+				if err := config.SaveConfig(freshCfg, cfgPath); err != nil {
 					fmt.Printf("[OCR Auto FPS] Error saving config: %v\n", err)
 				}
 			}
