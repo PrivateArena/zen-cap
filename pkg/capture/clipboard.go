@@ -79,7 +79,7 @@ func RunClipboardServer(mode string, payload string) {
 
 	// Keep the daemon alive until another application overwrites the selection
 	ch := clipboard.Watch(context.Background(), format)
-	
+
 	// Skip the initial event (which triggers on our own write)
 	select {
 	case <-ch:

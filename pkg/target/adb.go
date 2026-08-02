@@ -16,11 +16,11 @@ import (
 
 // ADBTarget is a Target backed by ADB wire protocol (TCP to localhost:5037).
 type ADBTarget struct {
-	serial   string
-	scale    float64
-	w, h     int
-	scaledW  int
-	scaledH  int
+	serial  string
+	scale   float64
+	w, h    int
+	scaledW int
+	scaledH int
 }
 
 // NewADBTarget creates an ADB target. cfg.Serial selects the device; leave
@@ -209,11 +209,11 @@ func androidKeycode(name string) string {
 		"return": "KEYCODE_ENTER", "enter": "KEYCODE_ENTER",
 		"backspace": "KEYCODE_DEL", "del": "KEYCODE_FORWARD_DEL",
 		"escape": "KEYCODE_ESCAPE", "esc": "KEYCODE_ESCAPE",
-		"tab": "KEYCODE_TAB",
+		"tab":  "KEYCODE_TAB",
 		"home": "KEYCODE_HOME",
 		"back": "KEYCODE_BACK",
 		"menu": "KEYCODE_MENU",
-		"up": "KEYCODE_DPAD_UP", "down": "KEYCODE_DPAD_DOWN",
+		"up":   "KEYCODE_DPAD_UP", "down": "KEYCODE_DPAD_DOWN",
 		"left": "KEYCODE_DPAD_LEFT", "right": "KEYCODE_DPAD_RIGHT",
 		"volumeup": "KEYCODE_VOLUME_UP", "volumedown": "KEYCODE_VOLUME_DOWN",
 	}

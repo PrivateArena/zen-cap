@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"regexp"
 
-	md "github.com/JohannesKaufmann/html-to-markdown"
 	"zen-cap/pkg/config"
+
+	md "github.com/JohannesKaufmann/html-to-markdown"
 )
 
 // ApplyTransform applies a single transform rule to text content.

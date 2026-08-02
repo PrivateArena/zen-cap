@@ -29,8 +29,8 @@ type ExecContext struct {
 	LastFoundX int
 	LastFoundY int
 
-	Variables  map[string]interface{}
-	Functions  map[string][]Step
+	Variables map[string]interface{}
+	Functions map[string][]Step
 }
 
 // x11ctx returns the underlying X11Target if the current target is X11-based,
@@ -127,8 +127,6 @@ func runKey(step Step, ctx *ExecContext) error {
 	ctx.Logger("[Automation] Key: %q", step.Keys)
 	return ctx.Target.Key(step.Keys)
 }
-
-
 
 func runWait(step Step, ctx *ExecContext) error {
 	durStr := step.Duration

@@ -85,4 +85,3 @@ func ImageToBGRA(img image.Image) []byte {
 func UploadImageChunked(xu *xgbutil.XUtil, drawable xproto.Drawable, gc xproto.Gcontext, depth byte, w, h int, bgraData []byte) error {
 	return uploadImageChunked(xu, drawable, gc, depth, w, h, bgraData)
 }
-

@@ -47,13 +47,13 @@ func (s Source) String() string {
 // Result carries state through the pipeline. Each task reads prior results
 // and may overwrite its own fields before returning.
 type Result struct {
-	Kind     Kind
-	Source   Source
-	Quiet    bool // loop sources set true: suppress notification spam
-	Image    image.Image
-	FilePath string // png OR mp4 artifact path
-	Text     string // current text (OCR / translated)
-	OCRBoxes []capture.OCRResult
+	Kind      Kind
+	Source    Source
+	Quiet     bool // loop sources set true: suppress notification spam
+	Image     image.Image
+	FilePath  string // png OR mp4 artifact path
+	Text      string // current text (OCR / translated)
+	OCRBoxes  []capture.OCRResult
 	UploadURL string
 	LLMText   string
 	OffsetX   int // overlay window placement hint (region/window OCR)

@@ -18,7 +18,7 @@ import (
 )
 
 type needlePixel struct {
-	x, y int
+	x, y    int
 	r, g, b float64
 }
 
@@ -151,7 +151,6 @@ func computeSAD(haystack *image.RGBA, isRGBA bool, fallback image.Image, pixels 
 	}
 	return totalDiff
 }
-
 
 type OCRPoint struct {
 	X int `json:"X"`

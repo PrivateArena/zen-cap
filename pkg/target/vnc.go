@@ -20,13 +20,13 @@ import (
 
 // rfb message type constants
 const (
-	rfbSetPixelFormat       = 0
-	rfbSetEncodings         = 2
-	rfbFBUpdateRequest      = 3
-	rfbKeyEvent             = 4
-	rfbPointerEvent         = 5
-	rfbServerFBUpdate       = 0
-	rfbEncodingRaw          = 0
+	rfbSetPixelFormat  = 0
+	rfbSetEncodings    = 2
+	rfbFBUpdateRequest = 3
+	rfbKeyEvent        = 4
+	rfbPointerEvent    = 5
+	rfbServerFBUpdate  = 0
+	rfbEncodingRaw     = 0
 )
 
 // pixelFormat mirrors the 16-byte RFB PixelFormat structure.
@@ -46,10 +46,10 @@ type pixelFormat struct {
 
 // VNCTarget is a Target backed by a VNC/RFB server over TCP.
 type VNCTarget struct {
-	conn   net.Conn
-	pf     pixelFormat
-	w, h   int
-	scale  float64
+	conn             net.Conn
+	pf               pixelFormat
+	w, h             int
+	scale            float64
 	scaledW, scaledH int
 }
 
@@ -183,7 +183,7 @@ func (t *VNCTarget) handshake(password string) error {
 	// 7. SetEncodings: RAW only
 	msg := make([]byte, 4+4)
 	msg[0] = rfbSetEncodings
-	msg[1] = 0 // padding
+	msg[1] = 0                             // padding
 	binary.BigEndian.PutUint16(msg[2:], 1) // 1 encoding
 	binary.BigEndian.PutUint32(msg[4:], rfbEncodingRaw)
 	if _, err := t.conn.Write(msg); err != nil {
@@ -199,7 +199,7 @@ func (t *VNCTarget) Screenshot() (image.Image, error) {
 	// Request full update (incremental=0)
 	req := make([]byte, 10)
 	req[0] = rfbFBUpdateRequest
-	req[1] = 0 // non-incremental
+	req[1] = 0                                       // non-incremental
 	binary.BigEndian.PutUint16(req[2:], 0)           // x
 	binary.BigEndian.PutUint16(req[4:], 0)           // y
 	binary.BigEndian.PutUint16(req[6:], uint16(t.w)) // w
@@ -390,8 +390,8 @@ func rfbKeysym(name string) uint32 {
 		"return": 0xff0d, "enter": 0xff0d,
 		"escape": 0xff1b, "esc": 0xff1b,
 		"backspace": 0xff08,
-		"tab": 0xff09,
-		"delete": 0xffff, "del": 0xffff,
+		"tab":       0xff09,
+		"delete":    0xffff, "del": 0xffff,
 		"home": 0xff50, "end": 0xff57,
 		"pageup": 0xff55, "pagedown": 0xff56,
 		"left": 0xff51, "up": 0xff52, "right": 0xff53, "down": 0xff54,
@@ -400,7 +400,7 @@ func rfbKeysym(name string) uint32 {
 		"f9": 0xffc6, "f10": 0xffc7, "f11": 0xffc8, "f12": 0xffc9,
 		"ctrl": 0xffe3, "control": 0xffe3,
 		"shift": 0xffe1,
-		"alt": 0xffe9, "mod1": 0xffe9,
+		"alt":   0xffe9, "mod1": 0xffe9,
 		"super": 0xffeb, "mod4": 0xffeb, "win": 0xffeb,
 		"space": 0x0020,
 	}

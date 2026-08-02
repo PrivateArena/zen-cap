@@ -259,4 +259,3 @@ func TestTranslateTask(t *testing.T) {
 type assertError struct{}
 
 func (assertError) Error() string { return "boom" }
-

@@ -17,25 +17,25 @@ import (
 // overrides display/area/fps/bitrate/output as needed.
 func RecorderConfigFromConfig(cfg *config.Config) RecorderConfig {
 	return RecorderConfig{
-		Display:            ":0.0",
-		Width:              cfg.Recorder.Width,
-		Height:             cfg.Recorder.Height,
-		InternalWidth:      cfg.Recorder.InternalWidth,
-		InternalHeight:     cfg.Recorder.InternalHeight,
-		FPS:                cfg.Recorder.FPS,
-		Bitrate:            cfg.Recorder.Bitrate,
-		ScaleAlgo:          cfg.Recorder.Encoder.ScaleAlgo,
-		EncoderPreset:      cfg.Recorder.Encoder.Preset,
-		EncoderCRF:         cfg.Recorder.Encoder.CRF,
-		EncoderTune:        cfg.Recorder.Encoder.Tune,
-		EncoderProfile:     cfg.Recorder.Encoder.Profile,
-		EncoderPixFormat:   cfg.Recorder.Encoder.PixelFormat,
-		AudioDevice:        cfg.Recorder.Audio.Device,
-		AudioEnabled:       cfg.Recorder.Audio.Enabled,
-		AudioSampleRate:    cfg.Recorder.Audio.SampleRate,
-		AudioChannels:      cfg.Recorder.Audio.Channels,
-		AudioBitrate:       cfg.Recorder.Audio.Bitrate,
-		AudioOnly:          false,
+		Display:          ":0.0",
+		Width:            cfg.Recorder.Width,
+		Height:           cfg.Recorder.Height,
+		InternalWidth:    cfg.Recorder.InternalWidth,
+		InternalHeight:   cfg.Recorder.InternalHeight,
+		FPS:              cfg.Recorder.FPS,
+		Bitrate:          cfg.Recorder.Bitrate,
+		ScaleAlgo:        cfg.Recorder.Encoder.ScaleAlgo,
+		EncoderPreset:    cfg.Recorder.Encoder.Preset,
+		EncoderCRF:       cfg.Recorder.Encoder.CRF,
+		EncoderTune:      cfg.Recorder.Encoder.Tune,
+		EncoderProfile:   cfg.Recorder.Encoder.Profile,
+		EncoderPixFormat: cfg.Recorder.Encoder.PixelFormat,
+		AudioDevice:      cfg.Recorder.Audio.Device,
+		AudioEnabled:     cfg.Recorder.Audio.Enabled,
+		AudioSampleRate:  cfg.Recorder.Audio.SampleRate,
+		AudioChannels:    cfg.Recorder.Audio.Channels,
+		AudioBitrate:     cfg.Recorder.Audio.Bitrate,
+		AudioOnly:        false,
 	}
 }
 
@@ -443,23 +443,23 @@ func (r *Recorder) runAudio(device *av.AudioDevice, enc *av.AudioEncoder, fifo *
 		for fifo.Size() >= aacFrameSamples {
 			tmpFrame := astiav.AllocFrame()
 			tmpFrame.SetSampleFormat(fifoFmt)
-		tmpFrame.SetChannelLayout(chLayoutFromCount(fifoCh))
-		tmpFrame.SetSampleRate(encSampleRate)
-		tmpFrame.SetNbSamples(aacFrameSamples)
-		if err := tmpFrame.AllocBuffer(0); err != nil {
+			tmpFrame.SetChannelLayout(chLayoutFromCount(fifoCh))
+			tmpFrame.SetSampleRate(encSampleRate)
+			tmpFrame.SetNbSamples(aacFrameSamples)
+			if err := tmpFrame.AllocBuffer(0); err != nil {
 				tmpFrame.Free()
 				fmt.Printf("Audio error: failed to allocate tmp frame: %v\n", err)
 				return
-		}
+			}
 
-		n, err := fifo.Read(tmpFrame)
-		if err != nil || n <= 0 {
-			tmpFrame.Free()
-			break
-		}
+			n, err := fifo.Read(tmpFrame)
+			if err != nil || n <= 0 {
+				tmpFrame.Free()
+				break
+			}
 
-		// Convert device format → encoder format
-		outFrame, err := convertAudioFrame(tmpFrame, encSampleFmt, encSampleRate)
+			// Convert device format → encoder format
+			outFrame, err := convertAudioFrame(tmpFrame, encSampleFmt, encSampleRate)
 			tmpFrame.Free()
 			if err != nil {
 				fmt.Printf("Audio error: format conversion failed: %v\n", err)

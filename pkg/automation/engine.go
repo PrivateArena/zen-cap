@@ -15,7 +15,6 @@ import (
 	"github.com/jezek/xgbutil/icccm"
 	"github.com/jezek/xgbutil/keybind"
 
-
 	"zen-cap/pkg/config"
 	"zen-cap/pkg/target"
 )

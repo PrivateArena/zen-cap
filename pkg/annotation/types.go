@@ -31,7 +31,7 @@ const (
 
 type InputEvent struct {
 	Kind    EventKind
-	X, Y   int
+	X, Y    int
 	Button  int
 	Mods    uint16
 	KeyStr  string

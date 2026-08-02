@@ -213,10 +213,10 @@ func wdaKeyName(name string) string {
 	m := map[string]string{
 		"return": "\n", "enter": "\n",
 		"backspace": "\x08",
-		"escape": "\x1b",
-		"tab": "\t",
-		"home": "\ue011",
-		"end": "\ue012",
+		"escape":    "\x1b",
+		"tab":       "\t",
+		"home":      "\ue011",
+		"end":       "\ue012",
 	}
 	if v, ok := m[name]; ok {
 		return v

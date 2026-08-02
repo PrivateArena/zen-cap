@@ -271,7 +271,7 @@ func (s *pickerState) redraw() {
 					}
 				}
 				// Right Indicator Block
-				for lx := s.width - 22; lx < s.width - 15; lx++ {
+				for lx := s.width - 22; lx < s.width-15; lx++ {
 					for ly := yPos; ly < yPos+itemHeight-4; ly++ {
 						img.Set(lx, ly, accentColor)
 					}

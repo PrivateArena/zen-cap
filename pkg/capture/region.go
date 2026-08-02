@@ -41,10 +41,10 @@ type regionState struct {
 	aborted         bool
 	clipboardAction string // "image", "path", "ocr", "translate"
 
-	ann             *annotation.Annotator
-	magnifier       *Magnifier
-	displayCache    *image.RGBA // cached GetComposite() to avoid double allocation per redraw
-	displayCacheBgra []byte     // cached BGRA bytes of displayCache; avoids 8MB imageToBGRA per frame
+	ann              *annotation.Annotator
+	magnifier        *Magnifier
+	displayCache     *image.RGBA // cached GetComposite() to avoid double allocation per redraw
+	displayCacheBgra []byte      // cached BGRA bytes of displayCache; avoids 8MB imageToBGRA per frame
 }
 
 // InteractiveSelectRegion is a backward-compatible wrapper around InteractiveSelectRegionExt.
@@ -306,23 +306,23 @@ func InteractiveSelectRegionExt(fullImg image.Image, outClipboardAction *string,
 
 	// Instantiate state
 	state := &regionState{
-		xu:              xu,
-		winID:           winID,
-		gcID:            gcID,
-		bgPixmapID:      bgPixmapID,
-		bufPixmapID:     bufPixmapID,
-		cyanGCID:        cyanGCID,
-		pinkGCID:        pinkGCID,
-		overlayGCID:     overlayGCID,
-		screenWidth:     screenWidth,
-		screenHeight:    screenHeight,
-		screen:          screen,
+		xu:           xu,
+		winID:        winID,
+		gcID:         gcID,
+		bgPixmapID:   bgPixmapID,
+		bufPixmapID:  bufPixmapID,
+		cyanGCID:     cyanGCID,
+		pinkGCID:     pinkGCID,
+		overlayGCID:  overlayGCID,
+		screenWidth:  screenWidth,
+		screenHeight: screenHeight,
+		screen:       screen,
 		ann: annotation.NewAnnotator(rgbaImg, annotation.Config{
 			BrushThickness: brushThickness,
 			FontScale:      4,
 			Color:          color.RGBA{R: 255, G: 0, B: 127, A: 255},
 		}),
-		magnifier:       NewMagnifier(),
+		magnifier: NewMagnifier(),
 	}
 
 	// Register event handlers

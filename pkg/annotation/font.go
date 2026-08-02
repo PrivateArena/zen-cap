@@ -84,7 +84,7 @@ func drawChar(img draw.Image, char rune, x, y int, col color.Color) {
 	for row := 0; row < 5; row++ {
 		val := bitmap[row]
 		for colIdx := 0; colIdx < 3; colIdx++ {
-			if (val >> (2 - colIdx))&1 == 1 {
+			if (val>>(2-colIdx))&1 == 1 {
 				img.Set(x+colIdx, y+row, col)
 			}
 		}
@@ -110,7 +110,7 @@ func drawCharScaled(img draw.Image, char rune, x, y int, col color.Color, scale 
 	for row := 0; row < 7; row++ {
 		val := bitmap[row]
 		for colIdx := 0; colIdx < 5; colIdx++ {
-			if (val >> (4 - colIdx))&1 == 1 {
+			if (val>>(4-colIdx))&1 == 1 {
 				for sy := 0; sy < scale; sy++ {
 					for sx := 0; sx < scale; sx++ {
 						img.Set(x+colIdx*scale+sx, y+row*scale+sy, col)

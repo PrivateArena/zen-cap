@@ -147,11 +147,11 @@ type Config struct {
 	SkillsPath           string              `json:"skills_path"`  // abs path to skills directory
 
 	// --- new: post-capture task pipeline ---
-	AfterCaptureTasks []string       `json:"after_capture_tasks"`     // ordered task names, e.g. ["edit","upload","vision","copy_image"]
-	AfterOCRTasks     []string       `json:"after_ocr_tasks"`         // ordered task names for one-shot OCR
-	AfterOCRAutoTasks []string       `json:"after_ocr_auto_tasks"`    // ordered task names for the realtime OCR loop
-	AfterRecordTasks  []string       `json:"after_record_tasks"`      // ordered task names after a recording stops
-	OCRAutoCopy       bool           `json:"ocr_auto_copy"`           // append copy_text to the ocr_auto chain
+	AfterCaptureTasks []string       `json:"after_capture_tasks"`  // ordered task names, e.g. ["edit","upload","vision","copy_image"]
+	AfterOCRTasks     []string       `json:"after_ocr_tasks"`      // ordered task names for one-shot OCR
+	AfterOCRAutoTasks []string       `json:"after_ocr_auto_tasks"` // ordered task names for the realtime OCR loop
+	AfterRecordTasks  []string       `json:"after_record_tasks"`   // ordered task names after a recording stops
+	OCRAutoCopy       bool           `json:"ocr_auto_copy"`        // append copy_text to the ocr_auto chain
 	Edit              EditConfig     `json:"edit"`
 	Uploader          UploaderConfig `json:"uploader"`
 	Vision            VisionConfig   `json:"vision"`
@@ -333,13 +333,13 @@ func DefaultConfig() *Config {
 			FontSize: 14,
 			FontFace: "",
 		},
-		PromptsPath: "/media/jang/home/Deve/web-reader-mcp-master/src/resources/prompts",
-		SkillsPath:  "/media/jang/home/Deve/web-reader-mcp-master/src/resources/skills",
-		AfterCaptureTasks:  []string{"edit", "upload", "vision", "copy_image"},
-		AfterOCRTasks:      []string{"ocr", "translate", "display"},
-		AfterOCRAutoTasks:  []string{"ocr", "translate", "display_live"},
-		AfterRecordTasks:   []string{"copy_path"},
-		OCRAutoCopy:        false,
+		PromptsPath:       "/media/jang/home/Deve/web-reader-mcp-master/src/resources/prompts",
+		SkillsPath:        "/media/jang/home/Deve/web-reader-mcp-master/src/resources/skills",
+		AfterCaptureTasks: []string{"edit", "upload", "vision", "copy_image"},
+		AfterOCRTasks:     []string{"ocr", "translate", "display"},
+		AfterOCRAutoTasks: []string{"ocr", "translate", "display_live"},
+		AfterRecordTasks:  []string{"copy_path"},
+		OCRAutoCopy:       false,
 		Edit: EditConfig{
 			Enabled:        false,
 			Mode:           "builtin",
@@ -500,13 +500,13 @@ func DefaultPortableConfig(binDir string) *Config {
 				Bitrate:    128000,
 			},
 		},
-		PromptsPath: "/media/jang/home/Deve/web-reader-mcp-master/src/resources/prompts",
-		SkillsPath:  "/media/jang/home/Deve/web-reader-mcp-master/src/resources/skills",
-		AfterCaptureTasks:  []string{"edit", "upload", "vision", "copy_image"},
-		AfterOCRTasks:      []string{"ocr", "translate", "display"},
-		AfterOCRAutoTasks:  []string{"ocr", "translate", "display_live"},
-		AfterRecordTasks:   []string{"copy_path"},
-		OCRAutoCopy:        false,
+		PromptsPath:       "/media/jang/home/Deve/web-reader-mcp-master/src/resources/prompts",
+		SkillsPath:        "/media/jang/home/Deve/web-reader-mcp-master/src/resources/skills",
+		AfterCaptureTasks: []string{"edit", "upload", "vision", "copy_image"},
+		AfterOCRTasks:     []string{"ocr", "translate", "display"},
+		AfterOCRAutoTasks: []string{"ocr", "translate", "display_live"},
+		AfterRecordTasks:  []string{"copy_path"},
+		OCRAutoCopy:       false,
 		Edit: EditConfig{
 			Enabled:        false,
 			Mode:           "builtin",

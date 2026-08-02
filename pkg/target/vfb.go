@@ -94,13 +94,13 @@ func NewVFBTarget(cfg Config) (*VFBTarget, error) {
 	return t, nil
 }
 
-func (t *VFBTarget) Screenshot() (image.Image, error)          { return t.x11.Screenshot() }
-func (t *VFBTarget) ScreenSize() (int, int)                    { return t.x11.ScreenSize() }
-func (t *VFBTarget) Click(x, y int, b string) error            { return t.x11.Click(x, y, b) }
-func (t *VFBTarget) Move(x, y int) error                       { return t.x11.Move(x, y) }
-func (t *VFBTarget) Type(text string, delay int64) error       { return t.x11.Type(text, delay) }
-func (t *VFBTarget) Key(keys string) error                     { return t.x11.Key(keys) }
-func (t *VFBTarget) Scroll(x, y, dx, dy int) error            { return t.x11.Scroll(x, y, dx, dy) }
+func (t *VFBTarget) Screenshot() (image.Image, error)    { return t.x11.Screenshot() }
+func (t *VFBTarget) ScreenSize() (int, int)              { return t.x11.ScreenSize() }
+func (t *VFBTarget) Click(x, y int, b string) error      { return t.x11.Click(x, y, b) }
+func (t *VFBTarget) Move(x, y int) error                 { return t.x11.Move(x, y) }
+func (t *VFBTarget) Type(text string, delay int64) error { return t.x11.Type(text, delay) }
+func (t *VFBTarget) Key(keys string) error               { return t.x11.Key(keys) }
+func (t *VFBTarget) Scroll(x, y, dx, dy int) error       { return t.x11.Scroll(x, y, dx, dy) }
 
 // X11 exposes the embedded X11Target for window management operations.
 func (t *VFBTarget) X11() *X11Target { return t.x11 }

@@ -31,7 +31,7 @@ func (m *X11DisplayManager) Close() {
 
 func (m *X11DisplayManager) GetScreens() ([]Screen, error) {
 	c := m.xu.Conn()
-	
+
 	// Initialize Xinerama extension if available
 	err := xinerama.Init(c)
 	if err == nil {

@@ -85,7 +85,7 @@ func (m *Manager) loadScripts() error {
 		if err := yaml.Unmarshal(data, &script); err != nil {
 			continue
 		}
-		
+
 		// Ensure name is populated
 		if script.Name == "" {
 			script.Name = strings.TrimSuffix(file.Name(), ext)

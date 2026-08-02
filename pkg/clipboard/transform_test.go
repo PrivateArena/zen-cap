@@ -44,7 +44,7 @@ func TestApplyTransformHTML2MD(t *testing.T) {
 	input := "<h1>Title</h1><p>This is <b>bold</b> and <i>italic</i>.</p>"
 	// html-to-markdown output will format it as Markdown
 	got := ApplyTransform(input, rule)
-	
+
 	// We check if key Markdown elements exist in the output
 	if got == "" {
 		t.Errorf("Expected Markdown output, got empty string")

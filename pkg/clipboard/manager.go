@@ -20,11 +20,11 @@ import (
 )
 
 type ClipboardSlot struct {
-	Index     int       `json:"index"`
-	Format    string    `json:"format"`    // "text", "image", "empty"
-	Content   []byte    `json:"content"`   // raw text or PNG bytes
-	Preview   string    `json:"preview"`   // preview string
-	SavedAt   time.Time `json:"saved_at"`
+	Index   int       `json:"index"`
+	Format  string    `json:"format"`  // "text", "image", "empty"
+	Content []byte    `json:"content"` // raw text or PNG bytes
+	Preview string    `json:"preview"` // preview string
+	SavedAt time.Time `json:"saved_at"`
 }
 
 type ClipboardSession struct {

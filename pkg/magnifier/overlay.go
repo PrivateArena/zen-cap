@@ -218,4 +218,3 @@ func uploadImageChunked(xu *xgbutil.XUtil, drawable xproto.Drawable,
 		)
 	}
 }
-

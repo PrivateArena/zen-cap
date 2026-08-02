@@ -10,7 +10,7 @@ import (
 // MonitorGeometry describes a single connected output's position and size.
 type MonitorGeometry struct {
 	X, Y, W, H int
-	Name        string
+	Name       string
 }
 
 // detectMonitors uses XRandR to enumerate all active outputs and their screen

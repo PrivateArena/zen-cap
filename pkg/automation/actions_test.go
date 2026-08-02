@@ -21,9 +21,12 @@ import (
 // Screenshot returns the image set in screenshotImg (defaults to 100x100 black).
 type mockTarget struct {
 	screenshotImg image.Image
-	clicks        []struct{ x, y int; btn string }
-	types         []string
-	keys          []string
+	clicks        []struct {
+		x, y int
+		btn  string
+	}
+	types []string
+	keys  []string
 }
 
 func newMockTarget(img image.Image) *mockTarget {
@@ -33,14 +36,23 @@ func newMockTarget(img image.Image) *mockTarget {
 	return &mockTarget{screenshotImg: img}
 }
 
-func (m *mockTarget) Screenshot() (image.Image, error)          { return m.screenshotImg, nil }
-func (m *mockTarget) ScreenSize() (int, int)                    { b := m.screenshotImg.Bounds(); return b.Dx(), b.Dy() }
-func (m *mockTarget) Click(x, y int, btn string) error          { m.clicks = append(m.clicks, struct{ x, y int; btn string }{x, y, btn}); return nil }
-func (m *mockTarget) Move(x, y int) error                       { return nil }
-func (m *mockTarget) Type(text string, delay int64) error       { m.types = append(m.types, text); return nil }
-func (m *mockTarget) Key(keys string) error                     { m.keys = append(m.keys, keys); return nil }
-func (m *mockTarget) Scroll(x, y, dx, dy int) error            { return nil }
-func (m *mockTarget) Close() error                              { return nil }
+func (m *mockTarget) Screenshot() (image.Image, error) { return m.screenshotImg, nil }
+func (m *mockTarget) ScreenSize() (int, int)           { b := m.screenshotImg.Bounds(); return b.Dx(), b.Dy() }
+func (m *mockTarget) Click(x, y int, btn string) error {
+	m.clicks = append(m.clicks, struct {
+		x, y int
+		btn  string
+	}{x, y, btn})
+	return nil
+}
+func (m *mockTarget) Move(x, y int) error { return nil }
+func (m *mockTarget) Type(text string, delay int64) error {
+	m.types = append(m.types, text)
+	return nil
+}
+func (m *mockTarget) Key(keys string) error         { m.keys = append(m.keys, keys); return nil }
+func (m *mockTarget) Scroll(x, y, dx, dy int) error { return nil }
+func (m *mockTarget) Close() error                  { return nil }
 
 func TestRunLog(t *testing.T) {
 	var loggedMessage string
@@ -111,7 +123,6 @@ func TestRunOCR(t *testing.T) {
 	dummyImg := image.NewRGBA(image.Rect(0, 0, 100, 100))
 	draw.Draw(dummyImg, dummyImg.Bounds(), &image.Uniform{color.RGBA{255, 0, 0, 255}}, image.Point{}, draw.Src)
 
-
 	// Create temp output file path
 	tempDir, err := os.MkdirTemp("", "ocr-test")
 	if err != nil {
@@ -139,10 +150,10 @@ func TestRunOCR(t *testing.T) {
 	}
 
 	step := Step{
-		Action:      "ocr",
-		Text:        "match-me",
-		Output:      outputPath,
-		Timeout:     "100ms",
+		Action:  "ocr",
+		Text:    "match-me",
+		Output:  outputPath,
+		Timeout: "100ms",
 	}
 
 	err = ExecuteStep(step, ctx)
@@ -809,5 +820,3 @@ func TestWindowActionsMocked(t *testing.T) {
 		t.Errorf("expected error about x11 target, got %q", err.Error())
 	}
 }
-
-

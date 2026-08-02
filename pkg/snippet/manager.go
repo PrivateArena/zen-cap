@@ -299,7 +299,6 @@ func releaseModifiers(xu *xgbutil.XUtil) {
 	}
 }
 
-
 func TypeHumanly(xu *xgbutil.XUtil, text string) error {
 	c := xu.Conn()
 	if err := xtest.Init(c); err != nil {
