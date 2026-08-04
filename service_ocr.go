@@ -22,7 +22,7 @@ func (s *serviceState) runOCRScreenshotLoop(ch <-chan struct{}) {
 			}
 			fmt.Println("Launching fullscreen OCR/Translation...")
 			capCfg := capture.CaptureConfig{
-				Display: ":0.0",
+				Display: "",
 				X:       -1,
 				Y:       -1,
 			}
@@ -50,7 +50,7 @@ func (s *serviceState) runOCRRegionScreenshotLoop(ch <-chan struct{}) {
 			var chosenAction string
 			var chosenX, chosenY, chosenW, chosenH int
 			capCfg := capture.CaptureConfig{
-				Display:         ":0.0",
+				Display:         "",
 				X:               -1,
 				Y:               -1,
 				Interactive:     true,
@@ -87,7 +87,7 @@ func (s *serviceState) runOCRWindowScreenshotLoop(ch <-chan struct{}) {
 			var chosenAction string
 			var chosenX, chosenY, chosenW, chosenH int
 			capCfg := capture.CaptureConfig{
-				Display:         ":0.0",
+				Display:         "",
 				X:               -1,
 				Y:               -1,
 				Interactive:     true,
@@ -248,7 +248,7 @@ func (s *serviceState) runOCRAutoToggleLoop(ch <-chan struct{}) {
 				s.markedAreaMu.Unlock()
 
 				capCfg := capture.CaptureConfig{
-					Display:  ":0.0",
+					Display:  "",
 					WindowID: 0,
 				}
 

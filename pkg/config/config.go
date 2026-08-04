@@ -290,7 +290,7 @@ func DefaultConfig() *Config {
 		TransformRules:       DefaultTransformRules(),
 		Magnifier: MagnifierConfig{
 			Enabled:          false,
-			Display:          ":0.0",
+			Display:          "", // empty = use $DISPLAY (C5)
 			FullscreenHotkey: "super-f",
 			LensHotkey:       "super-l",
 			ScrollModifier:   "super",
@@ -457,7 +457,7 @@ func DefaultPortableConfig(binDir string) *Config {
 		TransformRules:       DefaultTransformRules(),
 		Magnifier: MagnifierConfig{
 			Enabled:          false,
-			Display:          ":0.0",
+			Display:          "", // empty = use $DISPLAY (C5)
 			FullscreenHotkey: "super-f",
 			LensHotkey:       "super-l",
 			ScrollModifier:   "super",

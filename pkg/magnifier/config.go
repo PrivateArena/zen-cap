@@ -37,7 +37,7 @@ func ParseLensShape(s string) LensShape {
 
 // Config holds all magnifier configuration values loaded from config.json.
 type Config struct {
-	// Display is the X11 display string, e.g. ":0.0". Empty = default.
+	// Display is the X11 display string, e.g. ":0.0". Empty = use $DISPLAY.
 	Display string `json:"display"`
 
 	// FullscreenHotkey activates/deactivates fullscreen zoom mode.
@@ -82,7 +82,7 @@ type Config struct {
 // DefaultConfig returns sensible defaults for a first-run magnifier.
 func DefaultConfig() Config {
 	return Config{
-		Display:          ":0.0",
+		Display:          "", // empty = use $DISPLAY (C5)
 		FullscreenHotkey: "super-f",
 		LensHotkey:       "super-l",
 		ScrollModifier:   "super",
@@ -100,9 +100,7 @@ func DefaultConfig() Config {
 
 // Normalize fills in zero-value fields and parses derived values.
 func (c *Config) Normalize() {
-	if c.Display == "" {
-		c.Display = ":0.0"
-	}
+	// Display intentionally left empty: "" means use $DISPLAY (C5).
 	if c.FullscreenHotkey == "" {
 		c.FullscreenHotkey = "super-f"
 	}

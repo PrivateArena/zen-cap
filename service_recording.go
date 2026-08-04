@@ -61,7 +61,7 @@ func (s *serviceState) runRecordMarkRegionLoop(ch <-chan struct{}) {
 			var action string
 			var chosenX, chosenY, chosenW, chosenH int
 			capCfg := capture.CaptureConfig{
-				Display:         ":0.0",
+				Display:         "",
 				X:               -1,
 				Y:               -1,
 				Interactive:     true,
@@ -112,7 +112,7 @@ func (s *serviceState) runRecordMarkWindowLoop(ch <-chan struct{}) {
 			var chosenX, chosenY, chosenW, chosenH int
 			var chosenWinID uint32
 			capCfg := capture.CaptureConfig{
-				Display:         ":0.0",
+				Display:         "",
 				X:               -1,
 				Y:               -1,
 				Interactive:     true,
@@ -286,7 +286,7 @@ func (s *serviceState) runRecordAnnotateLoop(ch <-chan struct{}) {
 			fmt.Println("Opening annotation overlay...")
 
 			capCfg := capture.CaptureConfig{
-				Display:     ":0.0",
+				Display:     "",
 				X:           -1,
 				Y:           -1,
 				Interactive: false,

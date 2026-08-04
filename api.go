@@ -206,7 +206,7 @@ func captureScreenshotWithOptions(opts ScreenshotOptions, cfg *config.Config) (s
 
 	var chosenAction string
 	capCfg := capture.CaptureConfig{
-		Display:         ":0.0",
+		Display:         "",
 		X:               x,
 		Y:               y,
 		Width:           w,

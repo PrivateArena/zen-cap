@@ -25,7 +25,7 @@ func handleRecord() error {
 	region := fs.String("r", "", "Region geometry (X,Y,W,H e.g. 100,200,800,600)")
 	window := fs.String("w", "", "Target window: 'active', 'list', or specific window ID (e.g. 0x40000a)")
 	screen := fs.String("s", "", "Target screen index: 'list' or screen index (e.g. 0, 1)")
-	disp := fs.String("d", ":0.0", "X11 display")
+	disp := fs.String("d", os.Getenv("DISPLAY"), "X11 display (default: $DISPLAY)")
 
 	if err := fs.Parse(os.Args[2:]); err != nil {
 		return err

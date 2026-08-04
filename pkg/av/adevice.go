@@ -25,9 +25,19 @@ type AudioDevice struct {
 func OpenAudioDevice(cfg AudioDeviceConfig) (*AudioDevice, error) {
 	Init()
 
-	inputFormat := astiav.FindInputFormat("alsa")
+	// Prefer PulseAudio, then PipeWire, then ALSA. Modern X11 distros route
+	// audio through a sound server that may lock the raw ALSA device, so
+	// hardcoding ALSA (M1) fails or captures silence on PipeWire/Pulse hosts.
+	// pipewire shares the pulse options (device, sample_rate, channels).
+	var inputFormat *astiav.InputFormat
+	for _, name := range []string{"pulse", "pipewire", "alsa"} {
+		if f := astiav.FindInputFormat(name); f != nil {
+			inputFormat = f
+			break
+		}
+	}
 	if inputFormat == nil {
-		return nil, fmt.Errorf("ALSA audio input format not found (ffmpeg built without ALSA)")
+		return nil, fmt.Errorf("no audio input format found (ffmpeg built without pulse, pipewire, or alsa)")
 	}
 
 	options := astiav.NewDictionary()

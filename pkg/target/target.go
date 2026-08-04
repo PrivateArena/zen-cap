@@ -39,7 +39,7 @@ type Config struct {
 	Type string `yaml:"type" json:"type"`
 
 	// --- X11 ---
-	// Display is the X11 display string, e.g. ":0.0". Defaults to ":0.0".
+	// Display is the X11 display string, e.g. ":0.0". Empty = use $DISPLAY.
 	Display string `yaml:"display,omitempty" json:"display,omitempty"`
 
 	// --- VNC ---

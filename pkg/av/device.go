@@ -1,11 +1,27 @@
 package av
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"strconv"
 
 	"github.com/asticode/go-astiav"
 )
+
+// resolveDisplay returns the X11 display to capture from. It prefers an
+// explicitly configured display, falls back to the $DISPLAY environment
+// variable (so remote/forwarded/multi-seat sessions work), and errors out if
+// neither is set rather than silently grabbing the wrong session.
+func resolveDisplay(configured string) (string, error) {
+	if configured != "" {
+		return configured, nil
+	}
+	if env := os.Getenv("DISPLAY"); env != "" {
+		return env, nil
+	}
+	return "", errors.New("no X11 display set: configure one or export DISPLAY")
+}
 
 type DeviceConfig struct {
 	Display  string // e.g. ":0.0"
@@ -56,26 +72,26 @@ func OpenDevice(cfg DeviceConfig) (*InputDevice, error) {
 	// Draw cursor so the recording looks natural
 	options.Set("draw_mouse", "1", 0)
 
-	// Set window ID or offsets
+	// Set window ID or fall back to a pixel-offset embedded in the display
+	// URL. NOTE (C4): xcbgrab ignores grab_x/grab_y AVOptions; the offset must
+	// be part of the input URL (":0.0+100,200") for both xcbgrab and x11grab.
+	// Emitting offset options that get silently discarded would grab the wrong
+	// region on machines where xcbgrab is the available device.
 	if cfg.WindowID != 0 {
 		options.Set("window_id", fmt.Sprintf("0x%x", cfg.WindowID), 0)
-	} else {
-		if cfg.X >= 0 {
-			options.Set("grab_x", strconv.Itoa(cfg.X), 0)
-		}
-		if cfg.Y >= 0 {
-			options.Set("grab_y", strconv.Itoa(cfg.Y), 0)
-		}
+	}
+
+	display, err := resolveDisplay(cfg.Display)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.WindowID == 0 && (cfg.X > 0 || cfg.Y > 0) {
+		display = fmt.Sprintf("%s+%d,%d", display, cfg.X, cfg.Y)
 	}
 
 	formatCtx := astiav.AllocFormatContext()
 	if formatCtx == nil {
 		return nil, fmt.Errorf("failed to allocate format context")
-	}
-
-	display := cfg.Display
-	if display == "" {
-		display = ":0.0"
 	}
 
 	if err := formatCtx.OpenInput(display, inputFormat, options); err != nil {

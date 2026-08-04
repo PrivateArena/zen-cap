@@ -3,6 +3,7 @@ package target
 import (
 	"fmt"
 	"image"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -26,12 +27,17 @@ type X11Target struct {
 	w, h     int
 }
 
-// NewX11Target opens an X connection to cfg.Display (default ":0.0") and
-// returns an X11Target. windowID scopes capture and click-offset to that window.
+// NewX11Target opens an X connection to cfg.Display, falling back to the
+// $DISPLAY environment variable (C5) so remote/forwarded/multi-seat sessions
+// work. Returns an error if no display can be determined. windowID scopes
+// capture and click-offset to that window.
 func NewX11Target(cfg Config, windowID uint32) (*X11Target, error) {
 	display := cfg.Display
 	if display == "" {
-		display = ":0.0"
+		display = os.Getenv("DISPLAY")
+	}
+	if display == "" {
+		return nil, fmt.Errorf("x11: no display configured and DISPLAY is not set")
 	}
 	xu, err := xgbutil.NewConnDisplay(display)
 	if err != nil {
@@ -75,12 +81,9 @@ func (t *X11Target) Click(x, y int, button string) error {
 	}
 
 	tx, ty := x, y
-	if t.windowID != 0 {
-		geom, err := xwindow.New(t.xu, xproto.Window(t.windowID)).Geometry()
-		if err == nil {
-			tx = geom.X() + x
-			ty = geom.Y() + y
-		}
+	if ox, oy := t.windowFrame(); ox != 0 || oy != 0 {
+		tx = ox + x
+		ty = oy + y
 	}
 
 	xtest.FakeInput(c, xproto.MotionNotify, 0, 0, 0, int16(tx), int16(ty), 0)
@@ -110,12 +113,9 @@ func (t *X11Target) Move(x, y int) error {
 	}
 
 	tx, ty := x, y
-	if t.windowID != 0 {
-		geom, err := xwindow.New(t.xu, xproto.Window(t.windowID)).Geometry()
-		if err == nil {
-			tx = geom.X() + x
-			ty = geom.Y() + y
-		}
+	if ox, oy := t.windowFrame(); ox != 0 || oy != 0 {
+		tx = ox + x
+		ty = oy + y
 	}
 	xtest.FakeInput(c, xproto.MotionNotify, 0, 0, 0, int16(tx), int16(ty), 0)
 	return nil
@@ -146,6 +146,10 @@ func (t *X11Target) Type(text string, delayMs int64) error {
 		shiftKC = byte(shiftKCs[0])
 	}
 
+	// M4: characters that need Level3/AltGr or a layout-group switch have no
+	// keycode+column reachable via Shift alone. Count them instead of silently
+	// dropping them so the caller knows typing was incomplete.
+	dropped := 0
 	for _, r := range text {
 		sym := xproto.Keysym(r)
 		var targetKC, col byte
@@ -165,6 +169,7 @@ func (t *X11Target) Type(text string, delayMs int64) error {
 			}
 		}
 		if !found {
+			dropped++
 			continue
 		}
 		needShift := col%2 == 1
@@ -179,6 +184,9 @@ func (t *X11Target) Type(text string, delayMs int64) error {
 		if delayMs > 0 {
 			time.Sleep(time.Duration(delayMs) * time.Millisecond)
 		}
+	}
+	if dropped > 0 {
+		return fmt.Errorf("x11: %d character(s) not typeable on this keyboard layout (need AltGr/Level3 or group switch)", dropped)
 	}
 	return nil
 }
@@ -239,23 +247,50 @@ func (t *X11Target) Scroll(x, y, dx, dy int) error {
 		return fmt.Errorf("x11: xtest init: %w", err)
 	}
 	tx, ty := x, y
-	if t.windowID != 0 {
-		geom, err := xwindow.New(t.xu, xproto.Window(t.windowID)).Geometry()
-		if err == nil {
-			tx = geom.X() + x
-			ty = geom.Y() + y
-		}
+	if ox, oy := t.windowFrame(); ox != 0 || oy != 0 {
+		tx = ox + x
+		ty = oy + y
 	}
 	xtest.FakeInput(c, xproto.MotionNotify, 0, 0, 0, int16(tx), int16(ty), 0)
-	btn := byte(4) // scroll-up
-	if dy > 0 {
-		btn = 5 // scroll-down
+
+	// M5: vertical scroll uses buttons 4 (up) / 5 (down); horizontal scroll
+	// uses buttons 6 (left) / 7 (right). Previously dx was folded into the
+	// vertical tick count, producing extra vertical scrolls instead.
+	for i := 0; i < abs(dy); i++ {
+		btn := byte(4)
+		if dy > 0 {
+			btn = 5
+		}
+		xtest.FakeInput(c, xproto.ButtonPress, btn, 0, 0, 0, 0, 0)
+		xtest.FakeInput(c, xproto.ButtonRelease, btn, 0, 0, 0, 0, 0)
 	}
-	for i := 0; i < abs(dy)+abs(dx); i++ {
+	for i := 0; i < abs(dx); i++ {
+		btn := byte(6)
+		if dx > 0 {
+			btn = 7
+		}
 		xtest.FakeInput(c, xproto.ButtonPress, btn, 0, 0, 0, 0, 0)
 		xtest.FakeInput(c, xproto.ButtonRelease, btn, 0, 0, 0, 0, 0)
 	}
 	return nil
+}
+
+// windowFrame returns the decorated (outer, WM-chrome-inclusive) corner of the
+// scoped window. display/x11.go reports window positions via DecorGeometry, so
+// input injection must offset by the same frame (M3); otherwise clicks on
+// stacking WMs with title bars land offset by the decoration thickness. Falls
+// back to content Geometry if decor info is unavailable.
+func (t *X11Target) windowFrame() (int, int) {
+	if t.windowID == 0 {
+		return 0, 0
+	}
+	if geom, err := xwindow.New(t.xu, xproto.Window(t.windowID)).DecorGeometry(); err == nil {
+		return geom.X(), geom.Y()
+	}
+	if geom, err := xwindow.New(t.xu, xproto.Window(t.windowID)).Geometry(); err == nil {
+		return geom.X(), geom.Y()
+	}
+	return 0, 0
 }
 
 func (t *X11Target) Close() error {

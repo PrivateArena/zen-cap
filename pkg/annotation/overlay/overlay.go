@@ -5,6 +5,7 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"os"
 	"sync"
 	"time"
 
@@ -62,7 +63,10 @@ func (ov *X11Overlay) Start() error {
 
 	display := ov.cfg.Display
 	if display == "" {
-		display = ":0.0"
+		display = os.Getenv("DISPLAY")
+	}
+	if display == "" {
+		return fmt.Errorf("overlay: no X11 display configured and DISPLAY is not set")
 	}
 	xu, err := xgbutil.NewConnDisplay(display)
 	if err != nil {

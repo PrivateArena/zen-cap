@@ -17,7 +17,7 @@ import (
 // overrides display/area/fps/bitrate/output as needed.
 func RecorderConfigFromConfig(cfg *config.Config) RecorderConfig {
 	return RecorderConfig{
-		Display:          ":0.0",
+		Display:          "", // empty = use $DISPLAY (C5)
 		Width:            cfg.Recorder.Width,
 		Height:           cfg.Recorder.Height,
 		InternalWidth:    cfg.Recorder.InternalWidth,

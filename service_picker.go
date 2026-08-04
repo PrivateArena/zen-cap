@@ -30,7 +30,7 @@ func (s *serviceState) runWindowClassGrabLoop(ch <-chan struct{}) {
 			}
 			fmt.Println("Launching interactive window class grab...")
 
-			wClass, err := capture.InteractiveSelectWindowClass(":0.0")
+			wClass, err := capture.InteractiveSelectWindowClass("")
 			if err != nil {
 				fmt.Printf("Error grabbing window class: %v\n", err)
 				return
@@ -73,7 +73,7 @@ func (s *serviceState) runColorPickerLoop(ch <-chan struct{}) {
 			fmt.Println("Launching interactive color picker...")
 
 			capCfg := capture.CaptureConfig{
-				Display:     ":0.0",
+				Display:     "",
 				X:           -1,
 				Y:           -1,
 				Interactive: false,

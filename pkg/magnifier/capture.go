@@ -4,18 +4,12 @@ import (
 	"encoding/binary"
 	"fmt"
 	"image"
-	"syscall"
 	"unsafe"
 
 	"github.com/jezek/xgb/shm"
 	"github.com/jezek/xgb/xproto"
 	"github.com/jezek/xgbutil"
-)
-
-// Linux IPC constants (not defined in stdlib syscall package for all arches).
-const (
-	ipcPrivate = 0
-	ipcRmid    = 0
+	"golang.org/x/sys/unix"
 )
 
 // capturer is the internal interface for screen region capture.
@@ -46,36 +40,42 @@ func newSHMCapturer(xu *xgbutil.XUtil, maxW, maxH int) (*shmCapturer, error) {
 
 	size := maxW * maxH * 4 // BGRA, 32bpp
 
-	// Allocate System V shared memory segment.
-	shmid, _, errno := syscall.Syscall(syscall.SYS_SHMGET,
-		uintptr(ipcPrivate),
-		uintptr(size),
-		uintptr(0600))
-	if errno != 0 {
-		return nil, fmt.Errorf("shmget failed: %w", errno)
+	// Allocate System V shared memory segment. Use the portable
+	// golang.org/x/sys/unix wrappers (C6): the raw syscall.SYS_SHM* numbers
+	// only exist on amd64/386 and fail to compile on arm64.
+	shmid, err := unix.SysvShmGet(unix.IPC_PRIVATE, size, 0600)
+	if err != nil {
+		return nil, fmt.Errorf("shmget failed: %w", err)
 	}
 
 	// Attach the segment into our address space.
-	addr, _, errno := syscall.Syscall(syscall.SYS_SHMAT, shmid, 0, 0)
-	if errno != 0 {
-		syscall.Syscall(syscall.SYS_SHMCTL, shmid, uintptr(ipcRmid), 0)
-		return nil, fmt.Errorf("shmat failed: %w", errno)
+	segPtr, err := unix.SysvShmAttach(shmid, 0, 0)
+	if err != nil {
+		unix.SysvShmCtl(shmid, unix.IPC_RMID, nil)
+		return nil, fmt.Errorf("shmat failed: %w", err)
 	}
-	dataPtr := (*[1 << 30]byte)(unsafe.Pointer(addr))[:size:size]
+	if len(segPtr) < size {
+		unix.SysvShmDetach(segPtr)
+		unix.SysvShmCtl(shmid, unix.IPC_RMID, nil)
+		return nil, fmt.Errorf("shmat returned %d bytes, expected %d", len(segPtr), size)
+	}
+	dataPtr := segPtr[:size:size]
 
 	// Tell the X server about the segment.
 	segID, err := shm.NewSegId(conn)
 	if err != nil {
-		detachShm(addr, shmid)
+		unix.SysvShmDetach(segPtr)
+		unix.SysvShmCtl(shmid, unix.IPC_RMID, nil)
 		return nil, fmt.Errorf("shm.NewSegId: %w", err)
 	}
 	if err := shm.AttachChecked(conn, segID, uint32(shmid), false).Check(); err != nil {
-		detachShm(addr, shmid)
+		unix.SysvShmDetach(segPtr)
+		unix.SysvShmCtl(shmid, unix.IPC_RMID, nil)
 		return nil, fmt.Errorf("shm.Attach: %w", err)
 	}
 
 	// Mark the segment for deletion so it is released when no longer attached.
-	syscall.Syscall(syscall.SYS_SHMCTL, shmid, uintptr(ipcRmid), 0)
+	unix.SysvShmCtl(shmid, unix.IPC_RMID, nil)
 
 	return &shmCapturer{
 		xu:      xu,
@@ -120,13 +120,7 @@ func (c *shmCapturer) capture(x, y, w, h int) (*image.RGBA, error) {
 
 func (c *shmCapturer) close() {
 	shm.Detach(c.xu.Conn(), c.seg)
-	addr := uintptr(unsafe.Pointer(&c.dataPtr[0]))
-	syscall.Syscall(syscall.SYS_SHMDT, addr, 0, 0)
-}
-
-func detachShm(addr uintptr, shmid uintptr) {
-	syscall.Syscall(syscall.SYS_SHMDT, addr, 0, 0)
-	syscall.Syscall(syscall.SYS_SHMCTL, shmid, uintptr(ipcRmid), 0)
+	unix.SysvShmDetach(c.dataPtr)
 }
 
 // ----- XGetImage fallback capturer -----

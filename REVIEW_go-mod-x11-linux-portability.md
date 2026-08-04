@@ -618,3 +618,39 @@ Yes. The highest-impact changes are:
 3. **Respect `$DISPLAY`** — change all `":0.0"` defaults to `os.Getenv("DISPLAY")`. This is a one-line fix in multiple places.
 4. **Replace `golang.design/x/clipboard`** — drop the `shiny`/`mobile` dependency tree and use `jezek/xgb` directly. This simplifies the build and reduces the attack surface.
 5. **Fix `Scroll()` and `Type()`** — correct the horizontal scroll bug and surface errors for dropped characters.
+
+---
+
+## Decision Record (executed 2026-08-04)
+
+Improvement pass executed by Zen (Package Maintainer). Critical + Major items handled;
+Minor/Nit deferred. Decisions on hard/risky items recorded below.
+
+### Implemented
+
+| # | Finding | Change |
+|---|---|---|
+| C1 | build.sh hardcoded absolute paths | Rewrote `build.sh`: `ZEN_CAP_FFMPEG` env override, relative `./ffmpeg8` default, existence validation with clear error, added `set -e`. |
+| C2 | Broken `$ORIGIN` rpath | Removed stray `\'` so linker receives bare `$ORIGIN`. Verified via `readelf` → RPATH `$ORIGIN/ffmpeg8/lib:...`. |
+| C4 | `grab_x`/`grab_y` invalid for xcbgrab | Offset now embedded in display URL (`:0.0+100,200`) in `pkg/av/device.go`; `grab_x`/`grab_y` removed. |
+| C5 | Hardcoded `":0.0"` display | New `resolveDisplay()` in `pkg/av` falls back to `$DISPLAY`, errors if unset. Applied across `device.go`, `target/x11.go`, `overlay.go`, `magnifier/config.go`, `config.go` defaults, `recorder.go`, `service_*.go`, `api.go`, and CLI flags (`-d` default = `$DISPLAY`). |
+| C6 | Raw `syscall.SYS_SHM*` breaks arm64 | Migrated `pkg/magnifier/capture.go` to `golang.org/x/sys/unix` (`SysvShmGet/Attach/Detach/Ctl`). |
+| M1 | ALSA-only audio | `pkg/av/adevice.go` now tries pulse → pipewire → alsa. |
+| M3 | Decor vs content geometry mismatch | `pkg/target/x11.go` input offsets now use `DecorGeometry` (fallback `Geometry`) via new `windowFrame()` helper — consistent with `display/x11.go` discovery. |
+| M4 | `Type()` silent char drop | Now returns error with dropped-character count when a char needs AltGr/Level3/group switch. |
+| M5 | `Scroll()` ignores dx | Sends buttons 6/7 for horizontal, 4/5 for vertical. |
+
+### Decided (documented, not code-changed)
+
+- **C3** — Keep bundled FFmpeg + fixed `$ORIGIN` rpath (option a). Static linking (b) and distro FFmpeg (c) deferred; they are larger, riskier reworks.
+- **M2** — go-astiav v0.41.0 ABI coupling documented in `build.sh` header. No distro-FFmpeg switch.
+- **M6** — `golang.design/x/clipboard` replacement **deferred**. Swapping the clipboard backend mid-flight risks the multi-slot clipboard daemon and the OCR/text copy paths; needs a dedicated rework with tests. Mitigation for the shiny/mobile bloat stays as-is for now.
+- **M7** — Go 1.24 kept; documented minimum in `build.sh`. No code change.
+
+### Deferred (Minor/Nit — saved for later)
+
+m1 (SHM bounds check), m2 (RandR), m3 (pixel-path unification), m4 (xtest.Init once), m5 (focus sleep), m6 (color-range comment), m7 (lanczos scaler), n1 (`set -e` — already applied as part of C1), n2 (require-block tidy), n3 (dtags comment — covered in build.sh).
+
+### Noted
+
+Rejected findings #24/#25/#26/#27 (go.sum integrity, multi-screen X11, endianness, go.sum presence) remain rejected per the review's red-team table.

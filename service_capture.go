@@ -25,7 +25,7 @@ func (s *serviceState) runScreenshotLoop(ch <-chan struct{}) {
 			_ = os.MkdirAll(s.getCfg().OutputDir, 0755)
 
 			capCfg := capture.CaptureConfig{
-				Display: ":0.0",
+				Display: "",
 				X:       -1,
 				Y:       -1,
 			}
@@ -68,7 +68,7 @@ func (s *serviceState) runRegionScreenshotLoop(ch <-chan struct{}) {
 
 			var chosenAction string
 			capCfg := capture.CaptureConfig{
-				Display:         ":0.0",
+				Display:         "",
 				X:               -1,
 				Y:               -1,
 				Interactive:     true,
@@ -114,7 +114,7 @@ func (s *serviceState) runWindowScreenshotLoop(ch <-chan struct{}) {
 
 			var chosenAction string
 			capCfg := capture.CaptureConfig{
-				Display:         ":0.0",
+				Display:         "",
 				X:               -1,
 				Y:               -1,
 				Interactive:     true,
