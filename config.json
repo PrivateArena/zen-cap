@@ -35,7 +35,7 @@
   },
   "ocr_address": "http://localhost:8765",
   "api_address": "localhost:4444",
-  "ocr_language": "en-paddle",
+  "ocr_language": "ja-paddle",
   "ocr_languages": [
     "en-paddle",
     "ja-paddle",
