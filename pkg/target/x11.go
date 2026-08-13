@@ -88,22 +88,62 @@ func (t *X11Target) Click(x, y int, button string) error {
 
 	xtest.FakeInput(c, xproto.MotionNotify, 0, 0, 0, int16(tx), int16(ty), 0)
 
-	var btn byte = 1
-	switch strings.ToLower(button) {
-	case "left", "":
-		btn = 1
-	case "middle":
-		btn = 2
-	case "right":
-		btn = 3
-	default:
-		if v, err := strconv.Atoi(button); err == nil {
-			btn = byte(v)
-		}
-	}
+	btn := resolveButton(button)
 	xtest.FakeInput(c, xproto.ButtonPress, btn, 0, 0, 0, 0, 0)
 	xtest.FakeInput(c, xproto.ButtonRelease, btn, 0, 0, 0, 0, 0)
 	return nil
+}
+
+func (t *X11Target) ButtonPress(x, y int, button string) error {
+	c := t.xu.Conn()
+	if err := xtest.Init(c); err != nil {
+		return fmt.Errorf("x11: xtest init: %w", err)
+	}
+
+	tx, ty := x, y
+	if ox, oy := t.windowFrame(); ox != 0 || oy != 0 {
+		tx = ox + x
+		ty = oy + y
+	}
+
+	xtest.FakeInput(c, xproto.MotionNotify, 0, 0, 0, int16(tx), int16(ty), 0)
+	xtest.FakeInput(c, xproto.ButtonPress, resolveButton(button), 0, 0, 0, 0, 0)
+	return nil
+}
+
+func (t *X11Target) ButtonRelease(x, y int, button string) error {
+	c := t.xu.Conn()
+	if err := xtest.Init(c); err != nil {
+		return fmt.Errorf("x11: xtest init: %w", err)
+	}
+
+	tx, ty := x, y
+	if ox, oy := t.windowFrame(); ox != 0 || oy != 0 {
+		tx = ox + x
+		ty = oy + y
+	}
+
+	xtest.FakeInput(c, xproto.MotionNotify, 0, 0, 0, int16(tx), int16(ty), 0)
+	xtest.FakeInput(c, xproto.ButtonRelease, resolveButton(button), 0, 0, 0, 0, 0)
+	return nil
+}
+
+// resolveButton maps user-facing button names to X11 button numbers.
+// Unknown names fall back to the left button (1); raw numbers pass through.
+func resolveButton(button string) byte {
+	switch strings.ToLower(button) {
+	case "left", "":
+		return 1
+	case "middle":
+		return 2
+	case "right":
+		return 3
+	default:
+		if v, err := strconv.Atoi(button); err == nil {
+			return byte(v)
+		}
+	}
+	return 1
 }
 
 func (t *X11Target) Move(x, y int) error {

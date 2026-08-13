@@ -298,6 +298,13 @@ func (t *VNCTarget) deviceCoord(x, y int) (int, int) {
 }
 
 func (t *VNCTarget) Click(x, y int, button string) error {
+	if err := t.ButtonPress(x, y, button); err != nil {
+		return err
+	}
+	return t.ButtonRelease(x, y, button)
+}
+
+func (t *VNCTarget) ButtonPress(x, y int, button string) error {
 	dx, dy := t.deviceCoord(x, y)
 	mask := byte(1) // left
 	switch strings.ToLower(button) {
@@ -306,10 +313,12 @@ func (t *VNCTarget) Click(x, y int, button string) error {
 	case "middle":
 		mask = 2
 	}
-	if err := t.sendPointer(uint8(mask), uint16(dx), uint16(dy)); err != nil {
-		return err
-	}
-	return t.sendPointer(0, uint16(dx), uint16(dy)) // release
+	return t.sendPointer(mask, uint16(dx), uint16(dy))
+}
+
+func (t *VNCTarget) ButtonRelease(x, y int, button string) error {
+	dx, dy := t.deviceCoord(x, y)
+	return t.sendPointer(0, uint16(dx), uint16(dy))
 }
 
 func (t *VNCTarget) Move(x, y int) error {

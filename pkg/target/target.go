@@ -21,6 +21,12 @@ type Target interface {
 	Click(x, y int, button string) error
 	// Move moves the pointer to (x, y) without clicking.
 	Move(x, y int) error
+	// ButtonPress holds the pointer button down at (x, y). It must be paired
+	// with ButtonRelease. Together with Move this builds drag/slide gestures.
+	ButtonPress(x, y int, button string) error
+	// ButtonRelease releases the pointer button at (x, y). Releasing an
+	// unpressed button is tolerated (no-op) for robustness.
+	ButtonRelease(x, y int, button string) error
 	// Type injects text character by character. delayMs controls inter-key delay.
 	Type(text string, delayMs int64) error
 	// Key injects a key combo, e.g. "ctrl-c", "Return", "F5".

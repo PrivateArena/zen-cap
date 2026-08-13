@@ -9,6 +9,8 @@ type Step struct {
 	Action      string        `json:"action" yaml:"action"`
 	X           interface{}   `json:"x,omitempty" yaml:"x,omitempty"`
 	Y           interface{}   `json:"y,omitempty" yaml:"y,omitempty"`
+	X2          interface{}   `json:"x2,omitempty" yaml:"x2,omitempty"`
+	Y2          interface{}   `json:"y2,omitempty" yaml:"y2,omitempty"`
 	Button      string        `json:"button,omitempty" yaml:"button,omitempty"` // left, right, middle
 	Text        string        `json:"text,omitempty" yaml:"text,omitempty"`
 	Keys        string        `json:"keys,omitempty" yaml:"keys,omitempty"`

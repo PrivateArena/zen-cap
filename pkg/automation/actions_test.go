@@ -1,6 +1,7 @@
 package automation
 
 import (
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -27,6 +28,17 @@ type mockTarget struct {
 	}
 	types []string
 	keys  []string
+	moves []struct {
+		x, y int
+	}
+	presses []struct {
+		x, y int
+		btn  string
+	}
+	releases []struct {
+		x, y int
+		btn  string
+	}
 }
 
 func newMockTarget(img image.Image) *mockTarget {
@@ -45,7 +57,26 @@ func (m *mockTarget) Click(x, y int, btn string) error {
 	}{x, y, btn})
 	return nil
 }
-func (m *mockTarget) Move(x, y int) error { return nil }
+func (m *mockTarget) Move(x, y int) error {
+	m.moves = append(m.moves, struct {
+		x, y int
+	}{x, y})
+	return nil
+}
+func (m *mockTarget) ButtonPress(x, y int, btn string) error {
+	m.presses = append(m.presses, struct {
+		x, y int
+		btn  string
+	}{x, y, btn})
+	return nil
+}
+func (m *mockTarget) ButtonRelease(x, y int, btn string) error {
+	m.releases = append(m.releases, struct {
+		x, y int
+		btn  string
+	}{x, y, btn})
+	return nil
+}
 func (m *mockTarget) Type(text string, delay int64) error {
 	m.types = append(m.types, text)
 	return nil
@@ -818,5 +849,195 @@ func TestWindowActionsMocked(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "x11 or vfb target") {
 		t.Errorf("expected error about x11 target, got %q", err.Error())
+	}
+}
+
+// failMoveTarget errors on Move so we can assert the stuck-press protection.
+type failMoveTarget struct {
+	*mockTarget
+}
+
+func (m *failMoveTarget) Move(x, y int) error { return errors.New("move failed") }
+
+func TestHoldMoveRelease(t *testing.T) {
+	mt := newMockTarget(nil)
+	ctx := &ExecContext{
+		Target:    mt,
+		Logger:    func(string, ...interface{}) {},
+		Variables: make(map[string]interface{}),
+	}
+
+	steps := []Step{
+		{Action: "hold", X: 10, Y: 20, Button: "left"},
+		{Action: "move", X: 50, Y: 60},
+		{Action: "release", X: 50, Y: 60, Button: "left"},
+	}
+	for _, s := range steps {
+		if err := ExecuteStep(s, ctx); err != nil {
+			t.Fatalf("step %q failed: %v", s.Action, err)
+		}
+	}
+
+	if len(mt.presses) != 1 || mt.presses[0].x != 10 || mt.presses[0].y != 20 || mt.presses[0].btn != "left" {
+		t.Errorf("expected one press at (10, 20) left, got %+v", mt.presses)
+	}
+	if len(mt.moves) != 1 || mt.moves[0].x != 50 || mt.moves[0].y != 60 {
+		t.Errorf("expected one move to (50, 60), got %+v", mt.moves)
+	}
+	if len(mt.releases) != 1 || mt.releases[0].x != 50 || mt.releases[0].y != 60 || mt.releases[0].btn != "left" {
+		t.Errorf("expected one release at (50, 60) left, got %+v", mt.releases)
+	}
+	if len(mt.clicks) != 0 {
+		t.Errorf("expected no atomic clicks for a hold/move/release sequence, got %+v", mt.clicks)
+	}
+}
+
+func TestDragGesture(t *testing.T) {
+	mt := newMockTarget(nil)
+	ctx := &ExecContext{
+		Target:    mt,
+		Logger:    func(string, ...interface{}) {},
+		Variables: make(map[string]interface{}),
+	}
+
+	step := Step{
+		Action:   "drag",
+		X:        0,
+		Y:        0,
+		X2:       100,
+		Y2:       0,
+		Button:   "left",
+		Duration: "160ms",
+	}
+	if err := ExecuteStep(step, ctx); err != nil {
+		t.Fatalf("drag failed: %v", err)
+	}
+
+	if len(mt.presses) != 1 || mt.presses[0].x != 0 || mt.presses[0].y != 0 || mt.presses[0].btn != "left" {
+		t.Errorf("expected press at (0, 0) left, got %+v", mt.presses)
+	}
+	if len(mt.releases) != 1 || mt.releases[0].x != 100 || mt.releases[0].y != 0 || mt.releases[0].btn != "left" {
+		t.Errorf("expected release at (100, 0) left, got %+v", mt.releases)
+	}
+
+	// 160ms at 16ms/step = 10 interpolated moves: (10,0)...(100,0).
+	if len(mt.moves) != 10 {
+		t.Fatalf("expected 10 interpolated moves, got %d: %+v", len(mt.moves), mt.moves)
+	}
+	if mt.moves[0].x != 10 || mt.moves[0].y != 0 {
+		t.Errorf("expected first move at (10, 0), got %+v", mt.moves[0])
+	}
+	if mt.moves[len(mt.moves)-1].x != 100 || mt.moves[len(mt.moves)-1].y != 0 {
+		t.Errorf("expected last move at (100, 0), got %+v", mt.moves[len(mt.moves)-1])
+	}
+	for i, mv := range mt.moves {
+		if mv.x != (i+1)*10 || mv.y != 0 {
+			t.Errorf("move %d: expected x=%d y=0, got %+v", i, (i+1)*10, mv)
+		}
+	}
+}
+
+func TestDragLongPress(t *testing.T) {
+	mt := newMockTarget(nil)
+	ctx := &ExecContext{
+		Target:    mt,
+		Logger:    func(string, ...interface{}) {},
+		Variables: make(map[string]interface{}),
+	}
+
+	// Same start and end coordinates degrade to a long press: no motion.
+	step := Step{
+		Action:   "drag",
+		X:        5,
+		Y:        5,
+		X2:       5,
+		Y2:       5,
+		Button:   "left",
+		Duration: "5ms",
+	}
+	if err := ExecuteStep(step, ctx); err != nil {
+		t.Fatalf("long press drag failed: %v", err)
+	}
+
+	if len(mt.presses) != 1 || mt.presses[0].x != 5 || mt.presses[0].y != 5 {
+		t.Errorf("expected press at (5, 5), got %+v", mt.presses)
+	}
+	if len(mt.releases) != 1 || mt.releases[0].x != 5 || mt.releases[0].y != 5 {
+		t.Errorf("expected release at (5, 5), got %+v", mt.releases)
+	}
+	if len(mt.moves) != 0 {
+		t.Errorf("expected no moves for a long press, got %+v", mt.moves)
+	}
+}
+
+func TestDragDefaultsToLastFound(t *testing.T) {
+	mt := newMockTarget(nil)
+	ctx := &ExecContext{
+		Target:     mt,
+		Logger:     func(string, ...interface{}) {},
+		Variables:  make(map[string]interface{}),
+		LastFoundX: 20,
+		LastFoundY: 30,
+	}
+
+	// No coordinates: both endpoints resolve to LastFound -> long press.
+	step := Step{Action: "drag", Button: "left", Duration: "1ms"}
+	if err := ExecuteStep(step, ctx); err != nil {
+		t.Fatalf("drag failed: %v", err)
+	}
+
+	if len(mt.presses) != 1 || mt.presses[0].x != 20 || mt.presses[0].y != 30 {
+		t.Errorf("expected press at LastFound (20, 30), got %+v", mt.presses)
+	}
+	if len(mt.releases) != 1 || mt.releases[0].x != 20 || mt.releases[0].y != 30 {
+		t.Errorf("expected release at LastFound (20, 30), got %+v", mt.releases)
+	}
+}
+
+func TestReleaseWithoutHold(t *testing.T) {
+	mt := newMockTarget(nil)
+	ctx := &ExecContext{
+		Target:    mt,
+		Logger:    func(string, ...interface{}) {},
+		Variables: make(map[string]interface{}),
+	}
+
+	// Releasing an unpressed button is tolerated, not an error.
+	step := Step{Action: "release", X: 7, Y: 8, Button: "left"}
+	if err := ExecuteStep(step, ctx); err != nil {
+		t.Fatalf("release without hold should be tolerated, got %v", err)
+	}
+	if len(mt.releases) != 1 || mt.releases[0].x != 7 || mt.releases[0].y != 8 {
+		t.Errorf("expected release at (7, 8), got %+v", mt.releases)
+	}
+}
+
+func TestDragReleasesOnMoveError(t *testing.T) {
+	failing := &failMoveTarget{newMockTarget(nil)}
+	ctx := &ExecContext{
+		Target:    failing,
+		Logger:    func(string, ...interface{}) {},
+		Variables: make(map[string]interface{}),
+	}
+
+	step := Step{
+		Action:   "drag",
+		X:        0,
+		Y:        0,
+		X2:       100,
+		Y2:       0,
+		Duration: "160ms",
+	}
+	err := ExecuteStep(step, ctx)
+	if err == nil {
+		t.Fatalf("expected drag to propagate Move error")
+	}
+
+	// The button must be released so the pointer does not stay stuck down.
+	if len(failing.presses) != 1 || len(failing.releases) != 1 {
+		t.Fatalf("expected 1 press and 1 cleanup release, got presses=%+v releases=%+v", failing.presses, failing.releases)
+	}
+	if failing.releases[0].x != 10 || failing.releases[0].y != 0 {
+		t.Errorf("expected cleanup release at first failed move (10, 0), got %+v", failing.releases[0])
 	}
 }

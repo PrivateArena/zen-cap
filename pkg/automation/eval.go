@@ -190,6 +190,12 @@ func InterpolateStep(step Step, vars map[string]interface{}) Step {
 	if s, ok := step.Y.(string); ok {
 		step.Y = Interpolate(s, vars)
 	}
+	if s, ok := step.X2.(string); ok {
+		step.X2 = Interpolate(s, vars)
+	}
+	if s, ok := step.Y2.(string); ok {
+		step.Y2 = Interpolate(s, vars)
+	}
 	return step
 }
 

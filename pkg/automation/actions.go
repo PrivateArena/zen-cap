@@ -57,6 +57,12 @@ func ExecuteStep(step Step, ctx *ExecContext) error {
 		return runClick(step, ctx)
 	case "move":
 		return runMove(step, ctx)
+	case "hold":
+		return runHold(step, ctx)
+	case "release":
+		return runRelease(step, ctx)
+	case "drag":
+		return runDrag(step, ctx)
 	case "type":
 		return runType(step, ctx)
 	case "key":
@@ -110,6 +116,103 @@ func runMove(step Step, ctx *ExecContext) error {
 	}
 	ctx.Logger("[Automation] Move: x=%d, y=%d", x, y)
 	return ctx.Target.Move(x, y)
+}
+
+// runHold presses and keeps the pointer button down at (x, y). Pair with
+// runMove / runRelease to build drag and slide gestures.
+func runHold(step Step, ctx *ExecContext) error {
+	x := getIntField(step.X, ctx.Variables, -1)
+	y := getIntField(step.Y, ctx.Variables, -1)
+	if x == -1 && y == -1 {
+		x = ctx.LastFoundX
+		y = ctx.LastFoundY
+	}
+	ctx.Logger("[Automation] Hold: x=%d, y=%d, button=%s", x, y, step.Button)
+	return ctx.Target.ButtonPress(x, y, step.Button)
+}
+
+// runRelease lets the pointer button go at (x, y). Tolerates releasing a
+// button that was never pressed.
+func runRelease(step Step, ctx *ExecContext) error {
+	x := getIntField(step.X, ctx.Variables, -1)
+	y := getIntField(step.Y, ctx.Variables, -1)
+	if x == -1 && y == -1 {
+		x = ctx.LastFoundX
+		y = ctx.LastFoundY
+	}
+	ctx.Logger("[Automation] Release: x=%d, y=%d, button=%s", x, y, step.Button)
+	return ctx.Target.ButtonRelease(x, y, step.Button)
+}
+
+// runDrag performs a full hold-move-release gesture from (x, y) to (x2, y2).
+// The path is interpolated into small motion steps spread over `duration`, so
+// targets that track movement (scrcpy sliding, drag-and-drop) see motion
+// rather than a jump. When start equals end it degrades to a long press.
+// If any step fails or the run is aborted the button is released to avoid
+// leaving a stuck press.
+func runDrag(step Step, ctx *ExecContext) error {
+	x := getIntField(step.X, ctx.Variables, -1)
+	y := getIntField(step.Y, ctx.Variables, -1)
+	x2 := getIntField(step.X2, ctx.Variables, -1)
+	y2 := getIntField(step.Y2, ctx.Variables, -1)
+	if x == -1 && y == -1 {
+		x = ctx.LastFoundX
+		y = ctx.LastFoundY
+	}
+	if x2 == -1 {
+		x2 = x
+	}
+	if y2 == -1 {
+		y2 = y
+	}
+
+	duration := 300 * time.Millisecond
+	if step.Duration != "" {
+		if d, err := time.ParseDuration(step.Duration); err == nil {
+			duration = d
+		}
+	}
+
+	ctx.Logger("[Automation] Drag: (%d, %d) -> (%d, %d), button=%s, duration=%v", x, y, x2, y2, step.Button, duration)
+
+	if err := ctx.Target.ButtonPress(x, y, step.Button); err != nil {
+		return err
+	}
+
+	if x2 == x && y2 == y {
+		// Long press: hold in place for the duration, then release.
+		select {
+		case <-ctx.AbortChan:
+			_ = ctx.Target.ButtonRelease(x, y, step.Button)
+			return fmt.Errorf("execution aborted by user")
+		case <-time.After(duration):
+		}
+		return ctx.Target.ButtonRelease(x, y, step.Button)
+	}
+
+	steps := int(duration / (16 * time.Millisecond))
+	if steps < 1 {
+		steps = 1
+	}
+	stepDelay := duration / time.Duration(steps)
+	for i := 1; i <= steps; i++ {
+		mx := x + (x2-x)*i/steps
+		my := y + (y2-y)*i/steps
+		if err := ctx.Target.Move(mx, my); err != nil {
+			_ = ctx.Target.ButtonRelease(mx, my, step.Button)
+			return err
+		}
+		if i < steps {
+			select {
+			case <-ctx.AbortChan:
+				_ = ctx.Target.ButtonRelease(mx, my, step.Button)
+				return fmt.Errorf("execution aborted by user")
+			case <-time.After(stepDelay):
+			}
+		}
+	}
+
+	return ctx.Target.ButtonRelease(x2, y2, step.Button)
 }
 
 func runType(step Step, ctx *ExecContext) error {

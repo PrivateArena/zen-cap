@@ -173,6 +173,36 @@ func (t *WDATarget) Move(x, y int) error {
 	}, nil)
 }
 
+// ButtonPress/ButtonRelease use W3C pointerDown/pointerUp actions so a press
+// can be held while subsequent Move calls trace a drag/slide path.
+func (t *WDATarget) ButtonPress(x, y int, button string) error {
+	dx, dy := t.deviceCoord(x, y)
+	return t.post(t.sessionPath("/actions"), map[string]interface{}{
+		"actions": []interface{}{map[string]interface{}{
+			"type": "pointer",
+			"id":   "finger1",
+			"actions": []interface{}{
+				map[string]interface{}{"type": "pointerMove", "x": dx, "y": dy, "duration": 0},
+				map[string]interface{}{"type": "pointerDown", "button": 0},
+			},
+		}},
+	}, nil)
+}
+
+func (t *WDATarget) ButtonRelease(x, y int, button string) error {
+	dx, dy := t.deviceCoord(x, y)
+	return t.post(t.sessionPath("/actions"), map[string]interface{}{
+		"actions": []interface{}{map[string]interface{}{
+			"type": "pointer",
+			"id":   "finger1",
+			"actions": []interface{}{
+				map[string]interface{}{"type": "pointerMove", "x": dx, "y": dy, "duration": 0},
+				map[string]interface{}{"type": "pointerUp", "button": 0},
+			},
+		}},
+	}, nil)
+}
+
 func (t *WDATarget) Type(text string, _ int64) error {
 	chars := make([]string, 0, len([]rune(text)))
 	for _, r := range text {

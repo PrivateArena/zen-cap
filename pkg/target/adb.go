@@ -129,6 +129,19 @@ func (t *ADBTarget) Move(x, y int) error {
 	return t.adbShell(fmt.Sprintf("input swipe %d %d %d %d 1", dx, dy, dx, dy))
 }
 
+// ButtonPress/ButtonRelease drive Android's low-level touch stream via
+// `input motionevent`. Requires Android 10+ (API 29); older devices return
+// a shell error which is propagated to the caller.
+func (t *ADBTarget) ButtonPress(x, y int, button string) error {
+	dx, dy := t.deviceCoord(x, y)
+	return t.adbShell(fmt.Sprintf("input motionevent DOWN %d %d", dx, dy))
+}
+
+func (t *ADBTarget) ButtonRelease(x, y int, button string) error {
+	dx, dy := t.deviceCoord(x, y)
+	return t.adbShell(fmt.Sprintf("input motionevent UP %d %d", dx, dy))
+}
+
 func (t *ADBTarget) Type(text string, _ int64) error {
 	// Escape special shell characters for ADB text input.
 	escaped := adbEscapeText(text)

@@ -319,6 +319,76 @@ x: 100
 y: 200
 ```
 
+### `hold`
+Presses and **keeps the pointer button held down** at a coordinate. Use it
+together with `move` and `release` to build drag-and-drop, sliding (e.g.
+scrcpy phone screen swipes), and long-press gestures step by step.
+```yaml
+action: hold
+x: 450
+y: 320
+button: left     # "left", "middle", "right"
+```
+
+### `release`
+Lets the held pointer button go at a coordinate. Releasing a button that was
+never pressed is tolerated. Coordinates are optional — they fall back to the
+last-found match position when omitted.
+```yaml
+action: release
+x: 700
+y: 500
+button: left
+```
+
+### `drag`
+Performs a full **hold → move → release** gesture in one step: presses the
+button at `(x, y)`, moves to `(x2, y2)` along a smooth interpolated path
+spread over `duration`, then releases. Ideal for one-shot slides and drags on
+any target. When `(x2, y2)` equals `(x, y)` it degrades to a **long press**.
+```yaml
+action: drag
+x: 450
+y: 320
+x2: 450
+y2: 800
+button: left
+duration: 500ms   # Optional. Default 300ms. Controls path smoothness.
+```
+
+**Example — slide an scrcpy phone screen (swipe to the next page):**
+```yaml
+steps:
+  - action: drag
+    x: 540
+    y: 900
+    x2: 540
+    y2: 200
+    button: left
+    duration: 300ms
+```
+
+**Example — drag-and-drop an icon:**
+```yaml
+steps:
+  - action: hold
+    x: 120
+    y: 400
+    button: left
+  - action: move
+    x: 360
+    y: 640
+  - action: release
+    x: 360
+    y: 640
+    button: left
+```
+
+> **Backend notes:** `drag`/`hold`/`release` work on all targets. On X11/VFB
+> (including scrcpy) they are injected as native press/motion/release events.
+> On ADB they use Android's `input motionevent` (Android 10+). On VNC/WDA they
+> use the protocol's button-mask / W3C pointer actions.
+
 ### `type`
 Simulates focusless text input typing.
 ```yaml
