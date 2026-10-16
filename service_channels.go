@@ -21,6 +21,7 @@ type serviceChannels struct {
 	RecordAudioOnly      chan struct{}
 	SnippetCycleMode     chan struct{}
 	TaskProfileCycle     chan struct{}
+	MacroRecord          chan struct{}
 }
 
 func newServiceChannels() *serviceChannels {
@@ -45,5 +46,6 @@ func newServiceChannels() *serviceChannels {
 		RecordAudioOnly:      make(chan struct{}, 1),
 		SnippetCycleMode:     make(chan struct{}, 1),
 		TaskProfileCycle:     make(chan struct{}, 1),
+		MacroRecord:          make(chan struct{}, 1),
 	}
 }

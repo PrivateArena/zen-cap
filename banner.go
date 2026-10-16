@@ -35,6 +35,7 @@ func printHotkeyBanner(cfg *config.Config) {
 	fmt.Printf("  %-14s -> Snippet Mode: Cycle (Paste vs Human Typing)\n", cfg.Hotkeys.SnippetCycleMode)
 	fmt.Printf("  %-14s -> Automation Picker: Open GUI\n", cfg.Hotkeys.AutomationPicker)
 	fmt.Printf("  %-14s -> Automation Editor: Open automations.yaml\n", "Shift-"+cfg.Hotkeys.AutomationPicker)
+	fmt.Printf("  %-14s -> Macro Recorder: Start/Stop\n", cfg.Hotkeys.RecordAutomation)
 	fmt.Println("UNIX Signals:")
 	fmt.Println("  SIGUSR1       -> Fullscreen Screenshot")
 	fmt.Println("  SIGUSR2       -> Toggle Fullscreen Recording")

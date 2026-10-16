@@ -331,6 +331,15 @@ func handleService() error {
 		}
 	})
 
+	// Register Macro Recorder Hotkey (toggle start/stop)
+	cm.Register(cfg.Hotkeys.RecordAutomation, func() {
+		fmt.Println("Hotkey pressed: Toggling macro recorder...")
+		select {
+		case ch.MacroRecord <- struct{}{}:
+		default:
+		}
+	})
+
 	// Register Automation Picker Hotkey
 	cm.Register(cfg.Hotkeys.AutomationPicker, func() {
 		exe, err := os.Executable()
@@ -402,6 +411,8 @@ func handleService() error {
 	go s.runSnippetCycleModeLoop(ch.SnippetCycleMode)
 
 	go s.runTaskProfileCycleLoop(ch.TaskProfileCycle)
+
+	go s.runMacroRecordLoop(ch.MacroRecord)
 
 	go s.runWindowClassGrabLoop(ch.WindowClassGrab)
 

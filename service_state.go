@@ -8,6 +8,7 @@ import (
 	"github.com/jezek/xgbutil"
 
 	"zen-cap/pkg/config"
+	"zen-cap/pkg/macro"
 	"zen-cap/pkg/recorder"
 )
 
@@ -43,6 +44,10 @@ type serviceState struct {
 
 	annotateMu      sync.Mutex
 	annotateRunning bool
+
+	macroMu        sync.Mutex
+	macroRec       *macro.Recorder
+	macroRecording bool
 
 	ocrAutoMu      sync.Mutex
 	ocrAutoRunning bool

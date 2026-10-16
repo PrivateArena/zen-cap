@@ -190,6 +190,7 @@ type HotkeysConfig struct {
 	ColorPicker          string `json:"color_picker"`         // e.g. "Shift-F5"
 	SnippetCycleMode     string `json:"snippet_cycle_mode"`   // e.g. "Mod4-w"
 	CycleTaskProfile     string `json:"cycle_task_profile"`   // e.g. "Control-Mod1-p"
+	RecordAutomation     string `json:"record_automation"`    // e.g. "Control-Shift-m" (toggle macro recorder)
 }
 
 func DefaultTransformRules() []TransformRule {
@@ -272,6 +273,7 @@ func DefaultConfig() *Config {
 			ColorPicker:          "Shift-F5",
 			SnippetCycleMode:     "Mod4-w",
 			CycleTaskProfile:     "Control-Mod1-p",
+			RecordAutomation:     "Control-Shift-m",
 		},
 		SnippetMode:          "paste",
 		ColorPickerFormat:    "hex",
@@ -398,6 +400,21 @@ func DefaultConfig() *Config {
 				Tasks:     []string{"ocr", "translate", "copy_text", "display_live"},
 				AppliesTo: []string{"ocr_auto"},
 			},
+			{
+				Name:      "Macro File",
+				Tasks:     []string{"save_script"},
+				AppliesTo: []string{"macro"},
+			},
+			{
+				Name:      "Macro Clipboard",
+				Tasks:     []string{"copy_script"},
+				AppliesTo: []string{"macro"},
+			},
+			{
+				Name:      "Macro Both",
+				Tasks:     []string{"save_script", "copy_script"},
+				AppliesTo: []string{"macro"},
+			},
 		},
 		CurrentTaskProfile: "Copy Image",
 		BrowserBridge: BrowserBridgeConfig{
@@ -439,6 +456,7 @@ func DefaultPortableConfig(binDir string) *Config {
 			ColorPicker:          "Shift-F5",
 			SnippetCycleMode:     "Mod4-w",
 			CycleTaskProfile:     "Control-Mod1-p",
+			RecordAutomation:     "Control-Shift-m",
 		},
 		SnippetMode:          "paste",
 		ColorPickerFormat:    "hex",
@@ -564,6 +582,21 @@ func DefaultPortableConfig(binDir string) *Config {
 				Name:      "Realtime Translate",
 				Tasks:     []string{"ocr", "translate", "copy_text", "display_live"},
 				AppliesTo: []string{"ocr_auto"},
+			},
+			{
+				Name:      "Macro File",
+				Tasks:     []string{"save_script"},
+				AppliesTo: []string{"macro"},
+			},
+			{
+				Name:      "Macro Clipboard",
+				Tasks:     []string{"copy_script"},
+				AppliesTo: []string{"macro"},
+			},
+			{
+				Name:      "Macro Both",
+				Tasks:     []string{"save_script", "copy_script"},
+				AppliesTo: []string{"macro"},
 			},
 		},
 		CurrentTaskProfile: "Copy Image",
@@ -768,6 +801,12 @@ func readConfig(path string, binDir string, isPortable bool) (*Config, error) {
 	}
 	if cfg.Hotkeys.SnippetCycleMode == "" {
 		cfg.Hotkeys.SnippetCycleMode = defaults.Hotkeys.SnippetCycleMode
+	}
+	if cfg.Hotkeys.CycleTaskProfile == "" {
+		cfg.Hotkeys.CycleTaskProfile = defaults.Hotkeys.CycleTaskProfile
+	}
+	if cfg.Hotkeys.RecordAutomation == "" {
+		cfg.Hotkeys.RecordAutomation = defaults.Hotkeys.RecordAutomation
 	}
 	if cfg.SnippetMode == "" {
 		cfg.SnippetMode = defaults.SnippetMode
