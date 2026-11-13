@@ -78,6 +78,13 @@ func (m *X11DisplayManager) GetScreens() ([]Screen, error) {
 	}, nil
 }
 
+// GetWindows lists managed windows for the window-picker UIs.
+//
+// The geometry reported here is deliberately FRAME-relative (DecorGeometry): a
+// picker must show the rectangle the user actually sees, title bar included.
+// That is not the space automation input lives in — pkg/target.X11Target offsets
+// clicks by the CLIENT origin (TranslateCoordinates), which is also the origin
+// Screenshot() captures from. Do not feed these coordinates to Click/Move.
 func (m *X11DisplayManager) GetWindows() ([]Window, error) {
 	clientIDs, err := ewmh.ClientListGet(m.xu)
 	if err != nil {

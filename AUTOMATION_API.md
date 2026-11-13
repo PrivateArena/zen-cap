@@ -40,7 +40,9 @@ If a `window` block is provided, Zen-Cap queries window properties via EWMH/ICCC
 
 The `target:` block selects the I/O backend used for screenshots and input injection. **Omitting the block defaults to `x11`**, preserving full backward compatibility with existing scripts.
 
-All backends expose the same action API — `click`, `move`, `type`, `key`, `scroll`, `find_image`, `if_found`, `if_pixel`, etc. work identically regardless of target.
+All backends expose the same action API — `click`, `move`, `hold`, `release`, `drag`, `type`, `key`, `find_image`, `find_text`, `ocr`, `if_found`, `if_pixel`, `if_window`, etc. work identically regardless of target.
+
+> **Planned, not implemented:** `scroll` exists on the backend interface (`target.Target.Scroll`) but is **not** a YAML action yet — `action: scroll` fails with `unknown action: scroll`. The HTTP API work adds it.
 
 ### Common Fields
 
@@ -292,6 +294,27 @@ Internally, coordinates sent to `Click`/`Move` are divided by `scale` before del
 ---
 
 
+## Coordinate space
+
+Every coordinate in a script — `x`/`y` on `click`, `hold`, `drag`, `if_pixel`, `region` bounds, and the offsets that `find_image`/`ocr` produce — is expressed in **the pixel space of the screenshot the same run takes**. Which screenshot that is depends on the target:
+
+| Run | `Screenshot()` returns | `(0, 0)` is | `ScreenSize()` |
+|-----|------------------------|-------------|----------------|
+| Full screen (no `window:` block) | the whole X root / display | the top-left of the monitor | monitor size |
+| Window-scoped (top-level `window:` block) | the **client area** of that window only, decorations excluded | the top-left of the client area | the client area size |
+
+Consequences worth knowing:
+
+- **A `find_image` → `click` round trip always lands.** The template is matched inside the captured image and the resulting coordinates are injected with the same origin, so a match found at `(x, y)` is clicked at `(x, y)`. Under a reparenting window manager this was not true for window-scoped runs: capture used the client origin while input used the decorated frame origin, so clicks landed one title-bar and border too far down and right.
+- **Window-scoped scripts are position-independent.** A script written against a window's client area keeps working after the window is moved, and never clicks through to whatever is behind it.
+- **Title bars and window borders are not addressable** in a window-scoped run. They are not part of the captured image, so no coordinate can reach them. Use a full-screen run to drive window chrome.
+- **Region shorthands resolve against that same image.** In a window-scoped run `region: BR` is the bottom-right quadrant of the *client area*, `region: "0,0,200,120"` is a box measured from the client top-left.
+- `window` mode `geometry` reports and accepts **client-area** `x`/`y` too, so a geometry you read back can be reused as a click origin without conversion.
+
+The one place frame (decorated) geometry is still reported is the window-picker API (`pkg/display`), which lists windows the way the user sees them on screen. Those coordinates are for display, not for clicking.
+
+---
+
 ## 3. Core Actions
 
 ### `wait`
@@ -472,15 +495,31 @@ mode: activate         # Options: "activate", "close", "minimize", "maximize", "
 window:                # Optional target filter (defaults to current window context)
   title: "VLC media player"
 ```
-For `geometry` mode, window position and dimensions are adjusted (omitted coordinates retain original window values):
+For `geometry` mode, window position and dimensions are adjusted (omitted coordinates retain original window values). `x`/`y` address the **client area** origin — the same `(0, 0)` the screenshots of that window start from, so the value can be used as a click origin without conversion. `offset_x`/`offset_y` are the target width and height.
 ```yaml
 action: window
 mode: geometry
-x: 100                 # Target X position (variables supported)
-y: 150                 # Target Y position
+x: 100                 # Target X position of the client area (variables supported)
+y: 150                 # Target Y position of the client area
 offset_x: 800          # Target width
 offset_y: 600          # Target height
 ```
+
+**Requests are verified, and a refusal is an error.** A window manager is free to ignore, clamp or adjust any of these requests, and it used to be able to do so silently. The action now reads the answer back from the X server and fails when the window did not end up where it was asked to:
+
+| `mode` | what is verified | typical failure text |
+|--------|------------------|----------------------|
+| `minimize` | the window actually left the screen (frame unmapped, or `_NET_WM_STATE_HIDDEN`) | `did not become off screen (iconified or unmapped) … the window manager ignored the request` |
+| `fullscreen` | `_NET_WM_STATE` really contains `_NET_WM_STATE_FULLSCREEN` (maximized is cleared first, because a maximized window keeps its work-area constraint) | `did not enter _NET_WM_STATE_FULLSCREEN …` |
+| `maximize` / `restore` | the state atom, and that the window is viewable again | as above |
+| `geometry` | the client rectangle the window manager applied (±2 px, 1 s budget) | `did not reach geometry 800x600+100+150 within 1s (still 1707x960+64+64) …` |
+
+Two consequences for scripts:
+
+- Requests outside the 16-bit geometry range (a position beyond ±32767, or a size beyond 65535) are **rejected before anything is sent**. X encodes window geometry in 16 bits, so such a request used to wrap around into a tiny or misplaced window.
+- A `minimize` on a window manager that does not iconify (some tiling WMs) now reports an error instead of succeeding. Guard it with `when:`/`if_window` or accept the failure.
+
+Under a window manager there is no way to force a managed window's geometry, so `geometry` asks politely via `_NET_MOVERESIZE_WINDOW` and then measures what happened. With no window manager at all (a bare `Xvfb`, or an `override_redirect` window) it configures the window directly, which is what makes headless runs deterministic.
 
 ### `stop`
 Terminates the script execution prematurely with a success status.

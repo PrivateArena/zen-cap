@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/jezek/xgb/xproto"
+	"github.com/jezek/xgbutil"
 	"github.com/jezek/xgbutil/ewmh"
-	"github.com/jezek/xgbutil/xwindow"
 
 	"zen-cap/pkg/capture"
 	"zen-cap/pkg/config"
@@ -149,7 +149,8 @@ func runRelease(step Step, ctx *ExecContext) error {
 // targets that track movement (scrcpy sliding, drag-and-drop) see motion
 // rather than a jump. When start equals end it degrades to a long press.
 // If any step fails or the run is aborted the button is released to avoid
-// leaving a stuck press.
+// leaving a stuck press, escalating to target.PanicReleaser when that release
+// itself fails.
 func runDrag(step Step, ctx *ExecContext) error {
 	x := getIntField(step.X, ctx.Variables, -1)
 	y := getIntField(step.Y, ctx.Variables, -1)
@@ -183,11 +184,11 @@ func runDrag(step Step, ctx *ExecContext) error {
 		// Long press: hold in place for the duration, then release.
 		select {
 		case <-ctx.AbortChan:
-			_ = ctx.Target.ButtonRelease(x, y, step.Button)
+			_ = releasePointer(ctx.Target, x, y, step.Button)
 			return fmt.Errorf("execution aborted by user")
 		case <-time.After(duration):
 		}
-		return ctx.Target.ButtonRelease(x, y, step.Button)
+		return releasePointer(ctx.Target, x, y, step.Button)
 	}
 
 	steps := int(duration / (16 * time.Millisecond))
@@ -199,20 +200,39 @@ func runDrag(step Step, ctx *ExecContext) error {
 		mx := x + (x2-x)*i/steps
 		my := y + (y2-y)*i/steps
 		if err := ctx.Target.Move(mx, my); err != nil {
-			_ = ctx.Target.ButtonRelease(mx, my, step.Button)
+			_ = releasePointer(ctx.Target, mx, my, step.Button)
 			return err
 		}
 		if i < steps {
 			select {
 			case <-ctx.AbortChan:
-				_ = ctx.Target.ButtonRelease(mx, my, step.Button)
+				_ = releasePointer(ctx.Target, mx, my, step.Button)
 				return fmt.Errorf("execution aborted by user")
 			case <-time.After(stepDelay):
 			}
 		}
 	}
 
-	return ctx.Target.ButtonRelease(x2, y2, step.Button)
+	return releasePointer(ctx.Target, x2, y2, step.Button)
+}
+
+// releasePointer lets go of a button, and escalates: if the plain release fails
+// on a backend that can force-release (target.PanicReleaser — X11 and VFB), a
+// press left down would leave the whole desktop acting as if the mouse were
+// held, so the panic release is worth trying before giving up.
+func releasePointer(tgt target.Target, x, y int, button string) error {
+	err := tgt.ButtonRelease(x, y, button)
+	if err == nil {
+		return nil
+	}
+	pr, ok := tgt.(target.PanicReleaser)
+	if !ok {
+		return err
+	}
+	if panicErr := pr.ReleaseAllButtons(); panicErr != nil {
+		return fmt.Errorf("%w (panic release also failed: %v)", err, panicErr)
+	}
+	return err
 }
 
 func runType(step Step, ctx *ExecContext) error {
@@ -361,18 +381,20 @@ func runFile(step Step, ctx *ExecContext) error {
 	return nil
 }
 
+// runWindow dispatches the `window` action. Every mode goes through
+// window_ops.go: no X request is issued here, and no request is left unverified
+// when verification is possible (F3, F4).
 func runWindow(step Step, ctx *ExecContext) error {
 	x11 := ctx.x11ctx()
 	if x11 == nil {
 		return fmt.Errorf("window action requires an x11 or vfb target")
 	}
 	xu := x11.XUtil()
+
 	var winID uint32
 	var err error
-
 	if step.Window != nil {
-		winID, err = ResolveWindow(xu, step.Window)
-		if err != nil {
+		if winID, err = ResolveWindow(xu, step.Window); err != nil {
 			return err
 		}
 	} else {
@@ -383,63 +405,103 @@ func runWindow(step Step, ctx *ExecContext) error {
 	}
 
 	mode := strings.ToLower(step.Mode)
+	ctx.Logger("[Automation] Window action %q on window 0x%x", mode, winID)
+
 	switch mode {
 	case "activate":
 		return ewmh.ActiveWindowReq(xu, xproto.Window(winID))
 	case "close":
 		return ewmh.CloseWindow(xu, xproto.Window(winID))
 	case "minimize":
-		return ewmh.WmStateReq(xu, xproto.Window(winID), 1, "_NET_WM_STATE_HIDDEN")
+		if err := MinimizeWindow(xu, winID); err != nil {
+			return err
+		}
+		return WaitForIconic(xu, winID, windowStateTimeout)
 	case "maximize":
-		return ewmh.WmStateReqExtra(xu, xproto.Window(winID), 1, "_NET_WM_STATE_MAXIMIZED_HORZ", "_NET_WM_STATE_MAXIMIZED_VERT", 1)
+		if err := ewmh.WmStateReqExtra(xu, xproto.Window(winID), ewmh.StateAdd,
+			"_NET_WM_STATE_MAXIMIZED_HORZ", "_NET_WM_STATE_MAXIMIZED_VERT", 2); err != nil {
+			return fmt.Errorf("x11: maximize window 0x%x: %w", winID, err)
+		}
+		// Maximized is verified by state atom *or* by the window visibly covering
+		// the screen: tiling WMs are maximal already and answer the request by
+		// doing nothing, which is not a failure.
+		return WaitForStateOrCoverage(xu, winID, "_NET_WM_STATE_MAXIMIZED_HORZ", maximizeCoverage, windowStateTimeout)
 	case "fullscreen":
-		return ewmh.WmStateReq(xu, xproto.Window(winID), 1, "_NET_WM_STATE_FULLSCREEN")
+		if err := RequestFullscreen(xu, winID); err != nil {
+			return err
+		}
+		return WaitForStateOrCoverage(xu, winID, "_NET_WM_STATE_FULLSCREEN", fullscreenCoverage, windowStateTimeout)
 	case "restore":
-		_ = ewmh.WmStateReq(xu, xproto.Window(winID), 0, "_NET_WM_STATE_FULLSCREEN")
-		_ = ewmh.WmStateReqExtra(xu, xproto.Window(winID), 0, "_NET_WM_STATE_MAXIMIZED_HORZ", "_NET_WM_STATE_MAXIMIZED_VERT", 1)
-		_ = ewmh.WmStateReq(xu, xproto.Window(winID), 0, "_NET_WM_STATE_HIDDEN")
-		xwindow.New(xu, xproto.Window(winID)).Map()
-		return nil
+		if err := RequestState(xu, winID, false, "_NET_WM_STATE_FULLSCREEN"); err != nil {
+			return err
+		}
+		if err := ClearMaximized(xu, winID); err != nil {
+			return err
+		}
+		if err := RequestState(xu, winID, false, "_NET_WM_STATE_HIDDEN"); err != nil {
+			return err
+		}
+		if err := RestoreWindow(xu, winID); err != nil {
+			return err
+		}
+		return WaitForViewable(xu, winID, windowStateTimeout)
 	case "raise":
-		xwindow.New(xu, xproto.Window(winID)).Stack(xproto.StackModeAbove)
-		return nil
+		return StackWindow(xu, winID, xproto.StackModeAbove)
 	case "lower":
-		xwindow.New(xu, xproto.Window(winID)).Stack(xproto.StackModeBelow)
-		return nil
+		return StackWindow(xu, winID, xproto.StackModeBelow)
 	case "geometry":
-		x := getIntField(step.X, ctx.Variables, -1)
-		y := getIntField(step.Y, ctx.Variables, -1)
-		w := step.OffsetX
-		h := step.OffsetY
-
-		win := xwindow.New(xu, xproto.Window(winID))
-		geom, err := win.Geometry()
-		if err != nil {
-			return fmt.Errorf("failed to get current window geometry: %w", err)
-		}
-
-		targetX := x
-		if x == -1 {
-			targetX = geom.X()
-		}
-		targetY := y
-		if y == -1 {
-			targetY = geom.Y()
-		}
-		targetW := w
-		if w <= 0 {
-			targetW = geom.Width()
-		}
-		targetH := h
-		if h <= 0 {
-			targetH = geom.Height()
-		}
-
-		win.MoveResize(targetX, targetY, targetW, targetH)
-		return nil
+		return windowGeometry(step, ctx, xu, winID)
 	default:
 		return fmt.Errorf("unsupported window mode: %q", step.Mode)
 	}
+}
+
+// windowGeometry implements `window: geometry`. x/y address the CLIENT origin —
+// the same (0,0) a screenshot of this window uses — and the result is read back
+// from the server rather than assumed. Omitted fields keep their current value.
+func windowGeometry(step Step, ctx *ExecContext, xu *xgbutil.XUtil, winID uint32) error {
+	x := getIntField(step.X, ctx.Variables, -1)
+	y := getIntField(step.Y, ctx.Variables, -1)
+
+	current, err := CurrentGeometry(xu, winID, false)
+	if err != nil {
+		return err
+	}
+
+	want := current
+	if x >= 0 {
+		want.X = x
+	}
+	if y >= 0 {
+		want.Y = y
+	}
+	if step.OffsetX > 0 {
+		want.W = step.OffsetX
+	}
+	if step.OffsetY > 0 {
+		want.H = step.OffsetY
+	}
+
+	// Resize before moving: clearing the maximized state (which resizing a
+	// managed window requires) can shift the position, and the WM has then had
+	// every say it wants before we place the window for good.
+	if want.W != current.W || want.H != current.H {
+		if err := ResizeWindow(xu, winID, want.W, want.H); err != nil {
+			return err
+		}
+	}
+	if want.X != current.X || want.Y != current.Y {
+		if err := MoveWindow(xu, winID, want.X, want.Y); err != nil {
+			return err
+		}
+	}
+
+	actual, err := WaitForGeometry(xu, winID, want, windowGeometryTimeout)
+	if err != nil {
+		return err
+	}
+	ctx.Logger("[Automation] Window 0x%x geometry is now %s (requested %s)", winID, actual, want)
+	return nil
 }
 
 func runFindImage(step Step, ctx *ExecContext) error {
@@ -469,7 +531,7 @@ func runFindImage(step Step, ctx *ExecContext) error {
 		confidence = 0.90
 	}
 
-	timeout := 10 * time.Second
+	timeout := defaultFindTimeout
 	if step.Timeout != "" {
 		if d, err := time.ParseDuration(step.Timeout); err == nil {
 			timeout = d
@@ -478,71 +540,42 @@ func runFindImage(step Step, ctx *ExecContext) error {
 
 	ctx.Logger("[Automation] Find Image: %q (timeout=%v, confidence=%.2f)", step.Image, timeout, confidence)
 
-	deadline := time.Now().Add(timeout)
+	poller := newScreenPoller(ctx, timeout, capturePollInterval)
 	var bestConf float64
 	for {
-		select {
-		case <-ctx.AbortChan:
-			return fmt.Errorf("execution aborted by user")
-		default:
-		}
-
-		haystack, err := ctx.Target.Screenshot()
-		if err != nil {
-			ctx.Logger("[Automation] Error capturing screen for search: %v", err)
-			time.Sleep(500 * time.Millisecond)
-			continue
-		}
-
-		offsetX, offsetY := 0, 0
-		if step.Region != "" {
-			rx, ry, rw, rh, err := ParseRegion(step.Region, haystack.Bounds().Dx(), haystack.Bounds().Dy())
-			if err == nil {
-				haystack, offsetX, offsetY = CropImage(haystack, rx, ry, rw, rh)
-			} else {
-				ctx.Logger("[Automation] Warning parsing region: %v", err)
+		res, err := poller.step(step.Region, func(haystack image.Image, offX, offY int) (bool, error) {
+			x, y, conf, err := FindImage(haystack, needle, confidence)
+			if conf > bestConf {
+				bestConf = conf
 			}
-		}
+			if err != nil {
+				return false, nil
+			}
 
-		x, y, conf, err := FindImage(haystack, needle, confidence)
-		if conf > bestConf {
-			bestConf = conf
-		}
-
-		if err == nil {
 			// Restore coordinates to absolute screen/window bounds
-			x += offsetX
-			y += offsetY
+			x += offX
+			y += offY
 			ctx.Logger("[Automation] Match found at (%d, %d) with confidence %.4f", x, y, conf)
 			ctx.LastFoundX = x
 			ctx.LastFoundY = y
-			targetX := x + step.OffsetX
-			targetY := y + step.OffsetY
 
-			if strings.ToLower(step.Then) == "click" {
-				clickStep := Step{
-					Action: "click",
-					X:      targetX,
-					Y:      targetY,
-					Button: step.Button,
-				}
-				return runClick(clickStep, ctx)
-			} else if strings.ToLower(step.Then) == "move" {
-				moveStep := Step{
-					Action: "move",
-					X:      targetX,
-					Y:      targetY,
-				}
-				return runMove(moveStep, ctx)
+			switch strings.ToLower(step.Then) {
+			case "click":
+				return true, runClick(Step{Action: "click", X: x + step.OffsetX, Y: y + step.OffsetY, Button: step.Button}, ctx)
+			case "move":
+				return true, runMove(Step{Action: "move", X: x + step.OffsetX, Y: y + step.OffsetY}, ctx)
 			}
+			return true, nil
+		})
+		if err != nil {
+			return err
+		}
+		if res == outDone {
 			return nil
 		}
-
-		if time.Now().After(deadline) {
-			return fmt.Errorf("template image %q not found within timeout (best confidence %.4f)", step.Image, bestConf)
+		if res == outTimeout || res == outCaptureFailed {
+			return fmt.Errorf("template image %q not found within timeout (best confidence %.4f)%s", step.Image, bestConf, poller.captureNote())
 		}
-
-		time.Sleep(500 * time.Millisecond)
 	}
 }
 
@@ -551,7 +584,7 @@ func runFindText(step Step, ctx *ExecContext) error {
 		return fmt.Errorf("missing target text in find_text step")
 	}
 
-	timeout := 10 * time.Second
+	timeout := defaultFindTimeout
 	if step.Timeout != "" {
 		if d, err := time.ParseDuration(step.Timeout); err == nil {
 			timeout = d
@@ -567,67 +600,51 @@ func runFindText(step Step, ctx *ExecContext) error {
 
 	ctx.Logger("[Automation] Find Text: %q (timeout=%v, lang=%s)", step.Text, timeout, ocrLang)
 
-	deadline := time.Now().Add(timeout)
+	poller := newScreenPoller(ctx, timeout, capturePollInterval)
+	var lastErr error
 	for {
-		select {
-		case <-ctx.AbortChan:
-			return fmt.Errorf("execution aborted by user")
-		default:
-		}
-
-		haystack, err := ctx.Target.Screenshot()
-		if err != nil {
-			ctx.Logger("[Automation] Error capturing screen for search: %v", err)
-			time.Sleep(500 * time.Millisecond)
-			continue
-		}
-
-		offsetX, offsetY := 0, 0
-		if step.Region != "" {
-			rx, ry, rw, rh, err := ParseRegion(step.Region, haystack.Bounds().Dx(), haystack.Bounds().Dy())
-			if err == nil {
-				haystack, offsetX, offsetY = CropImage(haystack, rx, ry, rw, rh)
-			} else {
-				ctx.Logger("[Automation] Warning parsing region: %v", err)
+		res, err := poller.step(step.Region, func(haystack image.Image, offX, offY int) (bool, error) {
+			x, y, conf, err := FindText(haystack, ocrAddr, ocrLang, step.Text)
+			if err != nil {
+				// Keep the last OCR failure so the timeout message can quote it.
+				lastErr = err
+				return false, nil
 			}
-		}
 
-		x, y, conf, err := FindText(haystack, ocrAddr, ocrLang, step.Text)
-		if err == nil {
 			// Restore coordinates to absolute screen/window bounds
-			x += offsetX
-			y += offsetY
+			x += offX
+			y += offY
 			ctx.Logger("[Automation] Text %q found at (%d, %d) with confidence %.4f", step.Text, x, y, conf)
 			ctx.LastFoundX = x
 			ctx.LastFoundY = y
-			targetX := x + step.OffsetX
-			targetY := y + step.OffsetY
 
-			if strings.ToLower(step.Then) == "click" {
-				clickStep := Step{
-					Action: "click",
-					X:      targetX,
-					Y:      targetY,
-					Button: step.Button,
-				}
-				return runClick(clickStep, ctx)
-			} else if strings.ToLower(step.Then) == "move" {
-				moveStep := Step{
-					Action: "move",
-					X:      targetX,
-					Y:      targetY,
-				}
-				return runMove(moveStep, ctx)
+			switch strings.ToLower(step.Then) {
+			case "click":
+				return true, runClick(Step{Action: "click", X: x + step.OffsetX, Y: y + step.OffsetY, Button: step.Button}, ctx)
+			case "move":
+				return true, runMove(Step{Action: "move", X: x + step.OffsetX, Y: y + step.OffsetY}, ctx)
 			}
+			return true, nil
+		})
+		if err != nil {
+			return err
+		}
+		if res == outDone {
 			return nil
 		}
-
-		if time.Now().After(deadline) {
-			return fmt.Errorf("text %q not found within timeout: %w", step.Text, err)
+		if res == outTimeout || res == outCaptureFailed {
+			return fmt.Errorf("text %q not found within timeout%s: %w", step.Text, poller.captureNote(), joinErr(lastErr, ErrNotFound))
 		}
-
-		time.Sleep(500 * time.Millisecond)
 	}
+}
+
+// joinErr returns err, or fallback when err is nil, so a timeout message always
+// has something to quote even if every attempt failed before the matcher ran.
+func joinErr(err, fallback error) error {
+	if err != nil {
+		return err
+	}
+	return fallback
 }
 
 func runOCR(step Step, ctx *ExecContext) error {
@@ -639,7 +656,7 @@ func runOCR(step Step, ctx *ExecContext) error {
 		return fmt.Errorf("missing target text in ocr step")
 	}
 
-	timeout := 10 * time.Second
+	timeout := defaultFindTimeout
 	if step.Timeout != "" {
 		if d, err := time.ParseDuration(step.Timeout); err == nil {
 			timeout = d
@@ -659,38 +676,20 @@ func runOCR(step Step, ctx *ExecContext) error {
 
 	ctx.Logger("[Automation] OCR search: %q (timeout=%v, lang=%s, model=%s)", targetText, timeout, ocrLang, ocrModel)
 
-	deadline := time.Now().Add(timeout)
+	poller := newScreenPoller(ctx, timeout, capturePollInterval)
+	var lastErr error
 	for {
-		select {
-		case <-ctx.AbortChan:
-			return fmt.Errorf("execution aborted by user")
-		default:
-		}
-
-		haystack, err := ctx.Target.Screenshot()
-		if err != nil {
-			ctx.Logger("[Automation] Error capturing screen for OCR: %v", err)
-			time.Sleep(500 * time.Millisecond)
-			continue
-		}
-
-		offsetX, offsetY := 0, 0
-		if step.Region != "" {
-			rx, ry, rw, rh, err := ParseRegion(step.Region, haystack.Bounds().Dx(), haystack.Bounds().Dy())
-			if err == nil {
-				haystack, offsetX, offsetY = CropImage(haystack, rx, ry, rw, rh)
-			} else {
-				ctx.Logger("[Automation] Warning parsing region: %v", err)
+		res, err := poller.step(step.Region, func(haystack image.Image, offX, offY int) (bool, error) {
+			x, y, bounds, conf, err := FindTextWithBounds(haystack, ocrAddr, ocrLang, ocrModel, targetText)
+			if err != nil {
+				lastErr = err
+				return false, nil
 			}
-		}
 
-		x, y, bounds, conf, err := FindTextWithBounds(haystack, ocrAddr, ocrLang, ocrModel, targetText)
-		if err == nil {
 			if step.Output != "" {
 				minX, minY := bounds.Min.X, bounds.Min.Y
-				maxX, maxY := bounds.Max.X, bounds.Max.Y
-				rw := maxX - minX
-				rh := maxY - minY
+				rw := bounds.Max.X - minX
+				rh := bounds.Max.Y - minY
 
 				textboxImg, _, _ := CropImage(haystack, minX, minY, rw, rh)
 
@@ -699,51 +698,45 @@ func runOCR(step Step, ctx *ExecContext) error {
 					outputPath = filepath.Join(ctx.ScriptDir, outputPath)
 				}
 				if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
-					return fmt.Errorf("failed to create directory for OCR output: %w", err)
+					return true, fmt.Errorf("failed to create directory for OCR output: %w", err)
 				}
 				outF, err := os.Create(outputPath)
 				if err != nil {
-					return fmt.Errorf("failed to create OCR output file: %w", err)
+					return true, fmt.Errorf("failed to create OCR output file: %w", err)
 				}
 				if err := png.Encode(outF, textboxImg); err != nil {
 					outF.Close()
-					return fmt.Errorf("failed to encode/write OCR textbox image: %w", err)
+					return true, fmt.Errorf("failed to encode/write OCR textbox image: %w", err)
 				}
 				outF.Close()
 				ctx.Logger("[Automation] OCR textbox image saved to %s", outputPath)
 			}
 
-			x += offsetX
-			y += offsetY
+			// Restore coordinates to absolute screen/window bounds
+			x += offX
+			y += offY
 			ctx.Logger("[Automation] OCR: Text %q found at (%d, %d) with confidence %.4f", targetText, x, y, conf)
 			ctx.LastFoundX = x
 			ctx.LastFoundY = y
 			targetX := x + step.OffsetX
 			targetY := y + step.OffsetY
 
-			if strings.ToLower(step.Then) == "click" {
-				clickStep := Step{
-					Action: "click",
-					X:      targetX,
-					Y:      targetY,
-					Button: step.Button,
-				}
-				return runClick(clickStep, ctx)
-			} else if strings.ToLower(step.Then) == "move" {
-				moveStep := Step{
-					Action: "move",
-					X:      targetX,
-					Y:      targetY,
-				}
-				return runMove(moveStep, ctx)
+			switch strings.ToLower(step.Then) {
+			case "click":
+				return true, runClick(Step{Action: "click", X: targetX, Y: targetY, Button: step.Button}, ctx)
+			case "move":
+				return true, runMove(Step{Action: "move", X: targetX, Y: targetY}, ctx)
 			}
+			return true, nil
+		})
+		if err != nil {
+			return err
+		}
+		if res == outDone {
 			return nil
 		}
-
-		if time.Now().After(deadline) {
-			return fmt.Errorf("text %q not found via OCR within timeout: %w", targetText, err)
+		if res == outTimeout || res == outCaptureFailed {
+			return fmt.Errorf("text %q not found via OCR within timeout%s: %w", targetText, poller.captureNote(), joinErr(lastErr, ErrNotFound))
 		}
-
-		time.Sleep(500 * time.Millisecond)
 	}
 }

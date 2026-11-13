@@ -257,98 +257,88 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 			}
 		}
 
-		deadline := time.Now().Add(waitTimeout)
+		// One probe per poll attempt, chosen by find type. An unknown find type
+		// is a script error and must surface before anything is captured, just
+		// as the hand-rolled loop this replaces did.
+		var probe func(haystack image.Image, offX, offY int) (bool, error)
+		switch findType {
+		case "image":
+			confidence := interpolatedStep.Confidence
+			if confidence <= 0 {
+				confidence = 0.90
+			}
+			probe = func(haystack image.Image, offX, offY int) (bool, error) {
+				fx, fy, _, err := FindImage(haystack, needle, confidence)
+				if err != nil {
+					return false, nil
+				}
+				ctx.LastFoundX = fx + offX
+				ctx.LastFoundY = fy + offY
+				return true, nil
+			}
+		case "text", "ocr":
+			if targetVal == "" {
+				return fmt.Errorf("missing target text in if_found step")
+			}
+			ocrAddr := "http://localhost:8765"
+			ocrLang := "ch"
+			if ctx.Config != nil {
+				ocrAddr = ctx.Config.OCRAddress
+				ocrLang = ctx.Config.OCRLanguage
+			}
+			if interpolatedStep.Language != "" {
+				ocrLang = interpolatedStep.Language
+			}
+			ocrModel := interpolatedStep.Model
+			probe = func(haystack image.Image, offX, offY int) (bool, error) {
+				fx, fy, bounds, _, err := FindTextWithBounds(haystack, ocrAddr, ocrLang, ocrModel, targetVal)
+				if err != nil {
+					return false, nil
+				}
+				ctx.LastFoundX = fx + offX
+				ctx.LastFoundY = fy + offY
+
+				if interpolatedStep.Output != "" {
+					minX, minY := bounds.Min.X, bounds.Min.Y
+					maxX, maxY := bounds.Max.X, bounds.Max.Y
+					rw := maxX - minX
+					rh := maxY - minY
+
+					textboxImg, _, _ := CropImage(haystack, minX, minY, rw, rh)
+
+					outputPath := interpolatedStep.Output
+					if !filepath.IsAbs(outputPath) && ctx.ScriptDir != "" {
+						outputPath = filepath.Join(ctx.ScriptDir, outputPath)
+					}
+					// Best-effort, as before: a failed debug dump must not fail the branch.
+					if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err == nil {
+						if outF, err := os.Create(outputPath); err == nil {
+							if err := png.Encode(outF, textboxImg); err == nil {
+								ctx.Logger("[Automation] if_found cropped textbox image saved to %s", outputPath)
+							}
+							outF.Close()
+						}
+					}
+				}
+				return true, nil
+			}
+		default:
+			return fmt.Errorf("unknown find target in if_found step: %q", findType)
+		}
+
+		// if_found never errors out on a miss — taking the else branch *is* the
+		// result. The poller only supplies the cadence, the abort check and,
+		// unlike the old loop, a deadline that capture failures cannot outrun.
+		poller := newScreenPoller(ctx, waitTimeout, statePollInterval)
 		for {
-			select {
-			case <-ctx.AbortChan:
-				return fmt.Errorf("execution aborted by user")
-			default:
+			res, err := poller.step(interpolatedStep.Region, probe)
+			if err != nil {
+				return err
 			}
-
-			if findType == "image" {
-				confidence := interpolatedStep.Confidence
-				if confidence <= 0 {
-					confidence = 0.90
-				}
-				haystack, err := ctx.Target.Screenshot()
-				if err == nil {
-					offsetX, offsetY := 0, 0
-					if interpolatedStep.Region != "" {
-						rx, ry, rw, rh, err := ParseRegion(interpolatedStep.Region, haystack.Bounds().Dx(), haystack.Bounds().Dy())
-						if err == nil {
-							haystack, offsetX, offsetY = CropImage(haystack, rx, ry, rw, rh)
-						}
-					}
-					fx, fy, _, err := FindImage(haystack, needle, confidence)
-					if err == nil {
-						found = true
-						ctx.LastFoundX = fx + offsetX
-						ctx.LastFoundY = fy + offsetY
-					}
-				}
-			} else if findType == "text" || findType == "ocr" {
-				if targetVal == "" {
-					return fmt.Errorf("missing target text in if_found step")
-				}
-				ocrAddr := "http://localhost:8765"
-				ocrLang := "ch"
-				if ctx.Config != nil {
-					ocrAddr = ctx.Config.OCRAddress
-					ocrLang = ctx.Config.OCRLanguage
-				}
-				if interpolatedStep.Language != "" {
-					ocrLang = interpolatedStep.Language
-				}
-				ocrModel := interpolatedStep.Model
-				haystack, err := ctx.Target.Screenshot()
-				if err == nil {
-					offsetX, offsetY := 0, 0
-					if interpolatedStep.Region != "" {
-						rx, ry, rw, rh, err := ParseRegion(interpolatedStep.Region, haystack.Bounds().Dx(), haystack.Bounds().Dy())
-						if err == nil {
-							haystack, offsetX, offsetY = CropImage(haystack, rx, ry, rw, rh)
-						}
-					}
-					fx, fy, bounds, _, err := FindTextWithBounds(haystack, ocrAddr, ocrLang, ocrModel, targetVal)
-					if err == nil {
-						found = true
-						ctx.LastFoundX = fx + offsetX
-						ctx.LastFoundY = fy + offsetY
-
-						if interpolatedStep.Output != "" {
-							minX, minY := bounds.Min.X, bounds.Min.Y
-							maxX, maxY := bounds.Max.X, bounds.Max.Y
-							rw := maxX - minX
-							rh := maxY - minY
-
-							textboxImg, _, _ := CropImage(haystack, minX, minY, rw, rh)
-
-							outputPath := interpolatedStep.Output
-							if !filepath.IsAbs(outputPath) && ctx.ScriptDir != "" {
-								outputPath = filepath.Join(ctx.ScriptDir, outputPath)
-							}
-							if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err == nil {
-								if outF, err := os.Create(outputPath); err == nil {
-									if err := png.Encode(outF, textboxImg); err == nil {
-										ctx.Logger("[Automation] if_found cropped textbox image saved to %s", outputPath)
-									}
-									outF.Close()
-								}
-							}
-						}
-					}
-				}
-			} else {
-				return fmt.Errorf("unknown find target in if_found step: %q", findType)
-			}
-
-			if found {
+			if res != outMissed {
+				found = res == outDone
 				break
 			}
-			if time.Now().After(deadline) {
-				break
-			}
-			time.Sleep(100 * time.Millisecond)
 		}
 
 		var targetSteps []Step
@@ -436,37 +426,30 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 
 		checkAbsent := strings.ToLower(interpolatedStep.Mode) == "absent" || strings.ToLower(interpolatedStep.Mode) == "not_exists"
 
+		// The condition is a window lookup, not a screen capture, so it drives the
+		// poller's capture-free tick: same bounded cadence and abort handling as
+		// every other poll site, without a second hand-rolled deadline loop.
+		poller := newScreenPoller(ctx, waitTimeout, statePollInterval)
 		found := false
-		deadline := time.Now().Add(waitTimeout)
 		for {
-			select {
-			case <-ctx.AbortChan:
-				return fmt.Errorf("execution aborted by user")
-			default:
-			}
-
-			var exists bool
-			if x11 := ctx.x11ctx(); x11 != nil {
-				_, err := ResolveWindow(x11.XUtil(), interpolatedStep.Window)
-				exists = (err == nil)
-			}
-
-			if checkAbsent {
-				if !exists {
-					found = true
-					break
+			res, err := poller.tick(func() (bool, error) {
+				var exists bool
+				if x11 := ctx.x11ctx(); x11 != nil {
+					_, err := ResolveWindow(x11.XUtil(), interpolatedStep.Window)
+					exists = (err == nil)
 				}
-			} else {
-				if exists {
-					found = true
-					break
+				if checkAbsent {
+					return !exists, nil
 				}
+				return exists, nil
+			})
+			if err != nil {
+				return err
 			}
-
-			if time.Now().After(deadline) {
+			if res != outMissed {
+				found = res == outDone
 				break
 			}
-			time.Sleep(100 * time.Millisecond)
 		}
 
 		var targetSteps []Step

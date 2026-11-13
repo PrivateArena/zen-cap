@@ -37,6 +37,23 @@ type Target interface {
 	Close() error
 }
 
+// PanicReleaser is an OPTIONAL capability interface, deliberately not part of
+// Target: only backends that can synthesise a bare button release can honour it
+// (ADB/WDA expose no release-only primitive).
+//
+// Implementations must force-release every pointer button they might be
+// holding, at the pointer's current position. Call sites use it to undo a stuck
+// press after an aborted or failed gesture:
+//
+//	if pr, ok := tgt.(target.PanicReleaser); ok {
+//		_ = pr.ReleaseAllButtons()
+//	}
+type PanicReleaser interface {
+	// ReleaseAllButtons releases buttons 1-3 (or the device equivalent),
+	// returning an error only when no release could be injected at all.
+	ReleaseAllButtons() error
+}
+
 // Config is the YAML-serialisable configuration for any target type.
 // Only the fields relevant to the chosen Type need to be set.
 type Config struct {

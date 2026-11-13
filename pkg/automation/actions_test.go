@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"zen-cap/pkg/capture"
 	"zen-cap/pkg/config"
@@ -1040,4 +1041,221 @@ func TestDragReleasesOnMoveError(t *testing.T) {
 	if failing.releases[0].x != 10 || failing.releases[0].y != 0 {
 		t.Errorf("expected cleanup release at first failed move (10, 0), got %+v", failing.releases[0])
 	}
+}
+
+// --- F2 regression: a capture failure must not outlive the step's timeout ---
+
+// writeTemplatePNG writes a small PNG usable as a find_image template.
+func writeTemplatePNG(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "tpl.png")
+	img := image.NewRGBA(image.Rect(0, 0, 8, 8))
+	draw.Draw(img, img.Bounds(), &image.Uniform{color.RGBA{0, 255, 0, 255}}, image.Point{}, draw.Src)
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("create template: %v", err)
+	}
+	if err := png.Encode(f, img); err != nil {
+		t.Fatalf("encode template: %v", err)
+	}
+	f.Close()
+	return path
+}
+
+func captureFailCtx() *ExecContext {
+	return &ExecContext{
+		Target:    newCaptureFailTarget(),
+		Logger:    func(string, ...interface{}) {},
+		Variables: make(map[string]interface{}),
+	}
+}
+
+func TestFindImageCaptureErrorTimesOut(t *testing.T) {
+	ctx := captureFailCtx()
+	step := Step{Action: "find_image", Image: writeTemplatePNG(t), Timeout: "300ms"}
+
+	start := time.Now()
+	err := ExecuteStep(step, ctx)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected an error when every capture fails, got nil")
+	}
+	if !strings.Contains(err.Error(), "not found within timeout") {
+		t.Errorf("expected a timeout error, got %q", err)
+	}
+	if !strings.Contains(err.Error(), "capture device gone") {
+		t.Errorf("expected the capture error to be reported, got %q", err)
+	}
+	if elapsed >= 1500*time.Millisecond {
+		t.Errorf("poll loop outlived its 300ms timeout: %v (F2 infinite recapture regression)", elapsed)
+	}
+}
+
+func TestFindTextCaptureErrorTimesOut(t *testing.T) {
+	ctx := captureFailCtx()
+	ctx.Config = &config.Config{OCRAddress: "http://127.0.0.1:1", OCRLanguage: "en"}
+	step := Step{Action: "find_text", Text: "hello", Timeout: "300ms"}
+
+	start := time.Now()
+	err := ExecuteStep(step, ctx)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected an error when every capture fails, got nil")
+	}
+	if !strings.Contains(err.Error(), "not found within timeout") {
+		t.Errorf("expected a timeout error, got %q", err)
+	}
+	if elapsed >= 1500*time.Millisecond {
+		t.Errorf("poll loop outlived its 300ms timeout: %v", elapsed)
+	}
+}
+
+func TestOCRCaptureErrorTimesOut(t *testing.T) {
+	ctx := captureFailCtx()
+	ctx.Config = &config.Config{OCRAddress: "http://127.0.0.1:1", OCRLanguage: "en"}
+	step := Step{Action: "ocr", Text: "hello", Timeout: "300ms"}
+
+	start := time.Now()
+	err := ExecuteStep(step, ctx)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected an error when every capture fails, got nil")
+	}
+	if !strings.Contains(err.Error(), "not found via OCR within timeout") {
+		t.Errorf("expected an OCR timeout error, got %q", err)
+	}
+	if elapsed >= 1500*time.Millisecond {
+		t.Errorf("poll loop outlived its 300ms timeout: %v", elapsed)
+	}
+}
+
+// TestFindImageAbortsDuringSleep proves an abort unblocks a poll immediately
+// instead of after the remaining interval.
+func TestFindImageAbortsDuringSleep(t *testing.T) {
+	ctx := &ExecContext{
+		Target:    newMockTarget(nil),
+		Logger:    func(string, ...interface{}) {},
+		Variables: make(map[string]interface{}),
+		AbortChan: make(chan struct{}),
+	}
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		close(ctx.AbortChan)
+	}()
+
+	step := Step{Action: "find_image", Image: writeTemplatePNG(t), Timeout: "30s"}
+	start := time.Now()
+	err := ExecuteStep(step, ctx)
+	if err == nil {
+		t.Fatal("expected abort error")
+	}
+	if !strings.Contains(err.Error(), "aborted") {
+		t.Errorf("expected abort error, got %q", err)
+	}
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Errorf("abort did not interrupt a 30s poll quickly: %v", elapsed)
+	}
+}
+
+// --- if_found must stay bounded and keep its hard errors (step 3) ---
+
+func TestIfFoundCaptureErrorsTakeElseBranch(t *testing.T) {
+	ctx := captureFailCtx()
+	ctx.AbortChan = make(chan struct{})
+	step := Step{
+		Action:      "if_found",
+		Type:        "image",
+		Image:       writeTemplatePNG(t),
+		WaitTimeout: "300ms",
+		Steps:       []Step{{Action: "var", Name: "res", Value: "found"}},
+		Else:        []Step{{Action: "var", Name: "res", Value: "else"}},
+	}
+	start := time.Now()
+	if err := executeStepWithControl(step, ctx); err != nil {
+		t.Fatalf("if_found must not error on a miss, got %v", err)
+	}
+	if elapsed := time.Since(start); elapsed >= 1500*time.Millisecond {
+		t.Errorf("if_found outlived its 300ms wait_timeout: %v", elapsed)
+	}
+	if ctx.Variables["res"] != "else" {
+		t.Errorf("expected else branch, got %v", ctx.Variables["res"])
+	}
+}
+
+func TestIfFoundBrokenTemplateStillErrors(t *testing.T) {
+	ctx := captureFailCtx()
+	ctx.AbortChan = make(chan struct{})
+	step := Step{
+		Action:      "if_found",
+		Type:        "image",
+		Image:       "/definitely/not/here.png",
+		WaitTimeout: "3s",
+		Steps:       []Step{{Action: "var", Name: "res", Value: "found"}},
+	}
+	err := executeStepWithControl(step, ctx)
+	if err == nil || !strings.Contains(err.Error(), "failed to open template image") {
+		t.Fatalf("expected template open error to propagate, got %v", err)
+	}
+}
+
+// --- stuck-press escalation to target.PanicReleaser (F6, step 7) ---
+
+// stuckReleaseTarget fails ButtonRelease the way a half-dead X connection does,
+// and records whether the caller fell back to a panic release.
+type stuckReleaseTarget struct {
+	*mockTarget
+	releaseErr error
+	panicCalls int
+	panicErr   error
+}
+
+func (m *stuckReleaseTarget) ButtonRelease(x, y int, btn string) error { return m.releaseErr }
+
+func (m *stuckReleaseTarget) ReleaseAllButtons() error {
+	m.panicCalls++
+	return m.panicErr
+}
+
+func TestDragEscalatesToPanicRelease(t *testing.T) {
+	sentinel := errors.New("x11: fake button release: BadWindow")
+	stuck := &stuckReleaseTarget{mockTarget: newMockTarget(nil), releaseErr: sentinel}
+	ctx := &ExecContext{
+		Target:    stuck,
+		Logger:    func(string, ...interface{}) {},
+		Variables: make(map[string]interface{}),
+	}
+
+	step := Step{Action: "drag", X: 10, Y: 10, X2: 40, Y2: 40, Duration: "32ms"}
+	err := ExecuteStep(step, ctx)
+	if err == nil || !errors.Is(err, sentinel) {
+		t.Fatalf("expected the release error to surface, got %v", err)
+	}
+	if stuck.panicCalls == 0 {
+		t.Fatal("a failed release on a PanicReleaser backend must escalate to ReleaseAllButtons")
+	}
+
+	// A backend without the capability is left alone.
+	plain := &noPanicTarget{mockTarget: newMockTarget(nil)}
+	ctx.Target = plain
+	if err := ExecuteStep(step, ctx); err == nil {
+		t.Fatal("expected release error")
+	}
+	if len(plain.releases) == 0 {
+		t.Error("plain release should still have been attempted")
+	}
+}
+
+// noPanicTarget deliberately does not implement PanicReleaser.
+type noPanicTarget struct{ *mockTarget }
+
+func (m *noPanicTarget) ButtonRelease(x, y int, btn string) error {
+	m.releases = append(m.releases, struct {
+		x, y int
+		btn  string
+	}{x, y, btn})
+	return errors.New("release failed")
 }

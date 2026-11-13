@@ -126,3 +126,36 @@ After this lands, `ARCHITECTURE_PLAN_automation-http-api.md` may assume:
 - `screenPoller` (`pkg/automation/poll.go`) is the only polling primitive — its `wait_until` action builds on it.
 - Window-scoped `Screenshot()` + `Click()` agree on the client area, which is the premise of its `/automation/screenshot` + `click` ergonomics.
 - Its `window_state` read-back action can reuse `pkg/automation/window_ops.go: CurrentGeometry` rather than re-deriving geometry.
+
+---
+
+## Implementation notes (executed 2025-11-13)
+
+All 14 steps landed; `go build ./...` clean, `go test ./pkg/automation/... ./pkg/target/...`
+green headless (live tests self-skip), on scratch Xvfb `:99`, and against the real
+KDE/X11 session. Where the blueprint could not be followed literally:
+
+| Blueprint item | What was built instead | Why |
+|---|---|---|
+| `xproto.IconifyWindow(conn, id).Check()` (step 10) | `ewmh.ClientEvent(xu, id, "WM_CHANGE_STATE", IconicState)` in `MinimizeWindow` | `IconifyWindow` does not exist in `github.com/jezek/xgb`: it is an Xlib convenience wrapper around exactly that ICCCM client message |
+| `ewmh.Supported(xu, "MOVERESIZE_WINDOW", false)` (step 10) | `SupportedByWM(xu, name)` in `window_ops.go`, reading `_NET_SUPPORTED` via `ewmh.SupportedGet` | this xgbutil revision has no `Supported` helper, only `SupportedGet` |
+| `conn.Sync()` before returning from `ReleaseAllButtons` (step 8) | a `QueryPointer` round trip | `xgb.Conn.Sync()` returns no value, so it cannot report the flushed errors |
+| `WaitForMapState(id, MapStateIconic)` (step 10) | `WaitForIconic` → `WaitForViewable`/`waitForOnScreen`, backed by `onScreen()` | X has no `MapStateIconic`: iconifying unmaps the **frame**, not the client, and EWMH signals the same thing with `_NET_WM_STATE_HIDDEN`. `onScreen` = frame viewable && !HIDDEN |
+| `PollStep` outcomes `outTimeout` on capture errors (steps 1, 2) | terminal `outCaptureFailed` when **no** capture ever succeeded, `outTimeout` otherwise | makes the "the window died" error distinguishable from "the needle is gone"; both are terminal and both say `not found within timeout` |
+| `xwindow.MoveResize` for size (step 10) | `xwindow.Resize` (size only) via `ResizeWindow`, after `ClearMaximized` | MoveResize would also rewrite the position in the wrong (parent-relative) space |
+| `ewmh.MoveWindow` whenever EWMH is advertised (step 10) | `ewmh.MoveWindow` **only when the window is managed** (`WM_STATE` present), with the decoration delta subtracted; `ConfigureWindow` in parent-relative space otherwise | an `override_redirect`/unmanaged window is invisible to the WM, so an EWMH-only implementation can never move it |
+| verification of `maximize` (not requested in step 11) | `WaitForStateOrCoverage`: state atom **or** the client covering ≥ 80 % of the screen | the same question as fullscreen, and tiling WMs answer both by doing nothing because the window is already maximal |
+| `restore` = old sequence + verify (step 11) | `_NET_ACTIVE_WINDOW` request, then `WM_CHANGE_STATE(NormalState)`, then `MapWindow`, then verify viewable | ICCCM has no client-side un-iconify request; activating the window is the request every EWMH WM implements |
+| `xproto.QueryKeymap` to prove a button was released (step 8) | `QueryPointer`'s state mask (`KeyButMaskButton1`) | measured: `QueryKeymap` never reports pointer buttons on Xvfb **or** on the KDE session; the pointer state mask does |
+
+Also added beyond the blueprint: `target.Target`-level stuck-press escalation
+(`releasePointer` in `actions.go` now calls `PanicReleaser` when a drag's release
+fails — this is the production call site step 7 only sketched), 16-bit range guards
+in `MoveWindow`/`ResizeWindow`, and `TestLiveCaptureAndClickShareClientSpace`, which
+drives the whole `screenshot → template → find_image → click` loop against a
+reparented window. Negative control: reinstating the old `DecorGeometry` offset makes
+that test and `TestLiveInputOffsetIsClientOrigin` fail by exactly the decoration delta.
+
+Not addressed (out of scope, worth a follow-up): the OCR HTTP calls in
+`pkg/automation/finder.go` still use `http.DefaultClient` with no timeout, so a hung
+OCR server can outlive a bounded poll.

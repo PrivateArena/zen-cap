@@ -107,6 +107,19 @@ func (t *VFBTarget) Scroll(x, y, dx, dy int) error          { return t.x11.Scrol
 // X11 exposes the embedded X11Target for window management operations.
 func (t *VFBTarget) X11() *X11Target { return t.x11 }
 
+// ReleaseAllButtons forwards the panic release to the embedded X11Target so a
+// VFB-backed run can clear a stuck pointer too. A target whose Xvfb connection
+// is gone has nothing to release, which is not an error.
+func (t *VFBTarget) ReleaseAllButtons() error {
+	if x := t.X11(); x != nil {
+		return x.ReleaseAllButtons()
+	}
+	return nil
+}
+
+// VFBTarget satisfies the optional PanicReleaser capability (step 9).
+var _ PanicReleaser = (*VFBTarget)(nil)
+
 // Close shuts down scrcpy and Xvfb in order, then closes the X11 connection.
 func (t *VFBTarget) Close() error {
 	if t.x11 != nil {
