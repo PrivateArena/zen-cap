@@ -40,9 +40,13 @@ If a `window` block is provided, Zen-Cap queries window properties via EWMH/ICCC
 
 The `target:` block selects the I/O backend used for screenshots and input injection. **Omitting the block defaults to `x11`**, preserving full backward compatibility with existing scripts.
 
-All backends expose the same action API — `click`, `move`, `hold`, `release`, `drag`, `type`, `key`, `find_image`, `find_text`, `ocr`, `if_found`, `if_pixel`, `if_window`, etc. work identically regardless of target.
+All backends expose the same action API — `click`, `move`, `hold`, `release`, `drag`, `type`, `key`, `scroll`, `screenshot`, `find_image`, `find_text`, `ocr`, `wait_until`, `window_state`, `if_found`, `if_pixel`, `if_window`, etc. work identically regardless of target.
 
-> **Planned, not implemented:** `scroll` exists on the backend interface (`target.Target.Scroll`) but is **not** a YAML action yet — `action: scroll` fails with `unknown action: scroll`. The HTTP API work adds it.
+> `scroll` is a real action (`target.Target.Scroll` plus the `scroll` step). Its
+> counts are wheel *ticks*, not pixels: vertical scroll is X button 4 (up) / 5
+> (down), horizontal 6 (left) / 7 (right). Non-X11 backends map those ticks onto
+> whatever their protocol offers, so a large `amount` may behave differently over
+> VNC/ADB than locally.
 
 ### Common Fields
 
@@ -331,8 +335,22 @@ action: click
 x: 450
 y: 320
 button: left     # Options: "left", "middle", "right", "wheel-up", "wheel-down"
-count: 1         # Number of clicks (e.g. 2 for double-click)
+clicks: 1        # Press/release pairs at ONE pointer warp: 2 is a real double-click
+click_gap: 40ms  # Gap between the repeated presses
+no_activate: false
 ```
+Omitting `x`/`y` clicks the last match made by `find_image`/`find_text`/`ocr`/`wait_until`.
+
+`clicks: N` sends N press/release pairs without re-warping between them, which is what
+makes the pair a double-click to a fast application instead of two single clicks.
+
+By default the first press is preceded by raising and activating the run's target
+window (`_NET_ACTIVE_WINDOW`) and a 150 ms settle, so `click` in a field followed by
+`type` lands where it was aimed. `no_activate: true` restores the old focusless
+behaviour, which is what a script that must not disturb the desktop wants. Focus
+cannot be *verified* generically (focus-follows-mouse, embedded windows, WMs without
+`_NET_ACTIVE_WINDOW`), which is why the engine acts on the assumption instead of
+detecting it.
 
 ### `move`
 Moves the cursor to specific coordinate bounds.
@@ -417,7 +435,12 @@ Simulates focusless text input typing.
 ```yaml
 action: type
 text: "admin_login"
+delay: 12ms          # Per-key delay
+chunk_runes: 200     # Runes per injection batch
 ```
+`chunk_runes` exists because a single `Type` call cannot be interrupted: the run is
+cancelled *between* chunks, so a 5000-character paste stops when you ask it to rather
+than when it finishes.
 
 ### `key`
 Simulates special keyboard shortcut keypresses.
@@ -520,6 +543,66 @@ Two consequences for scripts:
 - A `minimize` on a window manager that does not iconify (some tiling WMs) now reports an error instead of succeeding. Guard it with `when:`/`if_window` or accept the failure.
 
 Under a window manager there is no way to force a managed window's geometry, so `geometry` asks politely via `_NET_MOVERESIZE_WINDOW` and then measures what happened. With no window manager at all (a bare `Xvfb`, or an `override_redirect` window) it configures the window directly, which is what makes headless runs deterministic.
+
+### `scroll`
+Sends wheel-button clicks at one point.
+```yaml
+action: scroll
+direction: down      # "up", "down", "left", "right"
+amount: 3            # Wheel ticks; default 3, clamped to 50
+x: 640               # Optional; default: the last match, else the centre of the capture
+y: 400
+```
+`amount` is a tick count, not a distance: how far a tick scrolls is the scrolled
+widget's decision, not the engine's. An unknown `direction` is an error, so a typo
+never becomes a silent no-op.
+
+### `screenshot`
+Writes one capture of the run's target to disk.
+```yaml
+action: screenshot
+output: "state/after.png"   # Relative to the script directory, or absolute
+region: "0,0,800,600"       # Optional crop, resolved against the captured image
+```
+The step's `data` is `{path, width, height, bytes}`. Over HTTP this writes no
+pipeline side effects — no clipboard copy, no upload, no overlay (see
+`ZEN_CAP_SERVER_API.md`); from YAML it is equally inert.
+
+### `wait_until`
+Blocks on a condition, so a script waits for a state instead of guessing a duration.
+```yaml
+action: wait_until
+wait_for: window       # "window", "window_gone", "image", "text", "pixel"
+window:                # for window / window_gone
+  title: "Preview"
+timeout: 10s           # default 10s
+```
+| `wait_for` | also needs | succeeds when |
+|------------|----------|---------------|
+| `window` | `window:` | a window matches the selector |
+| `window_gone` | `window:` | no window matches any more |
+| `image` | `image:` (template), optional `confidence:` (0.9), `region:` | the template is on screen |
+| `text` | `text:` (or `target:`), optional `language:`/`model:`/`region:` | OCR reads the string |
+| `pixel` | `x:`, `y:`, `color:` (`#rrggbb`), optional `tolerance:` | the pixel matches |
+
+On success the match coordinates are recorded exactly as `find_image`/`find_text`
+records them, and `data` carries them. On failure the message names both halves of
+the mismatch — what was wanted, and what was actually seen — because over HTTP that
+string is the whole diagnostic. Every condition is bounded by `timeout` *and* by the
+run's own deadline, and a capture that has started failing (a window that died) cannot
+outrun either.
+
+### `window_state`
+Reads a window back from the X server: the client rectangle, the map state and the
+`_NET_WM_STATE` atoms.
+```yaml
+action: window_state
+window:                # Optional; defaults to the run's own window
+  class: "firefox"
+```
+Use it after a `window` mutation to learn whether the window manager *obeyed*, rather
+than whether the request was sent — `window` modes already verify, but this is how a
+script asserts the state it expects.
 
 ### `stop`
 Terminates the script execution prematurely with a success status.
@@ -762,3 +845,37 @@ steps:
     args:
       target_text: "Submit"
 ```
+---
+
+## 7. Over HTTP
+
+Everything in this document is also reachable without a YAML file: the daemon exposes
+the same step vocabulary at `POST /automation/exec`, where `steps` is exactly the step
+object described above. Full wire format, error codes, the read endpoints
+(`/automation/actions`, `/automation/windows`, `/automation/window`,
+`/automation/state`, `/automation/abort`) and the security notes live in
+**[`ZEN_CAP_SERVER_API.md`](ZEN_CAP_SERVER_API.md)**; `GET /automation/actions` is the
+machine-readable version of this specification, generated from the engine's own
+dispatch table.
+
+One behavioural difference matters, and it is the only one:
+
+> **Variables do not survive a request.** Within one `POST /automation/exec`, `${name}`,
+> `loop`, `if_found`, `var` and `call` behave exactly as in a script. Across requests
+> there is no server state: the response returns the run's `variables`, and the next
+> request sends them back in `vars`. There is deliberately no session registry, no TTL
+> and nothing to expire — which is also why restarting the daemon mid-loop is harmless.
+
+Two smaller things worth knowing before writing an agent:
+
+- **Requests are serialised, not concurrent.** One run may inject input at a time, and
+  a queued request that runs out of time is answered `429 busy_timeout`. This is not a
+  limitation to work around: XTEST drives the single global pointer, so two "parallel"
+  runs would interleave into garbage gestures.
+- **A run has a hard ceiling** (`api_max_run_duration_seconds`, default 60 s), and a
+  cancelled or timed-out run force-releases the pointer buttons before responding, so
+  `loop: count: 1000000` cannot hold the desktop hostage.
+
+Actions that produce no X input (`screenshot`, `window_state`, `file`, `clipboard`,
+`run`) are still accepted when `deny_api_input` is set; see the security section of
+`ZEN_CAP_SERVER_API.md` for what that implies.

@@ -3,7 +3,9 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -34,6 +36,9 @@ type ScreenshotOptions struct {
 	Title    string `json:"title"`
 	Launch   string `json:"launch"`
 	ClipMode string `json:"clip_mode"`
+	// Inline asks for the PNG back as base64 in the response, capped by
+	// api_max_inline_bytes. Additive: without it the response is unchanged.
+	Inline bool `json:"inline"`
 }
 
 type CollaborateRequest struct {
@@ -105,11 +110,29 @@ func startAPIServer(cfg *config.Config) {
 			return
 		}
 
+		resp := map[string]interface{}{"status": "success", "path": path}
+		if opts.Inline {
+			// The file was just written, so reading it back is cheaper than keeping a
+			// second encoder alive in the capture path — and it is the same bytes.
+			data, err := os.ReadFile(path)
+			switch {
+			case err != nil:
+				resp["inline_error"] = err.Error()
+			case len(data) > cfg.APIMaxInlineBytes:
+				resp["truncated"] = true
+				resp["bytes"] = len(data)
+				resp["mime"] = "image/png"
+			default:
+				resp["base64"] = base64.StdEncoding.EncodeToString(data)
+				resp["encoding"] = "base64"
+				resp["mime"] = "image/png"
+				resp["bytes"] = len(data)
+				resp["truncated"] = false
+			}
+		}
+
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]string{
-			"status": "success",
-			"path":   path,
-		})
+		_ = json.NewEncoder(w).Encode(resp)
 	})
 
 	mux.HandleFunc("/collaborate", func(w http.ResponseWriter, r *http.Request) {
@@ -135,9 +158,31 @@ func startAPIServer(cfg *config.Config) {
 		})
 	})
 
+	// The whole /automation surface lives in api_automation.go, in one place.
+	newAutomationAPI(cfg).register(mux)
+
+	// Read/write/idle deadlines: without them a client that stops reading keeps a
+	// goroutine and an X connection alive forever. The write deadline has to clear
+	// the longest permitted automation run, not just a screenshot.
+	maxRun := time.Duration(cfg.APIMaxRunDurationSeconds) * time.Second
+	if maxRun <= 0 {
+		maxRun = 60 * time.Second
+	}
+	srv := &http.Server{
+		Addr:              cfg.APIAddress,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       maxRun + 30*time.Second,
+		WriteTimeout:      maxRun + 60*time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+
 	fmt.Printf("[API] Starting HTTP API server on http://%s...\n", cfg.APIAddress)
-	if err := http.ListenAndServe(cfg.APIAddress, mux); err != nil {
-		log.Fatalf("[API] API server failed to start: %v\n", err)
+	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		// This used to be log.Fatalf, which killed the whole daemon — every global
+		// hotkey and any automation in flight — because port 4444 was busy. A dead
+		// API is bad enough; a dead desktop tool is not an acceptable cure.
+		log.Printf("[API] API server stopped: %v (hotkeys keep running)\n", err)
 	}
 }
 

@@ -34,8 +34,13 @@ const pollStep = 50 * time.Millisecond
 
 // WindowGeom is a rectangle in either the client or the frame space; which one
 // is decided by the caller of CurrentGeometry, and by nothing else.
+// The JSON tags are the wire format of the /automation API (a geometry renders
+// as {"x":…,"y":…,"w":…,"h":…}); in-process callers ignore them.
 type WindowGeom struct {
-	X, Y, W, H int
+	X int `json:"x"`
+	Y int `json:"y"`
+	W int `json:"w"`
+	H int `json:"h"`
 }
 
 func (g WindowGeom) String() string {

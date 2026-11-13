@@ -13,72 +13,46 @@ import (
 	"github.com/jezek/xgbutil"
 	"github.com/jezek/xgbutil/ewmh"
 	"github.com/jezek/xgbutil/icccm"
-	"github.com/jezek/xgbutil/keybind"
 
 	"zen-cap/pkg/config"
-	"zen-cap/pkg/target"
 )
 
 // RunScript starts the sequential execution of a Script.
+//
+// It is a thin adapter over RunSteps — the HTTP API and the YAML/picker path
+// share one implementation, so per-step results, abort handling and the panic
+// release cannot drift between them. The signature is load-bearing: the picker
+// (picker.go) and `zen-cap run` call it directly.
 func RunScript(script Script, cfg *config.Config, scriptDir string, abortChan chan struct{}, logger func(string, ...interface{})) error {
-	// Build target from script config. Defaults to X11 when script.Target is nil.
-	tCfg := target.Config{}
-	if script.Target != nil {
-		tCfg = target.Config{
-			Type:       script.Target.Type,
-			Display:    script.Target.Display,
-			Host:       script.Target.Host,
-			Port:       script.Target.Port,
-			Password:   script.Target.Password,
-			Serial:     script.Target.Serial,
-			WDAHost:    script.Target.WDAHost,
-			VFBDisplay: script.Target.VFBDisplay,
-			VFBSerial:  script.Target.VFBSerial,
-			VFBWidth:   script.Target.VFBWidth,
-			VFBHeight:  script.Target.VFBHeight,
-			Scale:      script.Target.Scale,
-		}
-	}
-
-	// Resolve window for X11 targets only.
-	var WID uint32
-	if (tCfg.Type == "" || tCfg.Type == "x11") && script.Window != nil {
-		xu, err := xgbutil.NewConn()
-		if err == nil {
-			keybind.Initialize(xu)
-			if id, err := ResolveWindow(xu, script.Window); err != nil {
-				logger("[Automation] Warning: %v. Running in absolute screen space.", err)
-			} else {
-				WID = id
-				logger("[Automation] Target window resolved: WID=%d", WID)
+	token := NewRunToken("script:" + script.Name)
+	if abortChan != nil {
+		// Bridge the historical channel form to the token, so the picker's abort
+		// hotkey can still cut a running script short.
+		go func() {
+			select {
+			case <-abortChan:
+				token.Cancel()
+			case <-token.Done():
 			}
-			xu.Conn().Close()
-		}
-	}
-
-	tgt, err := target.New(tCfg, WID)
-	if err != nil {
-		return fmt.Errorf("failed to create automation target: %w", err)
-	}
-	defer tgt.Close()
-
-	ctx := &ExecContext{
-		Target:    tgt,
-		AbortChan: abortChan,
-		Logger:    logger,
-		ScriptDir: scriptDir,
-		Config:    cfg,
-		Variables: make(map[string]interface{}),
-		Functions: script.Functions,
+		}()
 	}
 
 	logger("[Automation] Starting script: %q", script.Name)
-	if err := executeStepList(script.Steps, ctx); err != nil {
-		if stopErr, ok := err.(StopError); ok {
-			logger("[Automation] Script execution stopped: %v", stopErr)
-			return nil
-		}
-		return fmt.Errorf("script execution failed: %w", err)
+	res, runErr := RunSteps(RunOptions{
+		Script:      script,
+		Config:      cfg,
+		ScriptDir:   scriptDir,
+		StopOnError: true, // a failing step has always aborted a YAML script
+		OnLog:       logger,
+		Token:       token,
+	})
+	if runErr != nil {
+		return fmt.Errorf("script execution failed: %w", runErr)
+	}
+	if res != nil && res.Stopped {
+		// `action: stop` ended the run on purpose (RunSteps logged why): reported
+		// as success, exactly what this function did before the extraction.
+		return nil
 	}
 
 	logger("[Automation] Script %q finished successfully!", script.Name)
@@ -108,31 +82,52 @@ func executeStepList(steps []Step, ctx *ExecContext) error {
 	for i := 0; i < len(steps); {
 		select {
 		case <-ctx.AbortChan:
-			return fmt.Errorf("execution aborted by user")
+			return ErrAborted
 		default:
 		}
 
 		step := steps[i]
-		ctx.Logger("[Automation] Step %d/%d: %s", i+1, len(steps), step.Action)
+		ctx.logf("[Automation] Step %d/%d: %s", i+1, len(steps), step.Action)
+		start := time.Now()
+		ctx.beginResult()
 		err := executeStepWithControl(step, ctx)
-		if err != nil {
-			if gotoErr, ok := err.(GotoError); ok {
-				// Search for target label in the current block first (local jump)
-				targetIdx := -1
-				for idx, s := range steps {
-					if s.Label == gotoErr.Target {
-						targetIdx = idx
-						break
-					}
+
+		if gotoErr, ok := err.(GotoError); ok {
+			// A jump inside the current block is control flow, not a failure; it
+			// is recorded as a completed step so the trace shows the visit.
+			ctx.recordResult(step.Action, start, nil)
+			// Search for target label in the current block first (local jump)
+			targetIdx := -1
+			for idx, s := range steps {
+				if s.Label == gotoErr.Target {
+					targetIdx = idx
+					break
 				}
-				if targetIdx != -1 {
-					i = targetIdx
-					continue
-				}
-				// Otherwise propagate GotoError upwards
-				return gotoErr
 			}
+			if targetIdx != -1 {
+				i = targetIdx
+				continue
+			}
+			// Otherwise propagate GotoError upwards
+			return gotoErr
+		}
+		if _, isStop := err.(StopError); isStop {
+			// `stop` did exactly what it was asked: recorded as a success, and it
+			// ends the run (RunSteps turns that into OK + Stopped).
+			ctx.recordResult(step.Action, start, nil)
 			return err
+		}
+		ctx.recordResult(step.Action, start, err)
+		if err != nil {
+			// Cancellation is never "an error to continue past": every later step
+			// would fail instantly and spin against the X server.
+			if isAbortErr(err) {
+				return err
+			}
+			if ctx.stopOnError {
+				return err
+			}
+			ctx.logf("[Automation] Step %d (%s) failed, continuing: %v", i+1, step.Action, err)
 		}
 		i++
 	}
@@ -190,7 +185,7 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 			return err
 		}
 		if !condMet {
-			ctx.Logger("[Automation] Skipping step %s (condition %s not met)", interpolatedStep.Action, interpolatedStep.When)
+			ctx.logf("[Automation] Skipping step %s (condition %s not met)", interpolatedStep.Action, interpolatedStep.When)
 			return nil
 		}
 	}
@@ -201,14 +196,14 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 		if count <= 0 {
 			count = 1
 		}
-		ctx.Logger("[Automation] Loop: entering count=%d", count)
+		ctx.logf("[Automation] Loop: entering count=%d", count)
 		for i := 0; i < count; i++ {
 			select {
 			case <-ctx.AbortChan:
 				return fmt.Errorf("execution aborted by user")
 			default:
 			}
-			ctx.Logger("[Automation] Loop iteration %d/%d", i+1, count)
+			ctx.logf("[Automation] Loop iteration %d/%d", i+1, count)
 			if err := executeStepList(interpolatedStep.Steps, ctx); err != nil {
 				return err
 			}
@@ -235,18 +230,9 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 			if targetVal == "" {
 				return fmt.Errorf("missing template image path in if_found step")
 			}
-			imgPath := targetVal
-			if !filepath.IsAbs(imgPath) && ctx.ScriptDir != "" {
-				imgPath = filepath.Join(ctx.ScriptDir, imgPath)
-			}
-			f, err := os.Open(imgPath)
-			if err != nil {
-				return fmt.Errorf("failed to open template image: %w", err)
-			}
-			needle, _, err = image.Decode(f)
-			f.Close()
-			if err != nil {
-				return fmt.Errorf("failed to decode template image: %w", err)
+			var err error
+			if needle, err = decodeTemplate(targetVal, ctx.ScriptDir); err != nil {
+				return err
 			}
 		}
 
@@ -268,12 +254,11 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 				confidence = 0.90
 			}
 			probe = func(haystack image.Image, offX, offY int) (bool, error) {
-				fx, fy, _, err := FindImage(haystack, needle, confidence)
+				x, y, _, err := FindImage(haystack, needle, confidence)
 				if err != nil {
 					return false, nil
 				}
-				ctx.LastFoundX = fx + offX
-				ctx.LastFoundY = fy + offY
+				ctx.setFound(x+offX, y+offY)
 				return true, nil
 			}
 		case "text", "ocr":
@@ -295,8 +280,7 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 				if err != nil {
 					return false, nil
 				}
-				ctx.LastFoundX = fx + offX
-				ctx.LastFoundY = fy + offY
+				ctx.setFound(fx+offX, fy+offY)
 
 				if interpolatedStep.Output != "" {
 					minX, minY := bounds.Min.X, bounds.Min.Y
@@ -314,7 +298,7 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 					if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err == nil {
 						if outF, err := os.Create(outputPath); err == nil {
 							if err := png.Encode(outF, textboxImg); err == nil {
-								ctx.Logger("[Automation] if_found cropped textbox image saved to %s", outputPath)
+								ctx.logf("[Automation] if_found cropped textbox image saved to %s", outputPath)
 							}
 							outF.Close()
 						}
@@ -343,10 +327,10 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 
 		var targetSteps []Step
 		if found {
-			ctx.Logger("[Automation] Condition MET (found %s)", findType)
+			ctx.logf("[Automation] Condition MET (found %s)", findType)
 			targetSteps = interpolatedStep.Steps
 		} else {
-			ctx.Logger("[Automation] Condition NOT MET (found %s)", findType)
+			ctx.logf("[Automation] Condition NOT MET (found %s)", findType)
 			targetSteps = interpolatedStep.Else
 		}
 
@@ -366,19 +350,14 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 			return fmt.Errorf("failed to capture screen for if_pixel: %w", err)
 		}
 
-		bounds := img.Bounds()
-		if x < bounds.Min.X || x >= bounds.Max.X || y < bounds.Min.Y || y >= bounds.Max.Y {
-			return fmt.Errorf("pixel coordinate (%d, %d) out of bounds (%v)", x, y, bounds)
+		got, ok := pixelAt(img, x, y)
+		if !ok {
+			return fmt.Errorf("pixel coordinate (%d, %d) out of bounds (%v)", x, y, img.Bounds())
 		}
 
-		col := img.At(x, y)
-		r, g, b, _ := col.RGBA()
-		currR, currG, currB := uint8(r>>8), uint8(g>>8), uint8(b>>8)
-
-		hexStr := strings.TrimPrefix(interpolatedStep.Color, "#")
-		var tr, tg, tb uint8
-		if n, err := fmt.Sscanf(hexStr, "%02x%02x%02x", &tr, &tg, &tb); err != nil || n != 3 {
-			return fmt.Errorf("invalid hex color string %q for if_pixel", interpolatedStep.Color)
+		want, err := parseHexColor(interpolatedStep.Color)
+		if err != nil {
+			return err
 		}
 
 		tolerance := 0
@@ -386,16 +365,10 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 			tolerance = interpolatedStep.Tolerance
 		}
 
-		diff := func(a, b uint8) int {
-			if a > b {
-				return int(a - b)
-			}
-			return int(b - a)
-		}
-
-		match := diff(currR, tr) <= tolerance && diff(currG, tg) <= tolerance && diff(currB, tb) <= tolerance
-		ctx.Logger("[Automation] if_pixel at (%d, %d): color is RGB(%d,%d,%d), target is RGB(%d,%d,%d), tolerance=%d, match=%v",
-			x, y, currR, currG, currB, tr, tg, tb, tolerance, match)
+		match := colorNear(got, want, tolerance)
+		ctx.logf("[Automation] if_pixel at (%d, %d): color is %s, target is %s, tolerance=%d, match=%v",
+			x, y, got.Hex(), want.Hex(), tolerance, match)
+		ctx.setData(map[string]interface{}{"x": x, "y": y, "color": got.Hex(), "match": match})
 
 		var targetSteps []Step
 		if match {
@@ -454,10 +427,10 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 
 		var targetSteps []Step
 		if found {
-			ctx.Logger("[Automation] if_window condition MET (mode: %s)", interpolatedStep.Mode)
+			ctx.logf("[Automation] if_window condition MET (mode: %s)", interpolatedStep.Mode)
 			targetSteps = interpolatedStep.Steps
 		} else {
-			ctx.Logger("[Automation] if_window condition NOT MET (mode: %s)", interpolatedStep.Mode)
+			ctx.logf("[Automation] if_window condition NOT MET (mode: %s)", interpolatedStep.Mode)
 			targetSteps = interpolatedStep.Else
 		}
 

@@ -2,6 +2,7 @@ package automation
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"image"
 	"image/png"
@@ -20,17 +21,107 @@ import (
 	"zen-cap/pkg/target"
 )
 
+// ExecContext is the state of one run. It is created by RunSteps and is not
+// reusable: the variable table, the last match coordinates and the step trace
+// all belong to that single request or script.
 type ExecContext struct {
 	Target     target.Target
 	AbortChan  chan struct{}
-	Logger     func(string, ...interface{})
+	Logger     func(format string, args ...interface{})
 	ScriptDir  string
 	Config     *config.Config
 	LastFoundX int
 	LastFoundY int
 
+	// hasFound distinguishes "LastFound is (0,0) because a match landed there"
+	// from "nothing has matched yet" — the difference between using the last
+	// match and using the centre of the screen for an unpositioned scroll.
+	hasFound bool
+
+	// LastResult is the `data` payload of the step that just ran, verbatim JSON
+	// (what find_text matched, what window_state read back, where a screenshot
+	// was written). It is copied into StepResult.Data and then cleared.
+	LastResult json.RawMessage
+
 	Variables map[string]interface{}
 	Functions map[string][]Step
+
+	// tracker is non-nil only under RunSteps; direct ExecuteStep callers (unit
+	// tests, the picker's internals) leave it nil and nothing is recorded.
+	tracker     *stepTracker
+	stopOnError bool
+
+	// resultX/resultY are the coordinates the running step wants reported, which
+	// is not always LastFoundX/Y (an explicit click has no LastFound side effect).
+	resultX, resultY int
+	hasResult        bool
+
+	// lastIndex is the index of the most recently recorded step, so a failure can
+	// be attributed to it.
+	lastIndex int
+
+	// clickActivated latches the raise+activate of a run, so a batch of clicks
+	// into the same window does not re-activate (and re-settle) per click.
+	clickActivated bool
+}
+
+// logf is the only logging path in the engine. Logger is optional — a caller
+// that does not care what a script printed must not be the reason it panics
+// half-way through clicking on a live desktop.
+func (ctx *ExecContext) logf(format string, args ...interface{}) {
+	if ctx.Logger != nil {
+		ctx.Logger(format, args...)
+	}
+}
+
+// hasLogger reports whether anything is listening (the `log` action falls back
+// to stdout when nothing is).
+func (ctx *ExecContext) hasLogger() bool { return ctx.Logger != nil }
+
+// beginResult clears the per-step result slot; called before each dispatch.
+func (ctx *ExecContext) beginResult() {
+	ctx.LastResult = nil
+	ctx.resultX, ctx.resultY, ctx.hasResult = 0, 0, false
+}
+
+// publish attaches coordinates to the step currently executing.
+func (ctx *ExecContext) publish(x, y int) {
+	ctx.resultX, ctx.resultY, ctx.hasResult = x, y, true
+}
+
+// setData attaches a JSON payload to the step currently executing. A value that
+// cannot be marshalled is a programming error in the action, not a run failure,
+// so it is reported in the log and otherwise ignored.
+func (ctx *ExecContext) setData(v interface{}) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		ctx.logf("[Automation] warning: could not encode step data: %v", err)
+		return
+	}
+	ctx.LastResult = b
+}
+
+// recordResult appends the completed step to the run trace (if there is one).
+func (ctx *ExecContext) recordResult(action string, start time.Time, err error) {
+	if ctx.tracker == nil {
+		return
+	}
+	res := StepResult{
+		Index:     ctx.tracker.Seq,
+		Action:    action,
+		OK:        err == nil,
+		ElapsedMS: time.Since(start).Milliseconds(),
+		Data:      ctx.LastResult,
+	}
+	if err != nil {
+		res.Error = err.Error()
+	}
+	if ctx.hasResult {
+		res.X, res.Y = ctx.resultX, ctx.resultY
+	}
+	ctx.tracker.Seq = res.Index + 1
+	ctx.lastIndex = res.Index
+	ctx.tracker.appendResult(res)
 }
 
 // x11ctx returns the underlying X11Target if the current target is X11-based,
@@ -45,56 +136,69 @@ func (ctx *ExecContext) x11ctx() *target.X11Target {
 	return nil
 }
 
+// leafActions is the dispatch table of every action that does something rather
+// than control flow. It is the single source of the action vocabulary: the HTTP
+// action catalog (catalog.go) is built from these keys, so a new action is
+// documented the moment it exists and cannot drift (catalog_test.go enforces it).
+var leafActions = map[string]func(Step, *ExecContext) error{
+	"click":        runClick,
+	"move":         runMove,
+	"hold":         runHold,
+	"release":      runRelease,
+	"drag":         runDrag,
+	"type":         runType,
+	"key":          runKey,
+	"wait":         runWait,
+	"notify":       runNotify,
+	"log":          runLog,
+	"run":          runCommand,
+	"clipboard":    runClipboard,
+	"file":         runFile,
+	"window":       runWindow,
+	"find_image":   runFindImage,
+	"find_text":    runFindText,
+	"ocr":          runOCR,
+	"screenshot":   runScreenshot,
+	"scroll":       runScroll,
+	"wait_until":   runWaitUntil,
+	"window_state": runWindowState,
+}
+
+// controlFlowActions are handled by executeStepWithControl / executeStepList;
+// they are listed here so the catalog covers them too.
+var controlFlowActions = []string{
+	"loop", "if_found", "if_pixel", "if_window", "var", "call", "goto", "stop",
+}
+
+// ExecuteStep runs a single leaf action. Control flow and {{variable}}
+// interpolation live one level up, in executeStepWithControl — a caller that has
+// a whole script should go through RunSteps, not call this.
 func ExecuteStep(step Step, ctx *ExecContext) error {
 	select {
 	case <-ctx.AbortChan:
-		return fmt.Errorf("execution aborted by user")
+		return ErrAborted
 	default:
 	}
 
 	switch strings.ToLower(step.Action) {
-	case "click":
-		return runClick(step, ctx)
-	case "move":
-		return runMove(step, ctx)
-	case "hold":
-		return runHold(step, ctx)
-	case "release":
-		return runRelease(step, ctx)
-	case "drag":
-		return runDrag(step, ctx)
-	case "type":
-		return runType(step, ctx)
-	case "key":
-		return runKey(step, ctx)
-	case "wait":
-		return runWait(step, ctx)
-	case "notify":
-		return runNotify(step, ctx)
-	case "log":
-		return runLog(step, ctx)
-	case "run":
-		return runCommand(step, ctx)
-	case "clipboard":
-		return runClipboard(step, ctx)
-	case "file":
-		return runFile(step, ctx)
-	case "window":
-		return runWindow(step, ctx)
-	case "find_image":
-		return runFindImage(step, ctx)
-	case "find_text":
-		return runFindText(step, ctx)
-	case "ocr":
-		return runOCR(step, ctx)
 	case "goto":
 		return GotoError{Target: step.Target}
 	case "stop":
 		return StopError{Message: step.Message}
-	default:
+	}
+
+	fn, ok := leafActions[strings.ToLower(step.Action)]
+	if !ok {
 		return fmt.Errorf("unknown action: %s", step.Action)
 	}
+	return fn(step, ctx)
 }
+
+const defaultClickGap = 40 * time.Millisecond
+
+// clickSettleDelay is how long the pointer waits after an activate, for the WM
+// to reparent/focus the window before the press lands.
+const clickSettleDelay = 150 * time.Millisecond
 
 func runClick(step Step, ctx *ExecContext) error {
 	x := getIntField(step.X, ctx.Variables, -1)
@@ -103,8 +207,84 @@ func runClick(step Step, ctx *ExecContext) error {
 		x = ctx.LastFoundX
 		y = ctx.LastFoundY
 	}
-	ctx.Logger("[Automation] Click: x=%d, y=%d, button=%s", x, y, step.Button)
-	return ctx.Target.Click(x, y, step.Button)
+
+	clicks := step.Clicks
+	if clicks < 1 {
+		clicks = 1
+	}
+	gap := defaultClickGap
+	if step.ClickGap != "" {
+		d, err := time.ParseDuration(step.ClickGap)
+		if err != nil {
+			return fmt.Errorf("invalid click_gap %q: %w", step.ClickGap, err)
+		}
+		gap = d
+	}
+
+	// no_activate is inverse-polarity on purpose: the absent (false) default
+	// raises + activates the target window before the first press, which is what
+	// makes "click the field, then type" work. Focus itself cannot be verified
+	// generically, so the API shapes the workflow instead of detecting it.
+	if !step.NoActivate {
+		if err := activateForClick(ctx); err != nil {
+			ctx.logf("[Automation] activate before click: %v", err)
+		}
+	}
+
+	ctx.logf("[Automation] Click: x=%d, y=%d, button=%s, clicks=%d", x, y, step.Button, clicks)
+	ctx.publish(x, y)
+
+	for i := 0; i < clicks; i++ {
+		if err := ctx.Target.Click(x, y, step.Button); err != nil {
+			return err
+		}
+		if i < clicks-1 {
+			// One pointer warp, N press/release pairs: re-warping between presses
+			// is what makes a fast app see two single clicks instead of one double.
+			if err := sleepAbortable(gap, ctx.AbortChan); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// activateForClick raises the window a run is scoped to and asks the WM to make
+// it active, then waits briefly for the WM to catch up. A no-op for
+// screen-scoped and non-X11 runs.
+func activateForClick(ctx *ExecContext) error {
+	if ctx.clickActivated {
+		return nil
+	}
+	x11 := ctx.x11ctx()
+	if x11 == nil || !x11.IsWindowTarget() {
+		return nil
+	}
+	ctx.clickActivated = true
+	winID := x11.WinID()
+	if err := StackWindow(x11.XUtil(), winID, xproto.StackModeAbove); err != nil {
+		return err
+	}
+	if err := ewmh.ActiveWindowReq(x11.XUtil(), xproto.Window(winID)); err != nil {
+		return err
+	}
+	// Let the WM repaint/focus before the pointer lands.
+	return sleepAbortable(clickSettleDelay, ctx.AbortChan)
+}
+
+// sleepAbortable waits d, waking early with ErrAborted when the run is cancelled.
+func sleepAbortable(d time.Duration, abortChan chan struct{}) error {
+	if d <= 0 {
+		return nil
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-abortChan:
+		return ErrAborted
+	case <-t.C:
+		return nil
+	}
 }
 
 func runMove(step Step, ctx *ExecContext) error {
@@ -114,7 +294,8 @@ func runMove(step Step, ctx *ExecContext) error {
 		x = ctx.LastFoundX
 		y = ctx.LastFoundY
 	}
-	ctx.Logger("[Automation] Move: x=%d, y=%d", x, y)
+	ctx.logf("[Automation] Move: x=%d, y=%d", x, y)
+	ctx.publish(x, y)
 	return ctx.Target.Move(x, y)
 }
 
@@ -127,7 +308,8 @@ func runHold(step Step, ctx *ExecContext) error {
 		x = ctx.LastFoundX
 		y = ctx.LastFoundY
 	}
-	ctx.Logger("[Automation] Hold: x=%d, y=%d, button=%s", x, y, step.Button)
+	ctx.logf("[Automation] Hold: x=%d, y=%d, button=%s", x, y, step.Button)
+	ctx.publish(x, y)
 	return ctx.Target.ButtonPress(x, y, step.Button)
 }
 
@@ -140,7 +322,8 @@ func runRelease(step Step, ctx *ExecContext) error {
 		x = ctx.LastFoundX
 		y = ctx.LastFoundY
 	}
-	ctx.Logger("[Automation] Release: x=%d, y=%d, button=%s", x, y, step.Button)
+	ctx.logf("[Automation] Release: x=%d, y=%d, button=%s", x, y, step.Button)
+	ctx.publish(x, y)
 	return ctx.Target.ButtonRelease(x, y, step.Button)
 }
 
@@ -174,7 +357,8 @@ func runDrag(step Step, ctx *ExecContext) error {
 		}
 	}
 
-	ctx.Logger("[Automation] Drag: (%d, %d) -> (%d, %d), button=%s, duration=%v", x, y, x2, y2, step.Button, duration)
+	ctx.logf("[Automation] Drag: (%d, %d) -> (%d, %d), button=%s, duration=%v", x, y, x2, y2, step.Button, duration)
+	ctx.publish(x2, y2)
 
 	if err := ctx.Target.ButtonPress(x, y, step.Button); err != nil {
 		return err
@@ -242,12 +426,41 @@ func runType(step Step, ctx *ExecContext) error {
 			delayMs = d.Milliseconds()
 		}
 	}
-	ctx.Logger("[Automation] Type: %q (delay=%dms)", step.Text, delayMs)
-	return ctx.Target.Type(step.Text, delayMs)
+
+	chunk := step.ChunkRunes
+	if chunk <= 0 {
+		chunk = defaultTypeChunkRunes
+	}
+
+	ctx.logf("[Automation] Type: %q (delay=%dms)", step.Text, delayMs)
+
+	// XTEST has no abort hook inside a single Type call: one 5000-character paste
+	// would hold the input gate until it finished, however long the client waited.
+	// Typing in rune-sized pieces with an abort check between them makes the
+	// longest uncancellable stretch one chunk instead of the whole string.
+	runes := []rune(step.Text)
+	for len(runes) > 0 {
+		piece := runes
+		if len(piece) > chunk {
+			piece = piece[:chunk]
+		}
+		if err := ctx.Target.Type(string(piece), delayMs); err != nil {
+			return err
+		}
+		runes = runes[len(piece):]
+		if len(runes) > 0 {
+			select {
+			case <-ctx.AbortChan:
+				return ErrAborted
+			default:
+			}
+		}
+	}
+	return nil
 }
 
 func runKey(step Step, ctx *ExecContext) error {
-	ctx.Logger("[Automation] Key: %q", step.Keys)
+	ctx.logf("[Automation] Key: %q", step.Keys)
 	return ctx.Target.Key(step.Keys)
 }
 
@@ -261,7 +474,7 @@ func runWait(step Step, ctx *ExecContext) error {
 		return fmt.Errorf("invalid wait duration %q: %w", durStr, err)
 	}
 
-	ctx.Logger("[Automation] Wait: %v", d)
+	ctx.logf("[Automation] Wait: %v", d)
 	select {
 	case <-ctx.AbortChan:
 		return fmt.Errorf("execution aborted by user")
@@ -279,7 +492,7 @@ func runNotify(step Step, ctx *ExecContext) error {
 	if message == "" {
 		message = "Action complete."
 	}
-	ctx.Logger("[Automation] Notify: %s - %s", title, message)
+	ctx.logf("[Automation] Notify: %s - %s", title, message)
 	cmd := exec.Command("notify-send", "-a", "Zen-Cap", title, message)
 	return cmd.Run()
 }
@@ -289,8 +502,8 @@ func runLog(step Step, ctx *ExecContext) error {
 	if message == "" {
 		message = step.Text
 	}
-	if ctx.Logger != nil {
-		ctx.Logger("[Automation] Log: %s", message)
+	if ctx.hasLogger() {
+		ctx.logf("[Automation] Log: %s", message)
 	} else {
 		fmt.Printf("[Automation] Log: %s\n", message)
 	}
@@ -305,7 +518,7 @@ func runCommand(step Step, ctx *ExecContext) error {
 		}
 	}
 
-	ctx.Logger("[Automation] Run command: %q (timeout=%v)", step.Command, timeout)
+	ctx.logf("[Automation] Run command: %q (timeout=%v)", step.Command, timeout)
 	c, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
@@ -320,14 +533,14 @@ func runClipboard(step Step, ctx *ExecContext) error {
 	}
 
 	if mode == "write" {
-		ctx.Logger("[Automation] Clipboard: write %q", step.Text)
+		ctx.logf("[Automation] Clipboard: write %q", step.Text)
 		return capture.CopyTextToClipboard(step.Text)
 	} else if mode == "read" {
 		text, err := capture.ReadTextFromClipboard()
 		if err != nil {
 			return err
 		}
-		ctx.Logger("[Automation] Clipboard: read %q", text)
+		ctx.logf("[Automation] Clipboard: read %q", text)
 		if step.Name != "" {
 			ctx.Variables[step.Name] = text
 		}
@@ -405,7 +618,7 @@ func runWindow(step Step, ctx *ExecContext) error {
 	}
 
 	mode := strings.ToLower(step.Mode)
-	ctx.Logger("[Automation] Window action %q on window 0x%x", mode, winID)
+	ctx.logf("[Automation] Window action %q on window 0x%x", mode, winID)
 
 	switch mode {
 	case "activate":
@@ -500,7 +713,7 @@ func windowGeometry(step Step, ctx *ExecContext, xu *xgbutil.XUtil, winID uint32
 	if err != nil {
 		return err
 	}
-	ctx.Logger("[Automation] Window 0x%x geometry is now %s (requested %s)", winID, actual, want)
+	ctx.logf("[Automation] Window 0x%x geometry is now %s (requested %s)", winID, actual, want)
 	return nil
 }
 
@@ -510,20 +723,9 @@ func runFindImage(step Step, ctx *ExecContext) error {
 	}
 
 	// Resolve path
-	imgPath := step.Image
-	if !filepath.IsAbs(imgPath) && ctx.ScriptDir != "" {
-		imgPath = filepath.Join(ctx.ScriptDir, imgPath)
-	}
-
-	f, err := os.Open(imgPath)
+	needle, err := decodeTemplate(step.Image, ctx.ScriptDir)
 	if err != nil {
-		return fmt.Errorf("failed to open template image: %w", err)
-	}
-	defer f.Close()
-
-	needle, _, err := image.Decode(f)
-	if err != nil {
-		return fmt.Errorf("failed to decode template image: %w", err)
+		return err
 	}
 
 	confidence := step.Confidence
@@ -538,7 +740,7 @@ func runFindImage(step Step, ctx *ExecContext) error {
 		}
 	}
 
-	ctx.Logger("[Automation] Find Image: %q (timeout=%v, confidence=%.2f)", step.Image, timeout, confidence)
+	ctx.logf("[Automation] Find Image: %q (timeout=%v, confidence=%.2f)", step.Image, timeout, confidence)
 
 	poller := newScreenPoller(ctx, timeout, capturePollInterval)
 	var bestConf float64
@@ -555,9 +757,9 @@ func runFindImage(step Step, ctx *ExecContext) error {
 			// Restore coordinates to absolute screen/window bounds
 			x += offX
 			y += offY
-			ctx.Logger("[Automation] Match found at (%d, %d) with confidence %.4f", x, y, conf)
-			ctx.LastFoundX = x
-			ctx.LastFoundY = y
+			ctx.logf("[Automation] Match found at (%d, %d) with confidence %.4f", x, y, conf)
+			ctx.setFound(x, y)
+			ctx.setData(map[string]interface{}{"x": x, "y": y, "confidence": conf})
 
 			switch strings.ToLower(step.Then) {
 			case "click":
@@ -598,7 +800,7 @@ func runFindText(step Step, ctx *ExecContext) error {
 		ocrLang = ctx.Config.OCRLanguage
 	}
 
-	ctx.Logger("[Automation] Find Text: %q (timeout=%v, lang=%s)", step.Text, timeout, ocrLang)
+	ctx.logf("[Automation] Find Text: %q (timeout=%v, lang=%s)", step.Text, timeout, ocrLang)
 
 	poller := newScreenPoller(ctx, timeout, capturePollInterval)
 	var lastErr error
@@ -614,9 +816,9 @@ func runFindText(step Step, ctx *ExecContext) error {
 			// Restore coordinates to absolute screen/window bounds
 			x += offX
 			y += offY
-			ctx.Logger("[Automation] Text %q found at (%d, %d) with confidence %.4f", step.Text, x, y, conf)
-			ctx.LastFoundX = x
-			ctx.LastFoundY = y
+			ctx.logf("[Automation] Text %q found at (%d, %d) with confidence %.4f", step.Text, x, y, conf)
+			ctx.setFound(x, y)
+			ctx.setData(map[string]interface{}{"x": x, "y": y, "confidence": conf})
 
 			switch strings.ToLower(step.Then) {
 			case "click":
@@ -674,7 +876,7 @@ func runOCR(step Step, ctx *ExecContext) error {
 	}
 	ocrModel := step.Model
 
-	ctx.Logger("[Automation] OCR search: %q (timeout=%v, lang=%s, model=%s)", targetText, timeout, ocrLang, ocrModel)
+	ctx.logf("[Automation] OCR search: %q (timeout=%v, lang=%s, model=%s)", targetText, timeout, ocrLang, ocrModel)
 
 	poller := newScreenPoller(ctx, timeout, capturePollInterval)
 	var lastErr error
@@ -709,15 +911,18 @@ func runOCR(step Step, ctx *ExecContext) error {
 					return true, fmt.Errorf("failed to encode/write OCR textbox image: %w", err)
 				}
 				outF.Close()
-				ctx.Logger("[Automation] OCR textbox image saved to %s", outputPath)
+				ctx.logf("[Automation] OCR textbox image saved to %s", outputPath)
 			}
 
 			// Restore coordinates to absolute screen/window bounds
 			x += offX
 			y += offY
-			ctx.Logger("[Automation] OCR: Text %q found at (%d, %d) with confidence %.4f", targetText, x, y, conf)
-			ctx.LastFoundX = x
-			ctx.LastFoundY = y
+			ctx.logf("[Automation] OCR: Text %q found at (%d, %d) with confidence %.4f", targetText, x, y, conf)
+			ctx.setFound(x, y)
+			ctx.setData(map[string]interface{}{"x": x, "y": y, "confidence": conf, "bounds": map[string]int{
+				"x": bounds.Min.X, "y": bounds.Min.Y,
+				"w": bounds.Max.X - bounds.Min.X, "h": bounds.Max.Y - bounds.Min.Y,
+			}})
 			targetX := x + step.OffsetX
 			targetY := y + step.OffsetY
 
@@ -739,4 +944,389 @@ func runOCR(step Step, ctx *ExecContext) error {
 			return fmt.Errorf("text %q not found via OCR within timeout%s: %w", targetText, poller.captureNote(), joinErr(lastErr, ErrNotFound))
 		}
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Actions added for the /automation HTTP API (plan steps A5/A6).
+//
+// They are ordinary engine actions — a YAML script can use them too — but they
+// exist because an HTTP agent has nothing else to lean on: it cannot see the
+// screen, only what a step reports back.
+// ---------------------------------------------------------------------------
+
+const defaultTypeChunkRunes = 200
+const maxScrollTicks = 50
+
+// runScroll sends wheel/button clicks at one point. Vertical scroll is X buttons
+// 4 (up) / 5 (down), horizontal is 6 (left) / 7 (right) — see
+// pkg/target.X11Target.Scroll, which owns the sign convention.
+func runScroll(step Step, ctx *ExecContext) error {
+	n := step.Amount
+	if n == 0 {
+		n = 3
+	}
+	if n < 0 {
+		return fmt.Errorf("scroll amount must be positive, got %d", n)
+	}
+	if n > maxScrollTicks {
+		ctx.logf("[Automation] scroll amount %d clamped to %d", n, maxScrollTicks)
+		n = maxScrollTicks
+	}
+
+	dx, dy := 0, 0
+	switch strings.ToLower(step.Direction) {
+	case "down":
+		dy = n
+	case "up":
+		dy = -n
+	case "right":
+		dx = n
+	case "left":
+		dx = -n
+	default:
+		return fmt.Errorf("unknown scroll direction %q (want up, down, left or right)", step.Direction)
+	}
+
+	x, y, ok := coordinateOrDefault(step, ctx, true)
+	if !ok {
+		return fmt.Errorf("scroll needs x/y, a previous match or a sized target to aim at")
+	}
+
+	ctx.logf("[Automation] Scroll: (%d, %d) %s x%d", x, y, step.Direction, n)
+	ctx.publish(x, y)
+	return ctx.Target.Scroll(x, y, dx, dy)
+}
+
+// coordinateOrDefault resolves a step's x/y: explicit values win, then the last
+// successful match, then the centre of the captured area. The third fallback is
+// what makes "scroll the middle of this window" a one-line request.
+func coordinateOrDefault(step Step, ctx *ExecContext, preferLastFound bool) (int, int, bool) {
+	x := getIntField(step.X, ctx.Variables, -1)
+	y := getIntField(step.Y, ctx.Variables, -1)
+	if x >= 0 && y >= 0 {
+		return x, y, true
+	}
+	if preferLastFound && ctx.hasFound {
+		return ctx.LastFoundX, ctx.LastFoundY, true
+	}
+	w, h := ctx.Target.ScreenSize()
+	if w <= 0 || h <= 0 {
+		return 0, 0, false
+	}
+	cx, cy := w/2, h/2
+	if x >= 0 {
+		return x, cy, true
+	}
+	if y >= 0 {
+		return cx, y, true
+	}
+	return cx, cy, true
+}
+
+// runScreenshot writes one capture of the run's target to disk. Unlike
+// POST /screenshot it deliberately runs no pipeline: no clipboard copy, no
+// upload, no LLM call, and above all no overlay — an overlay grabs the pointer
+// and keyboard, which would deadlock the agent waiting for the response.
+func runScreenshot(step Step, ctx *ExecContext) error {
+	res, err := CaptureTo(ctx.Target, ShotSpec{
+		Output:    step.Output,
+		Region:    step.Region,
+		Config:    ctx.Config,
+		ScriptDir: ctx.ScriptDir,
+	})
+	if err != nil {
+		return err
+	}
+	ctx.logf("[Automation] Screenshot: %s (%dx%d, %d bytes)", res.Path, res.Width, res.Height, res.Bytes)
+	ctx.setData(res)
+	return nil
+}
+
+// runWaitUntil blocks on a condition instead of making the agent poll over HTTP.
+//
+// Bounded twice over: the poller's own deadline, and the run's watchdog. The
+// error text always says what was wanted and what was seen, because that string
+// is the only diagnostic an agent gets.
+func runWaitUntil(step Step, ctx *ExecContext) error {
+	timeout := defaultFindTimeout
+	if step.Timeout != "" {
+		d, err := time.ParseDuration(step.Timeout)
+		if err != nil {
+			return fmt.Errorf("invalid timeout %q for wait_until: %w", step.Timeout, err)
+		}
+		timeout = d
+	}
+
+	cond := strings.ToLower(step.WaitFor)
+	if cond == "" {
+		return fmt.Errorf("wait_until requires wait_for (window, window_gone, image, text or pixel)")
+	}
+
+	ctx.logf("[Automation] Wait until %s (timeout=%v)", cond, timeout)
+
+	switch cond {
+	case "window", "window_gone":
+		return waitUntilWindow(step, ctx, cond, timeout)
+	case "image", "text", "pixel":
+		return waitUntilScreen(step, ctx, cond, timeout)
+	default:
+		return fmt.Errorf("unknown wait_for %q (want window, window_gone, image, text or pixel)", cond)
+	}
+}
+
+func waitUntilWindow(step Step, ctx *ExecContext, cond string, timeout time.Duration) error {
+	if step.Window == nil {
+		return fmt.Errorf("wait_until %q requires a window selector", cond)
+	}
+	x11 := ctx.x11ctx()
+	if x11 == nil {
+		return fmt.Errorf("wait_until %q requires an x11 or vfb target", cond)
+	}
+	xu := x11.XUtil()
+
+	want := cond == "window"
+	poller := newScreenPoller(ctx, timeout, statePollInterval)
+	for {
+		res, err := poller.tick(func() (bool, error) {
+			_, err := ResolveWindow(xu, step.Window)
+			if err != nil {
+				return !want, nil
+			}
+			return want, nil
+		})
+		if err != nil {
+			return err
+		}
+		if res == outDone {
+			// Re-resolve for the report: the id the condition matched is the id the
+			// agent wants to address next.
+			id, _ := ResolveWindow(xu, step.Window)
+			info, infoErr := DescribeWindow(xu, id)
+			if infoErr != nil {
+				info = WindowInfo{ID: id, IDHex: fmt.Sprintf("0x%x", id)}
+			}
+			ctx.setData(info)
+			ctx.logf("[Automation] wait_until %s satisfied: window 0x%x %q", cond, id, info.Title)
+			return nil
+		}
+		if res == outTimeout {
+			return fmt.Errorf("timed out after %v waiting for %s: no window matching title=%q class=%q%s",
+				timeout, cond, step.Window.Title, step.Window.Class, poller.captureNote())
+		}
+	}
+}
+
+func waitUntilScreen(step Step, ctx *ExecContext, cond string, timeout time.Duration) error {
+	var describe string
+	var lastSeen string // for pixel: what the screen actually showed, in the error text
+	var match func(haystack image.Image, offX, offY int) (bool, error)
+
+	switch cond {
+	case "image":
+		path := step.Image
+		if path == "" {
+			path = step.Target
+		}
+		if path == "" {
+			return fmt.Errorf("wait_until image requires an image path")
+		}
+		needle, err := decodeTemplate(path, ctx.ScriptDir)
+		if err != nil {
+			return err
+		}
+		confidence := step.Confidence
+		if confidence <= 0 {
+			confidence = 0.90
+		}
+		describe = fmt.Sprintf("image %q at confidence %.2f", path, confidence)
+		match = func(haystack image.Image, offX, offY int) (bool, error) {
+			x, y, conf, err := FindImage(haystack, needle, confidence)
+			if err != nil {
+				return false, nil
+			}
+			ctx.setFound(x+offX, y+offY)
+			ctx.setData(map[string]interface{}{"x": x + offX, "y": y + offY, "confidence": conf})
+			return true, nil
+		}
+	case "text":
+		needle := step.Text
+		if needle == "" {
+			needle = step.Target
+		}
+		if needle == "" {
+			return fmt.Errorf("wait_until text requires text to wait for")
+		}
+		ocrAddr, ocrLang, ocrModel := ocrSettings(step, ctx)
+		describe = fmt.Sprintf("text %q", needle)
+		match = func(haystack image.Image, offX, offY int) (bool, error) {
+			x, y, _, conf, err := FindTextWithBounds(haystack, ocrAddr, ocrLang, ocrModel, needle)
+			if err != nil {
+				return false, nil
+			}
+			ctx.setFound(x+offX, y+offY)
+			ctx.setData(map[string]interface{}{"x": x + offX, "y": y + offY, "confidence": conf})
+			return true, nil
+		}
+	case "pixel":
+		x := getIntField(step.X, ctx.Variables, -1)
+		y := getIntField(step.Y, ctx.Variables, -1)
+		if x < 0 || y < 0 {
+			return fmt.Errorf("wait_until pixel requires x and y")
+		}
+		want, err := parseHexColor(step.Color)
+		if err != nil {
+			return err
+		}
+		tol := step.Tolerance
+		if tol < 0 {
+			return fmt.Errorf("tolerance must be >= 0, got %d", tol)
+		}
+		describe = fmt.Sprintf("pixel (%d, %d) == %s (+/- %d)", x, y, step.Color, tol)
+		lastSeen = "nothing"
+		match = func(haystack image.Image, _, _ int) (bool, error) {
+			got, ok := pixelAt(haystack, x, y)
+			if !ok {
+				b := haystack.Bounds()
+				return false, fmt.Errorf("pixel (%d, %d) is outside the captured %dx%d area", x, y, b.Dx(), b.Dy())
+			}
+			lastSeen = got.Hex()
+			ctx.setData(map[string]interface{}{"x": x, "y": y, "color": got.Hex(), "want": step.Color})
+			if colorNear(got, want, tol) {
+				return true, nil
+			}
+			return false, nil
+		}
+	}
+
+	poller := newScreenPoller(ctx, timeout, capturePollInterval)
+	for {
+		res, err := poller.step(step.Region, match)
+		if err != nil {
+			return err
+		}
+		if res == outDone {
+			return nil
+		}
+		if res == outTimeout || res == outCaptureFailed {
+			seen := ""
+			if lastSeen != "" {
+				seen = fmt.Sprintf(", last seen %s", lastSeen)
+			}
+			return fmt.Errorf("timed out after %v waiting for %s%s%s", timeout, describe, seen, poller.captureNote())
+		}
+	}
+}
+
+// runWindowState reads back what the window manager actually did — the difference
+// between "the request was sent" and "the window is fullscreen now".
+func runWindowState(step Step, ctx *ExecContext) error {
+	x11 := ctx.x11ctx()
+	if x11 == nil {
+		return fmt.Errorf("window_state requires an x11 or vfb target")
+	}
+	xu := x11.XUtil()
+
+	var winID uint32
+	var err error
+	if step.Window != nil {
+		if winID, err = ResolveWindow(xu, step.Window); err != nil {
+			return err
+		}
+	} else {
+		winID = x11.WinID()
+	}
+	if winID == 0 {
+		return fmt.Errorf("window_state needs a window: the run is screen-scoped, pass a window selector")
+	}
+
+	info, err := DescribeWindow(xu, winID)
+	if err != nil {
+		return err
+	}
+	ctx.setData(info)
+	ctx.logf("[Automation] window 0x%x: %s %q state=%s", winID, info.Geometry, info.Title, strings.Join(info.State.States, ","))
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Small shared helpers for the actions above (and for engine.go's if_pixel).
+// ---------------------------------------------------------------------------
+
+// setFound records a match: it feeds both the {{LastFound}} style coordinate
+// chaining of subsequent steps and the x/y reported in the step result.
+func (ctx *ExecContext) setFound(x, y int) {
+	ctx.LastFoundX, ctx.LastFoundY = x, y
+	ctx.hasFound = true
+	ctx.publish(x, y)
+}
+
+// ocrSettings resolves the OCR endpoint/language/model from config and step.
+func ocrSettings(step Step, ctx *ExecContext) (addr, lang, model string) {
+	addr, lang = "http://localhost:8765", "ch"
+	if ctx.Config != nil {
+		addr, lang = ctx.Config.OCRAddress, ctx.Config.OCRLanguage
+	}
+	if step.Language != "" {
+		lang = step.Language
+	}
+	return addr, lang, step.Model
+}
+
+// decodeTemplate loads a match template, resolving relative paths against the
+// script directory (for HTTP runs that is cfg.AutomationDir).
+func decodeTemplate(path, scriptDir string) (image.Image, error) {
+	imgPath := path
+	if !filepath.IsAbs(imgPath) && scriptDir != "" {
+		imgPath = filepath.Join(scriptDir, imgPath)
+	}
+	f, err := os.Open(imgPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open template image: %w", err)
+	}
+	defer f.Close()
+	needle, _, err := image.Decode(f)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode template image: %w", err)
+	}
+	return needle, nil
+}
+
+// rgb is a plain 8-bit colour; the engine needs nothing richer, and using its own
+// type keeps the tolerance rules in one place instead of spread over two actions.
+type rgb struct{ r, g, b uint8 }
+
+func (c rgb) Hex() string { return fmt.Sprintf("#%02x%02x%02x", c.r, c.g, c.b) }
+
+func parseHexColor(s string) (rgb, error) {
+	var c rgb
+	hexStr := strings.TrimPrefix(strings.TrimSpace(s), "#")
+	n, err := fmt.Sscanf(hexStr, "%02x%02x%02x", &c.r, &c.g, &c.b)
+	if err != nil || n != 3 {
+		return c, fmt.Errorf("invalid hex color string %q (want #rrggbb)", s)
+	}
+	return c, nil
+}
+
+// pixelAt reads one pixel, reporting false when the point is outside the image.
+func pixelAt(img image.Image, x, y int) (rgb, bool) {
+	b := img.Bounds()
+	if x < b.Min.X || x >= b.Max.X || y < b.Min.Y || y >= b.Max.Y {
+		return rgb{}, false
+	}
+	r, g, bl, _ := img.At(x, y).RGBA()
+	return rgb{r: uint8(r >> 8), g: uint8(g >> 8), b: uint8(bl >> 8)}, true
+}
+
+// colorNear compares channel-wise with a per-channel tolerance, which is what
+// if_pixel has always meant by "tolerance".
+func colorNear(got, want rgb, tolerance int) bool {
+	diff := func(a, b uint8) int {
+		if a > b {
+			return int(a - b)
+		}
+		return int(b - a)
+	}
+	return diff(got.r, want.r) <= tolerance &&
+		diff(got.g, want.g) <= tolerance &&
+		diff(got.b, want.b) <= tolerance
 }

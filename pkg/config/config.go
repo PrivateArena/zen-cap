@@ -123,28 +123,31 @@ type BrowserBridgeConfig struct {
 }
 
 type Config struct {
-	OutputDir            string              `json:"output_dir"`
-	Hotkeys              HotkeysConfig       `json:"hotkeys"`
-	SnippetPicker        SnippetPickerConfig `json:"snippet_picker"`
-	OCRAddress           string              `json:"ocr_address"`           // Default: "http://localhost:8765"
-	APIAddress           string              `json:"api_address"`           // Default: "localhost:4444"
-	OCRLanguage          string              `json:"ocr_language"`          // Default: "ch"
-	OCRLanguages         []string            `json:"ocr_languages"`         // Default: ["en", "ja", "ko", "ch"]
-	OCRAutoFPS           float64             `json:"ocr_auto_fps"`          // Default: 1.0
-	TranslationTarget    string              `json:"translation_target"`    // Default: "en"
-	TranslationEngine    string              `json:"translation_engine"`    // "google" or "local" (default: "google")
-	AutoTranslate        bool                `json:"auto_translate"`        // Default: false
-	ColorPickerFormat    string              `json:"color_picker_format"`   // "hex", "rgb", "rgba", "hsl" (default: "hex")
-	DisableNotifications bool                `json:"disable_notifications"` // Default: false
-	ClipboardSessionFile string              `json:"clipboard_session_file"`
-	SnippetFile          string              `json:"snippet_file"`
-	AutomationDir        string              `json:"automation_dir"`
-	TransformRules       []TransformRule     `json:"transform_rules"`
-	Magnifier            MagnifierConfig     `json:"magnifier"`
-	Recorder             RecorderSettings    `json:"recorder"`
-	SnippetMode          string              `json:"snippet_mode"` // "paste" or "type" (default: "paste")
-	PromptsPath          string              `json:"prompts_path"` // abs path to prompts directory
-	SkillsPath           string              `json:"skills_path"`  // abs path to skills directory
+	OutputDir                string              `json:"output_dir"`
+	Hotkeys                  HotkeysConfig       `json:"hotkeys"`
+	SnippetPicker            SnippetPickerConfig `json:"snippet_picker"`
+	OCRAddress               string              `json:"ocr_address"`                  // Default: "http://localhost:8765"
+	APIAddress               string              `json:"api_address"`                  // Default: "localhost:4444"
+	DenyAPIInput             bool                `json:"deny_api_input"`               // Default: false (input allowed)
+	APIMaxRunDurationSeconds int                 `json:"api_max_run_duration_seconds"` // Default: 60
+	APIMaxInlineBytes        int                 `json:"api_max_inline_bytes"`         // Default: 8388608 (8 MiB)
+	OCRLanguage              string              `json:"ocr_language"`                 // Default: "ch"
+	OCRLanguages             []string            `json:"ocr_languages"`                // Default: ["en", "ja", "ko", "ch"]
+	OCRAutoFPS               float64             `json:"ocr_auto_fps"`                 // Default: 1.0
+	TranslationTarget        string              `json:"translation_target"`           // Default: "en"
+	TranslationEngine        string              `json:"translation_engine"`           // "google" or "local" (default: "google")
+	AutoTranslate            bool                `json:"auto_translate"`               // Default: false
+	ColorPickerFormat        string              `json:"color_picker_format"`          // "hex", "rgb", "rgba", "hsl" (default: "hex")
+	DisableNotifications     bool                `json:"disable_notifications"`        // Default: false
+	ClipboardSessionFile     string              `json:"clipboard_session_file"`
+	SnippetFile              string              `json:"snippet_file"`
+	AutomationDir            string              `json:"automation_dir"`
+	TransformRules           []TransformRule     `json:"transform_rules"`
+	Magnifier                MagnifierConfig     `json:"magnifier"`
+	Recorder                 RecorderSettings    `json:"recorder"`
+	SnippetMode              string              `json:"snippet_mode"` // "paste" or "type" (default: "paste")
+	PromptsPath              string              `json:"prompts_path"` // abs path to prompts directory
+	SkillsPath               string              `json:"skills_path"`  // abs path to skills directory
 
 	// --- new: post-capture task pipeline ---
 	AfterCaptureTasks []string       `json:"after_capture_tasks"`  // ordered task names, e.g. ["edit","upload","vision","copy_image"]
@@ -275,21 +278,24 @@ func DefaultConfig() *Config {
 			CycleTaskProfile:     "Control-Mod1-p",
 			RecordAutomation:     "Control-Shift-m",
 		},
-		SnippetMode:          "paste",
-		ColorPickerFormat:    "hex",
-		OCRAddress:           "http://localhost:8765",
-		APIAddress:           "localhost:4444",
-		OCRLanguage:          "ch",
-		OCRLanguages:         []string{"en", "ja", "ko", "ch"},
-		OCRAutoFPS:           1.0,
-		TranslationTarget:    "en",
-		TranslationEngine:    "google",
-		AutoTranslate:        false,
-		DisableNotifications: false,
-		ClipboardSessionFile: defaultSessionFile,
-		SnippetFile:          defaultSnippetFile,
-		AutomationDir:        defaultAutomationDir,
-		TransformRules:       DefaultTransformRules(),
+		SnippetMode:              "paste",
+		ColorPickerFormat:        "hex",
+		OCRAddress:               "http://localhost:8765",
+		APIAddress:               "localhost:4444",
+		DenyAPIInput:             false,
+		APIMaxRunDurationSeconds: 60,
+		APIMaxInlineBytes:        8 << 20,
+		OCRLanguage:              "ch",
+		OCRLanguages:             []string{"en", "ja", "ko", "ch"},
+		OCRAutoFPS:               1.0,
+		TranslationTarget:        "en",
+		TranslationEngine:        "google",
+		AutoTranslate:            false,
+		DisableNotifications:     false,
+		ClipboardSessionFile:     defaultSessionFile,
+		SnippetFile:              defaultSnippetFile,
+		AutomationDir:            defaultAutomationDir,
+		TransformRules:           DefaultTransformRules(),
 		Magnifier: MagnifierConfig{
 			Enabled:          false,
 			Display:          "", // empty = use $DISPLAY (C5)
@@ -458,21 +464,24 @@ func DefaultPortableConfig(binDir string) *Config {
 			CycleTaskProfile:     "Control-Mod1-p",
 			RecordAutomation:     "Control-Shift-m",
 		},
-		SnippetMode:          "paste",
-		ColorPickerFormat:    "hex",
-		OCRAddress:           "http://localhost:8765",
-		APIAddress:           "localhost:4444",
-		OCRLanguage:          "ch",
-		OCRLanguages:         []string{"en", "ja", "ko", "ch"},
-		OCRAutoFPS:           1.0,
-		TranslationTarget:    "en",
-		TranslationEngine:    "google",
-		AutoTranslate:        false,
-		DisableNotifications: false,
-		ClipboardSessionFile: filepath.Join(binDir, "clipboard_session.json"),
-		SnippetFile:          filepath.Join(binDir, "snippets.yaml"),
-		AutomationDir:        filepath.Join(binDir, "automations"),
-		TransformRules:       DefaultTransformRules(),
+		SnippetMode:              "paste",
+		ColorPickerFormat:        "hex",
+		OCRAddress:               "http://localhost:8765",
+		APIAddress:               "localhost:4444",
+		DenyAPIInput:             false,
+		APIMaxRunDurationSeconds: 60,
+		APIMaxInlineBytes:        8 << 20,
+		OCRLanguage:              "ch",
+		OCRLanguages:             []string{"en", "ja", "ko", "ch"},
+		OCRAutoFPS:               1.0,
+		TranslationTarget:        "en",
+		TranslationEngine:        "google",
+		AutoTranslate:            false,
+		DisableNotifications:     false,
+		ClipboardSessionFile:     filepath.Join(binDir, "clipboard_session.json"),
+		SnippetFile:              filepath.Join(binDir, "snippets.yaml"),
+		AutomationDir:            filepath.Join(binDir, "automations"),
+		TransformRules:           DefaultTransformRules(),
 		Magnifier: MagnifierConfig{
 			Enabled:          false,
 			Display:          "", // empty = use $DISPLAY (C5)
@@ -819,6 +828,15 @@ func readConfig(path string, binDir string, isPortable bool) (*Config, error) {
 	}
 	if cfg.APIAddress == "" {
 		cfg.APIAddress = defaults.APIAddress
+	}
+	// Boolean with inverse polarity on purpose: an absent "deny_api_input" key
+	// unmarshals to false, which is the "input allowed" default, so no sentinel
+	// is needed to tell "unset" from "explicitly false".
+	if cfg.APIMaxRunDurationSeconds <= 0 {
+		cfg.APIMaxRunDurationSeconds = defaults.APIMaxRunDurationSeconds
+	}
+	if cfg.APIMaxInlineBytes <= 0 {
+		cfg.APIMaxInlineBytes = defaults.APIMaxInlineBytes
 	}
 	if cfg.OCRLanguage == "" {
 		cfg.OCRLanguage = defaults.OCRLanguage

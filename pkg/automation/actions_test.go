@@ -40,6 +40,18 @@ type mockTarget struct {
 		x, y int
 		btn  string
 	}
+	// scrolls records every Scroll call: the only way to unit-test a scroll
+	// direction convention (which buttons the target ends up pressing) without an
+	// X server.
+	scrolls []struct{ x, y, dx, dy int }
+	// screenshotErr, when set, makes every capture fail — which is how the
+	// bounded-polling tests simulate a window that died mid-run.
+	screenshotErr error
+	// typeErr, when set, fails the first Type call.
+	typeErr error
+	// afterType runs after each recorded Type, so a test can cancel a run in the
+	// middle of a chunked paste.
+	afterType func(calls int)
 }
 
 func newMockTarget(img image.Image) *mockTarget {
@@ -49,8 +61,13 @@ func newMockTarget(img image.Image) *mockTarget {
 	return &mockTarget{screenshotImg: img}
 }
 
-func (m *mockTarget) Screenshot() (image.Image, error) { return m.screenshotImg, nil }
-func (m *mockTarget) ScreenSize() (int, int)           { b := m.screenshotImg.Bounds(); return b.Dx(), b.Dy() }
+func (m *mockTarget) Screenshot() (image.Image, error) {
+	if m.screenshotErr != nil {
+		return nil, m.screenshotErr
+	}
+	return m.screenshotImg, nil
+}
+func (m *mockTarget) ScreenSize() (int, int) { b := m.screenshotImg.Bounds(); return b.Dx(), b.Dy() }
 func (m *mockTarget) Click(x, y int, btn string) error {
 	m.clicks = append(m.clicks, struct {
 		x, y int
@@ -79,12 +96,21 @@ func (m *mockTarget) ButtonRelease(x, y int, btn string) error {
 	return nil
 }
 func (m *mockTarget) Type(text string, delay int64) error {
+	if m.typeErr != nil {
+		return m.typeErr
+	}
 	m.types = append(m.types, text)
+	if m.afterType != nil {
+		m.afterType(len(m.types))
+	}
 	return nil
 }
-func (m *mockTarget) Key(keys string) error         { m.keys = append(m.keys, keys); return nil }
-func (m *mockTarget) Scroll(x, y, dx, dy int) error { return nil }
-func (m *mockTarget) Close() error                  { return nil }
+func (m *mockTarget) Key(keys string) error { m.keys = append(m.keys, keys); return nil }
+func (m *mockTarget) Scroll(x, y, dx, dy int) error {
+	m.scrolls = append(m.scrolls, struct{ x, y, dx, dy int }{x, y, dx, dy})
+	return nil
+}
+func (m *mockTarget) Close() error { return nil }
 
 func TestRunLog(t *testing.T) {
 	var loggedMessage string

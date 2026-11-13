@@ -150,7 +150,7 @@ func (p *screenPoller) step(regionStr string, fn func(haystack image.Image, offX
 	if capErr != nil {
 		p.lastCapErr = capErr.Error()
 		if p.ctx.Logger != nil {
-			p.ctx.Logger("[Automation] Capture failed while polling: %v", capErr)
+			p.ctx.logf("[Automation] Capture failed while polling: %v", capErr)
 		}
 		if time.Now().After(p.deadline) {
 			if p.captureSucceeded() {
@@ -171,7 +171,7 @@ func (p *screenPoller) step(regionStr string, fn func(haystack image.Image, offX
 		rx, ry, rw, rh, err := ParseRegion(regionStr, b.Dx(), b.Dy())
 		if err != nil {
 			if p.ctx.Logger != nil {
-				p.ctx.Logger("[Automation] Warning parsing region: %v", err)
+				p.ctx.logf("[Automation] Warning parsing region: %v", err)
 			}
 		} else {
 			haystack, offX, offY = CropImage(haystack, rx, ry, rw, rh)

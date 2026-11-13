@@ -48,6 +48,22 @@ type Step struct {
 	Name  string                 `json:"name,omitempty" yaml:"name,omitempty"`
 	Value interface{}            `json:"value,omitempty" yaml:"value,omitempty"`
 	Args  map[string]interface{} `json:"args,omitempty" yaml:"args,omitempty"`
+
+	// Pointer gestures and waits (see AUTOMATION_API.md).
+	//
+	// Every field here is omitempty on both tags, so an existing YAML script
+	// marshals byte-identically after this change — asserted by
+	// TestExampleScriptRoundTripsUnchanged in manager_test.go.
+	Direction  string `json:"direction,omitempty" yaml:"direction,omitempty"`     // scroll: up|down|left|right
+	Amount     int    `json:"amount,omitempty" yaml:"amount,omitempty"`           // scroll: tick count (default 3, clamped to 50)
+	Clicks     int    `json:"clicks,omitempty" yaml:"clicks,omitempty"`           // click: repeat count (1 = single, 2 = double, 3 = triple)
+	ClickGap   string `json:"click_gap,omitempty" yaml:"click_gap,omitempty"`     // click: gap between repeats, default "40ms"
+	WaitFor    string `json:"wait_for,omitempty" yaml:"wait_for,omitempty"`       // wait_until: window|window_gone|image|text|pixel
+	NoActivate bool   `json:"no_activate,omitempty" yaml:"no_activate,omitempty"` // click: inverse polarity, false (absent) = raise+activate first
+
+	// ChunkRunes bounds how much text a single `type` step pushes through XTEST
+	// before checking the abort channel; 0 = default (200).
+	ChunkRunes int `json:"chunk_runes,omitempty" yaml:"chunk_runes,omitempty"`
 }
 
 type Script struct {
