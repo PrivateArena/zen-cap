@@ -217,7 +217,13 @@ func checkX11WindowAlive(t *target.X11Target) error {
 	// the pointer, so this probe fails precisely when the next click would.
 	_, err := xproto.TranslateCoordinates(xu.Conn(), xproto.Window(t.WinID()), xproto.Window(t.WinID()), 0, 0).Reply()
 	if err != nil {
-		return newRunError(CodeWindowGone, "window 0x%x is no longer usable: %v", t.WinID(), err)
+		// Only a "that id is no longer a window" answer is a gone window. An X I/O
+		// error means the *connection* died; telling the agent to re-enumerate would
+		// send it retrying against a dead daemon.
+		if isDeadWindowError(err) {
+			return newRunError(CodeWindowGone, "window 0x%x is no longer usable: %v", t.WinID(), err)
+		}
+		return newRunError(CodeXError, "cannot check window 0x%x: %v", t.WinID(), err)
 	}
 	return nil
 }

@@ -334,7 +334,7 @@ Simulates a mouse click at window-relative (or screen) coordinates.
 action: click
 x: 450
 y: 320
-button: left     # Options: "left", "middle", "right", "wheel-up", "wheel-down"
+button: left     # "left", "middle", "right", or a raw X button number (e.g. "8" = browser Back)
 clicks: 1        # Press/release pairs at ONE pointer warp: 2 is a real double-click
 click_gap: 40ms  # Gap between the repeated presses
 no_activate: false
@@ -344,12 +344,13 @@ Omitting `x`/`y` clicks the last match made by `find_image`/`find_text`/`ocr`/`w
 `clicks: N` sends N press/release pairs without re-warping between them, which is what
 makes the pair a double-click to a fast application instead of two single clicks.
 
-By default the first press is preceded by raising and activating the run's target
-window (`_NET_ACTIVE_WINDOW`) and a 150 ms settle, so `click` in a field followed by
-`type` lands where it was aimed. `no_activate: true` restores the old focusless
-behaviour, which is what a script that must not disturb the desktop wants. Focus
-cannot be *verified* generically (focus-follows-mouse, embedded windows, WMs without
-`_NET_ACTIVE_WINDOW`), which is why the engine acts on the assumption instead of
+An **HTTP** run raises and activates the run's target window (`_NET_ACTIVE_WINDOW`,
+plus a 150 ms settle) before the first press, so `click` in a field followed by `type`
+lands where it was aimed. **YAML scripts never do this** — activation is chosen by the
+caller, not by an absent step field, so a script written to be focusless stays
+focusless. `no_activate: true` switches it off for a single step of an HTTP run.
+Focus cannot be *verified* generically (focus-follows-mouse, embedded windows, WMs
+without `_NET_ACTIVE_WINDOW`), which is why the engine acts on the assumption instead of
 detecting it.
 
 ### `move`
@@ -561,7 +562,7 @@ never becomes a silent no-op.
 Writes one capture of the run's target to disk.
 ```yaml
 action: screenshot
-output: "state/after.png"   # Relative to the script directory, or absolute
+output: "state/after.png"   # Under output_dir, or an absolute path (`ocr`/`if_found` resolve against the script directory; a capture is machine output, not a script asset)
 region: "0,0,800,600"       # Optional crop, resolved against the captured image
 ```
 The step's `data` is `{path, width, height, bytes}`. Over HTTP this writes no

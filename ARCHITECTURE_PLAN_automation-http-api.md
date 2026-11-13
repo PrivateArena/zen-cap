@@ -222,3 +222,57 @@ Rejected: *"stateless `POST /automation/exec` reusing `RunScript` needs no new c
 
 1. **`MatchWindowTitleClass` (A8) vs `ResolveWindow` (engine.go:141)** — should the HTTP `?class=`/`?title=` filters keep today's *substring, case-insensitive, first-match-in-`ClientList`-order* rule (so the API matches YAML behaviour, and `ZEN_CAP_SERVER_API.md`'s documented `"class": "firefox"` semantics), or gain exact-match/`nth` disambiguation for apps with several similar windows? Deferred: it is a product judgement about how much an agent should have to know about the user's window titles; both options are one function body. Recommendation: keep substring behaviour for Phase 1, return **all** matches in `GET /automation/windows` (already the case) so the agent picks by `id`.
 2. **`AUTOMATION_GAPS_ANALYSIS.md` / `PROJECT_OVERVIEW*.md`** — these repo docs predate this API; whether they get rewritten as part of A15/A16 or in a separate docs pass was not scoped here (nothing in the build sequence depends on it).
+
+---
+
+## Landing notes (A1–A16, landed on top of `3ac8f33`)
+
+Where the implementation differs from the text above, and why.
+
+1. **Interpolation syntax is `${name}`, not `{{name}}`** (`eval.go:9`, `varRegex`). The
+   plan wrote `{{var}}` throughout; nothing in the engine ever parsed that. Docs say
+   `${name}`.
+2. **`busy_timeout` is 429** (as A11's prose says), not the 408 a literal reading of
+   the table might suggest.
+3. **`no_activate` cannot be a per-step default and still keep YAML byte-identical.**
+   "false = activate" would have made every pre-existing focusless script steal focus
+   and gain a 150 ms delay, contradicting the decision table. Activation is therefore a
+   *run* property: `RunOptions.ActivateClicks`, set only by `handleExec`; the per-step
+   `no_activate: true` still opts out. `shouldActivateBeforeClick` is the predicate,
+   and `TestActivationPolicyIsCallerScoped` pins it.
+4. **`resolve` is split into `lookup` (pure) + `raise` (side effect)**, and `raise` runs
+   *after* the gate is acquired — otherwise a second request could change focus in the
+   middle of a run that owns the pointer. `POST /automation/screenshot` resolves without
+   raising at all: xcbgrab reads the window's own drawable, so a read has no business
+   touching focus.
+5. **Panic button release only fires for runs whose steps inject input.** Doing it for
+   any failed read-only batch would cancel a drag the *human* is performing.
+6. **`held_buttons` reads the button bits of the pointer mask (1<<8 up), not the low
+   bits** — the low bits are Shift/Caps/Control/Mod locks, so the naive version reported
+   "buttons held" for a user with NumLock on.
+7. **`button` has no catalog enum**: `resolveButton` also accepts raw X button numbers
+   (`"8"` = browser Back), and a `left|middle|right` enum would 400 a legal request. The
+   stale `wheel-up`/`wheel-down` claim in `AUTOMATION_API.md` is corrected (they were
+   never implemented; they fell through to button 1).
+8. **`A8`'s probe window is a normal client, not `override_redirect`** — an
+   override-redirect window is invisible to a window manager by design and so never
+   enters `_NET_CLIENT_LIST`; the listing would not contain it on a real desktop.
+9. **`DescribeDisplay` gained `DescribeDisplayOn(xu, display)`** because opening a
+   connection per state read raced Xvfb's socket; the retry belongs to the connection,
+   not to the snapshot.
+10. **`RunSteps` returns a non-nil `*RunResult` even when the target could not be
+    opened**, so the documented "an error body still carries `ok`/`run_id`/`steps`"
+    holds for 409/500 too.
+11. **`window_state`/`state` geometry is client-space** (`CurrentGeometry(…, false)`),
+    matching what a window-scoped screenshot and click use. `pkg/display` keeps reporting
+    frame geometry for the picker; the two are documented as different spaces.
+12. **Extra fields beyond the table** (all additive): `steps_truncated`,
+    `log_truncated`, `step_index`, `candidates` on `/automation/window`, `count` on
+    `/automation/windows`, `window_title` on the screenshot response, `run_ids` on abort.
+    The caps exist because a runaway `loop` must not grow the response without bound.
+13. **Smoke script exits on the first failure**, naming the step and printing the body
+    (A14's acceptance criterion), rather than continuing and summarising; the two goals
+    in A14's text conflict, and the criterion won.
+14. `pkg/display` gained `NewX11DisplayManagerWith(xu)` (a manager over a borrowed
+    connection) so `automation` reuses the one ClientList walk instead of opening a
+    second connection or copying the loop.

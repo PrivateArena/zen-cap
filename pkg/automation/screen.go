@@ -24,10 +24,11 @@ import (
 type ShotSpec struct {
 	Output string
 	Region string
-	// Config supplies OutputDir; nil falls back to "." rather than a panic, since
-	// a library caller may legitimately have no config.
-	Config    *config.Config
-	ScriptDir string
+	// Config supplies OutputDir, which is where every relative output lands; nil
+	// falls back to "." rather than a panic, since a library caller may legitimately
+	// have no config. (Unlike `ocr`/`if_found`, a screenshot is not resolved against
+	// the script directory: it is machine output, not a script asset.)
+	Config *config.Config
 }
 
 type ShotResult struct {

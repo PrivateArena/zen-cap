@@ -77,6 +77,16 @@ func coordField(name, desc string, extra ...string) FieldSpec {
 	return field(name, "integer", desc, extra...)
 }
 
+// buttonField has no Enum on purpose: pkg/target's resolveButton accepts any raw X
+// button number too ("8" for browser Back), and an enum that only listed the three
+// named buttons would turn a legal request into a 400.
+var buttonField = FieldSpec{
+	Name:        "button",
+	Type:        "string",
+	Description: "Which button: left, middle, right, or a raw X button number such as \"8\" (browser Back).",
+	Default:     "left",
+}
+
 var catalogDocs = map[string]catalogEntry{
 	// --- pointer and keyboard: the actions deny_api_input refuses ---
 	"click": {
@@ -84,10 +94,10 @@ var catalogDocs = map[string]catalogEntry{
 		fields: []FieldSpec{
 			coordField("x", "Client-area x; omit to use the last match."),
 			coordField("y", "Client-area y; omit to use the last match."),
-			field("button", "string", "Which button.", "left|middle|right", "default=left"),
+			buttonField,
 			field("clicks", "integer", "Press/release pairs at one warp: 2 is a real double-click.", "default=1"),
 			field("click_gap", "string", "Gap between repeats; a duration like \"40ms\".", "default=40ms"),
-			field("no_activate", "bool", "true = do not raise+activate the window first. The default (false) makes the click focus the field, which is what a later `type` needs."),
+			field("no_activate", "bool", "true = do not raise+activate the window first. Over HTTP the default raises and focuses, which is what a later `type` needs; YAML runs never activate."),
 		},
 	},
 	"move": {
@@ -96,11 +106,11 @@ var catalogDocs = map[string]catalogEntry{
 	},
 	"hold": {
 		summary: "Press and keep a button down at a point (start of a manual drag).", injectsInput: true,
-		fields: []FieldSpec{coordField("x", "Client-area x."), coordField("y", "Client-area y."), field("button", "string", "Which button.", "left|middle|right", "default=left")},
+		fields: []FieldSpec{coordField("x", "Client-area x."), coordField("y", "Client-area y."), buttonField},
 	},
 	"release": {
 		summary: "Release a button at a point (end of a manual drag). Releasing an unheld button is a no-op.", injectsInput: true,
-		fields: []FieldSpec{coordField("x", "Client-area x."), coordField("y", "Client-area y."), field("button", "string", "Which button.", "left|middle|right", "default=left")},
+		fields: []FieldSpec{coordField("x", "Client-area x."), coordField("y", "Client-area y."), buttonField},
 	},
 	"drag": {
 		summary: "Press, move through interpolated points, release. Start equals end means a long press.", injectsInput: true,
@@ -108,7 +118,7 @@ var catalogDocs = map[string]catalogEntry{
 			coordField("x", "Start x."), coordField("y", "Start y."),
 			coordField("x2", "End x; defaults to x."), coordField("y2", "End y; defaults to y."),
 			field("duration", "string", "Total gesture time, so targets that track movement see motion.", "default=300ms"),
-			field("button", "string", "Which button.", "left|middle|right", "default=left"),
+			buttonField,
 		},
 	},
 	"type": {

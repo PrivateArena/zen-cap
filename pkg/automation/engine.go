@@ -27,12 +27,16 @@ func RunScript(script Script, cfg *config.Config, scriptDir string, abortChan ch
 	token := NewRunToken("script:" + script.Name)
 	if abortChan != nil {
 		// Bridge the historical channel form to the token, so the picker's abort
-		// hotkey can still cut a running script short.
+		// hotkey can still cut a running script short. finished retires the bridge
+		// when the run ends: callers create abortChan and never close it, so
+		// without it the goroutine would park for the life of the process.
+		finished := make(chan struct{})
+		defer close(finished)
 		go func() {
 			select {
 			case <-abortChan:
 				token.Cancel()
-			case <-token.Done():
+			case <-finished:
 			}
 		}()
 	}
@@ -200,11 +204,11 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 		for i := 0; i < count; i++ {
 			select {
 			case <-ctx.AbortChan:
-				return fmt.Errorf("execution aborted by user")
+				return ErrAborted
 			default:
 			}
 			ctx.logf("[Automation] Loop iteration %d/%d", i+1, count)
-			if err := executeStepList(interpolatedStep.Steps, ctx); err != nil {
+			if err := runNested(interpolatedStep.Steps, ctx); err != nil {
 				return err
 			}
 		}
@@ -334,7 +338,7 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 			targetSteps = interpolatedStep.Else
 		}
 
-		if err := executeStepList(targetSteps, ctx); err != nil {
+		if err := runNested(targetSteps, ctx); err != nil {
 			return err
 		}
 		return nil
@@ -377,7 +381,7 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 			targetSteps = interpolatedStep.Else
 		}
 
-		if err := executeStepList(targetSteps, ctx); err != nil {
+		if err := runNested(targetSteps, ctx); err != nil {
 			return err
 		}
 		return nil
@@ -434,7 +438,7 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 			targetSteps = interpolatedStep.Else
 		}
 
-		if err := executeStepList(targetSteps, ctx); err != nil {
+		if err := runNested(targetSteps, ctx); err != nil {
 			return err
 		}
 		return nil
@@ -467,7 +471,7 @@ func executeStepWithControl(step Step, ctx *ExecContext) error {
 			}
 		}()
 
-		if err := executeStepList(funcSteps, ctx); err != nil {
+		if err := runNested(funcSteps, ctx); err != nil {
 			return err
 		}
 		return nil

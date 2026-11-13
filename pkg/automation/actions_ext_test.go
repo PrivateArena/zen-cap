@@ -318,6 +318,36 @@ func TestWindowStateNeedsAWindow(t *testing.T) {
 	}
 }
 
+// TestActivationPolicyIsCallerScoped is the invariant the plan states as "existing
+// focusless YAML scripts keep their behaviour": activation before a click is a
+// property of the *caller*, never of an absent step field, so a script written
+// before this existed cannot start stealing focus.
+func TestActivationPolicyIsCallerScoped(t *testing.T) {
+	yamlRun := &ExecContext{}                     // RunScript leaves ActivateClicks false
+	httpRun := &ExecContext{activateClicks: true} // handleExec sets it
+
+	if shouldActivateBeforeClick(yamlRun, Step{Action: "click"}) {
+		t.Error("a YAML run would now activate: the default of an absent no_activate must not change focus behaviour")
+	}
+	if !shouldActivateBeforeClick(httpRun, Step{Action: "click"}) {
+		t.Error("an HTTP run must activate by default, or click-then-type cannot work")
+	}
+	if shouldActivateBeforeClick(httpRun, Step{Action: "click", NoActivate: true}) {
+		t.Error("no_activate: true must always win")
+	}
+}
+
+// TestNoActivateFlagRoundTrips checks the wire field itself.
+func TestNoActivateFlagRoundTrips(t *testing.T) {
+	var s Step
+	if err := json.Unmarshal([]byte(`{"action":"click","no_activate":true}`), &s); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !s.NoActivate {
+		t.Error("no_activate did not decode")
+	}
+}
+
 // --- logging --------------------------------------------------------------
 
 // TestLogfNilSafe is A4(c): a direct caller that does not care what the script

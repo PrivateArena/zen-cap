@@ -15,16 +15,22 @@
 set -uo pipefail
 
 BASE="${BASE:-http://localhost:4444}"
-FAILED=0
 LAST_STEP="startup"
 CODE=000
 BODY=
 
+if ! command -v jq >/dev/null 2>&1; then
+	echo "FAIL: jq is required (every response in this script is parsed with it)"
+	exit 1
+fi
+
+# fail <what broke> [response body]. The first failure is the interesting one, so it
+# prints the offending body and stops here, naming the step that broke: that name is
+# what makes a red run actionable.
 fail() {
-	FAILED=$((FAILED + 1))
-	echo "FAIL: $1"
-	[ -n "${2:-}" ] && echo "      response: $2"
-	exit 1 # the first failure is the interesting one; the body is already printed
+	echo "FAIL: [$LAST_STEP] $1"
+	[ -n "${2:-}" ] && echo "        response: $2"
+	exit 1
 }
 
 # req METHOD PATH [JSON] -> sets $CODE (HTTP status) and $BODY.
@@ -179,9 +185,5 @@ printf '%s' "$body" | jq -e '.max_run_seconds > 0 and (.screens | length) > 0' >
 pass "state: display=$(printf '%s' "$body" | jq -r .display) deny_api_input=$(printf '%s' "$body" | jq -r .deny_api_input)"
 
 echo
-if [ "$FAILED" -eq 0 ]; then
-	echo "automation API smoke: PASS"
-	exit 0
-fi
-echo "automation API smoke: $FAILED step(s) failed (last: $LAST_STEP)"
-exit 1
+echo "automation API smoke: PASS"
+exit 0

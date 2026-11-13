@@ -37,19 +37,24 @@ import (
 // Error codes of the API. They are part of the wire format; the HTTP status is
 // derived from them in one place, httpStatusFor.
 const (
-	codeBadRequest      = "bad_request"
-	codeUnknownAction   = "unknown_action"
-	codeInputDisabled   = "input_disabled"
-	codeWindowNotFound  = "window_not_found"
-	codeWindowGone      = "window_gone"
-	codeTimeout         = "timeout"
-	codeAborted         = "aborted"
-	codeBusy            = "busy_timeout"
-	codeTooLarge        = "too_large"
-	codeXError          = "x_error"
-	codeNoDisplay       = "no_display"
-	codeDanglingGoto    = "dangling_goto"
-	codeStepFailed      = "step_failed"
+	codeBadRequest     = "bad_request"
+	codeUnknownAction  = "unknown_action"
+	codeInputDisabled  = "input_disabled"
+	codeWindowNotFound = "window_not_found"
+	codeWindowGone     = "window_gone"
+	codeTimeout        = "timeout"
+	codeAborted        = "aborted"
+	codeBusy           = "busy_timeout"
+	codeTooLarge       = "too_large"
+	codeXError         = "x_error"
+	codeNoDisplay      = "no_display"
+	codeDanglingGoto   = "dangling_goto"
+	codeStepFailed     = "step_failed"
+	// maxRequestBodyBytes bounds a request body: the run itself is bounded by the
+	// watchdog, but a 20 MB steps array should be refused at the door rather than
+	// decoded and validated while it holds the input gate.
+	maxRequestBodyBytes = 1 << 20
+
 	defaultExecTimeout  = 30 * time.Second
 	defaultInlineMaxLen = 8 << 20
 )
@@ -148,7 +153,7 @@ type TargetSelector struct {
 	NoActivate bool   `json:"no_activate,omitempty"` // do not raise/focus while resolving
 }
 
-// resolve turns a selector into a concrete window id, with the same leniency the
+// lookup turns a selector into a concrete window id, with the same leniency the
 // existing /screenshot endpoint has always shown: an unparsable `window` string is
 // tried as a title/class fragment before it is an error.
 //
@@ -156,13 +161,14 @@ type TargetSelector struct {
 //
 // It returns an id, not a target: RunSteps opens (and closes) its own connection,
 // so that the run's lifetime is not entangled with the request's.
-func (t TargetSelector) resolve(xu *xgbutil.XUtil) (uint32, *APIError) {
+//
+// And it changes nothing on screen. Raising and focusing is a separate step
+// (raise), because focus is a side effect on *someone else's* run: it has to
+// happen inside the input gate, not while another run is clicking.
+func (t TargetSelector) lookup(xu *xgbutil.XUtil) (uint32, *APIError) {
 	adopt := func(id uint32) (uint32, *APIError) {
 		if id == 0 {
 			return 0, newAPIError(http.StatusNotFound, codeWindowNotFound, "window id 0 is not a window")
-		}
-		if !t.NoActivate {
-			activateAndRaiseWindow(xu, id)
 		}
 		return id, nil
 	}
@@ -222,6 +228,15 @@ func (t TargetSelector) resolve(xu *xgbutil.XUtil) (uint32, *APIError) {
 	return 0, nil
 }
 
+// raise brings the resolved window forward and focuses it, unless the caller asked
+// not to. It is deliberately separate from lookup: see the note there.
+func (t TargetSelector) raise(xu *xgbutil.XUtil, id uint32) {
+	if t.NoActivate || id == 0 {
+		return
+	}
+	activateAndRaiseWindow(xu, id)
+}
+
 // ExecRequest is the body of POST /automation/exec.
 type ExecRequest struct {
 	TargetSelector
@@ -276,6 +291,7 @@ func (a *automationAPI) handleExec(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
 	var req ExecRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeAPIError(w, newAPIError(http.StatusBadRequest, codeBadRequest, "bad request body: %v", err))
@@ -311,7 +327,9 @@ func (a *automationAPI) handleExec(w http.ResponseWriter, r *http.Request) {
 	}
 	defer xu.Conn().Close()
 
-	winID, apiErr := req.TargetSelector.resolve(xu)
+	// Read-only resolution first: a request for a window that does not exist must
+	// fail without having touched focus, and without waiting behind an unrelated run.
+	winID, apiErr := req.TargetSelector.lookup(xu)
 	if apiErr != nil {
 		writeAPIError(w, apiErr)
 		return
@@ -323,6 +341,10 @@ func (a *automationAPI) handleExec(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer release()
+
+	// Only now is it safe to move the window manager's attention: this run owns the
+	// pointer from here on.
+	req.TargetSelector.raise(xu, winID)
 
 	token := automation.NewRunToken("")
 	a.runs.Register(token)
@@ -339,13 +361,14 @@ func (a *automationAPI) handleExec(w http.ResponseWriter, r *http.Request) {
 			Steps:  req.Steps,
 			Target: &automation.TargetConfig{Type: "x11", Display: req.Display},
 		},
-		WindowID:    winID,
-		Config:      a.cfg,
-		ScriptDir:   a.cfg.AutomationDir,
-		SeedVars:    req.Vars,
-		Timeout:     timeout,
-		StopOnError: stopOnError,
-		Token:       token,
+		WindowID:       winID,
+		Config:         a.cfg,
+		ScriptDir:      a.cfg.AutomationDir,
+		SeedVars:       req.Vars,
+		Timeout:        timeout,
+		StopOnError:    stopOnError,
+		ActivateClicks: true,
+		Token:          token,
 	})
 
 	if runErr != nil {
@@ -417,6 +440,7 @@ func (a *automationAPI) handleScreenshot(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
 	var req ScreenshotRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeAPIError(w, newAPIError(http.StatusBadRequest, codeBadRequest, "bad request body: %v", err))
@@ -430,14 +454,15 @@ func (a *automationAPI) handleScreenshot(w http.ResponseWriter, r *http.Request)
 	}
 	defer xu.Conn().Close()
 
-	winID, apiErr := req.TargetSelector.resolve(xu)
+	// No input gate here, and no raise: a capture injects nothing and xcbgrab reads
+	// the window's own drawable, so an occluded window captures perfectly well and
+	// the request has no business changing the user's focus. An agent can watch the
+	// screen while a click sequence is queued behind it.
+	winID, apiErr := req.TargetSelector.lookup(xu)
 	if apiErr != nil {
 		writeAPIError(w, apiErr)
 		return
 	}
-
-	// No input gate here: a capture injects nothing, so it never has to wait for a
-	// long run — an agent can watch the screen while a click sequence is queued.
 	tgt, resolvedID, err := automation.OpenTarget(automation.TargetSpec{
 		Display:         req.Display,
 		Backend:         "x11",
@@ -452,10 +477,9 @@ func (a *automationAPI) handleScreenshot(w http.ResponseWriter, r *http.Request)
 	defer func() { _ = tgt.Close() }()
 
 	shot, err := automation.CaptureTo(tgt, automation.ShotSpec{
-		Output:    req.Output,
-		Region:    req.Region,
-		Config:    a.cfg,
-		ScriptDir: a.cfg.AutomationDir,
+		Output: req.Output,
+		Region: req.Region,
+		Config: a.cfg,
 	})
 	if err != nil {
 		writeAPIError(w, targetErrorToAPI(err))
@@ -670,7 +694,11 @@ func (a *automationAPI) handleAbort(w http.ResponseWriter, r *http.Request) {
 
 	// Cancelling the token stops the run at its next check; the buttons come free
 	// in case it was interrupted between a press and its release.
-	released, err := automation.ReleasePointerButtons(os.Getenv("DISPLAY"))
+	display := r.URL.Query().Get("display")
+	if display == "" {
+		display = os.Getenv("DISPLAY")
+	}
+	released, err := automation.ReleasePointerButtons(display)
 	if err != nil {
 		writeAPIError(w, newAPIError(http.StatusServiceUnavailable, codeNoDisplay, "aborted %d run(s) but could not release buttons: %v", len(ids), err))
 		return

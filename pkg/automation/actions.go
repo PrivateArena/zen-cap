@@ -60,6 +60,12 @@ type ExecContext struct {
 	// be attributed to it.
 	lastIndex int
 
+	// activateClicks opts this run into raise+activate before the first click. It
+	// is a *run* property, not a step one: an HTTP agent wants "click focuses the
+	// field" (it cannot do the focusing itself), while a YAML script written to be
+	// focusless must stay focusless — see RunOptions.ActivateClicks.
+	activateClicks bool
+
 	// clickActivated latches the raise+activate of a run, so a batch of clicks
 	// into the same window does not re-activate (and re-settle) per click.
 	clickActivated bool
@@ -82,6 +88,17 @@ func (ctx *ExecContext) hasLogger() bool { return ctx.Logger != nil }
 func (ctx *ExecContext) beginResult() {
 	ctx.LastResult = nil
 	ctx.resultX, ctx.resultY, ctx.hasResult = 0, 0, false
+}
+
+// runNested executes a control-flow body without polluting the enclosing step's
+// result slot: without the save/restore, the trace entry for a `loop` would carry
+// the coordinates and data of whatever its last child matched.
+func runNested(steps []Step, ctx *ExecContext) error {
+	savedResult, savedX, savedY, savedHas := ctx.LastResult, ctx.resultX, ctx.resultY, ctx.hasResult
+	ctx.LastResult, ctx.resultX, ctx.resultY, ctx.hasResult = nil, 0, 0, false
+	err := executeStepList(steps, ctx)
+	ctx.LastResult, ctx.resultX, ctx.resultY, ctx.hasResult = savedResult, savedX, savedY, savedHas
+	return err
 }
 
 // publish attaches coordinates to the step currently executing.
@@ -221,11 +238,11 @@ func runClick(step Step, ctx *ExecContext) error {
 		gap = d
 	}
 
-	// no_activate is inverse-polarity on purpose: the absent (false) default
-	// raises + activates the target window before the first press, which is what
-	// makes "click the field, then type" work. Focus itself cannot be verified
-	// generically, so the API shapes the workflow instead of detecting it.
-	if !step.NoActivate {
+	// Activation happens only when the caller asked for it (ActivateClicks) and the
+	// step did not opt out (no_activate). Focus cannot be verified generically, so
+	// this is the affordance that makes screenshot -> click -> type work for an
+	// agent, without changing what an existing focusless script does.
+	if shouldActivateBeforeClick(ctx, step) {
 		if err := activateForClick(ctx); err != nil {
 			ctx.logf("[Automation] activate before click: %v", err)
 		}
@@ -247,6 +264,14 @@ func runClick(step Step, ctx *ExecContext) error {
 		}
 	}
 	return nil
+}
+
+// shouldActivateBeforeClick is the whole activation policy, as a predicate so it
+// can be pinned without a window manager: HTTP runs ask for activation (an agent
+// has no other way to focus the field it is about to type into), YAML scripts never
+// get it unless a caller asks, and `no_activate: true` always wins.
+func shouldActivateBeforeClick(ctx *ExecContext, step Step) bool {
+	return ctx.activateClicks && !step.NoActivate
 }
 
 // activateForClick raises the window a run is scoped to and asks the WM to make
@@ -369,7 +394,7 @@ func runDrag(step Step, ctx *ExecContext) error {
 		select {
 		case <-ctx.AbortChan:
 			_ = releasePointer(ctx.Target, x, y, step.Button)
-			return fmt.Errorf("execution aborted by user")
+			return ErrAborted
 		case <-time.After(duration):
 		}
 		return releasePointer(ctx.Target, x, y, step.Button)
@@ -391,7 +416,7 @@ func runDrag(step Step, ctx *ExecContext) error {
 			select {
 			case <-ctx.AbortChan:
 				_ = releasePointer(ctx.Target, mx, my, step.Button)
-				return fmt.Errorf("execution aborted by user")
+				return ErrAborted
 			case <-time.After(stepDelay):
 			}
 		}
@@ -477,7 +502,7 @@ func runWait(step Step, ctx *ExecContext) error {
 	ctx.logf("[Automation] Wait: %v", d)
 	select {
 	case <-ctx.AbortChan:
-		return fmt.Errorf("execution aborted by user")
+		return ErrAborted
 	case <-time.After(d):
 	}
 	return nil
@@ -1029,10 +1054,9 @@ func coordinateOrDefault(step Step, ctx *ExecContext, preferLastFound bool) (int
 // and keyboard, which would deadlock the agent waiting for the response.
 func runScreenshot(step Step, ctx *ExecContext) error {
 	res, err := CaptureTo(ctx.Target, ShotSpec{
-		Output:    step.Output,
-		Region:    step.Region,
-		Config:    ctx.Config,
-		ScriptDir: ctx.ScriptDir,
+		Output: step.Output,
+		Region: step.Region,
+		Config: ctx.Config,
 	})
 	if err != nil {
 		return err

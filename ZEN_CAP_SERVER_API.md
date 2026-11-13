@@ -180,7 +180,7 @@ interpolation — works over HTTP with no translation layer.
   "title": "GitHub",                    // target by title substring
   "launch": "firefox --new-window",     // start this, then wait for its window
   "display": ":0",                      // X display, default = the daemon's $DISPLAY
-  "no_activate": false,                 // true = do not raise/focus the window while resolving
+  "no_activate": false,                 // true = never raise or focus the window (neither while resolving the target, nor before a click)
   "steps": [ { "action": "click", "x": 480, "y": 320, "clicks": 2 } ],
   "timeout": "30s",                     // clamped by api_max_run_duration_seconds
   "stop_on_error": true,                // default true, like a YAML script
@@ -190,7 +190,11 @@ interpolation — works over HTTP with no translation layer.
 ```
 
 Omit every target field for a full-screen run (`window_id: 0` is *not* the same thing
-— it is rejected, because "no window" and "window zero" are different requests).
+— it is rejected, because "no window" and "window zero" are different requests). Note
+the asymmetry when you thread a target through requests: responses report
+`window_id`/`id` as JSON **numbers**, while requests accept them as a **string**
+(decimal or `0x…`) — `jq -r '.window_id'` gives you a value you can paste straight
+into `"window_id": "…"`.
 
 #### Response (Success - 200 OK)
 ```json
@@ -226,7 +230,7 @@ A runaway `loop` cannot grow the response without limit: past 4096 trace entries
 ```json
 {
   "status": "error",
-  "error": "step_failed: text \"Submit\" not found within timeout",
+  "error": "text \"Submit\" not found within timeout",
   "code": "step_failed",
   "step_index": 1,
   "run_id": "r8",
@@ -235,8 +239,11 @@ A runaway `loop` cannot grow the response without limit: past 4096 trace entries
 }
 ```
 
-A failure still returns the partial trace: "how far did it get and what did it match
-before that" is the useful part of the answer.
+`stopped_at` is the index at which execution halted — for a `stop`, for a failure that
+stopped the run, and for a watchdog timeout alike. A failure still returns the partial
+trace, because "how far did it get, and what did it match before that" is the useful
+part of the answer; even when the target could not be opened at all the body keeps
+`ok`, `run_id` and an empty `steps`.
 
 | Status | `code` | Meaning |
 |---|---|---|
@@ -363,7 +370,7 @@ scripts too.
 | `wait_until` | `wait_for`: `window`, `window_gone`, `image`, `text`, `pixel`; `timeout` (default 10s). The timeout error says what was wanted *and* what was seen |
 | `window_state` | reads the window back: client `geometry`, `map_state`, the `_NET_WM_STATE` atoms |
 | `click: clicks` | `clicks: N` press/release pairs at **one** pointer warp (`2` is a real double-click), `click_gap` between them (default `40ms`) |
-| `click: no_activate` | the default (`false`) raises and activates the window before the first press, which is what makes a later `type` land in the field you clicked |
+| `click: no_activate` | over HTTP the default raises and activates the window before the first press, which is what makes a later `type` land in the field you clicked. `no_activate: true` turns that off. **YAML runs never activate** — the flag is per-request, so a focusless script written before this existed still never touches focus |
 | `type: chunk_runes` | runes per injection batch (default 200); the abort channel is checked between batches, so a 5000-character paste is cancellable |
 
 ### Variables across requests

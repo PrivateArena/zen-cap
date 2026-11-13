@@ -148,8 +148,12 @@ func TestExecDenyAPIInput(t *testing.T) {
 		t.Errorf("nested input escaped deny_api_input: %d", rec.Code)
 	}
 
-	// A read-only batch gets past the guard: on a machine with no display the next
-	// gate it hits is the connection, which proves the guard let it through.
+	// A read-only batch gets past the guard. With no display the next gate it hits is
+	// the connection, which proves the guard let it through; with a display it would
+	// really grab the screen, so that half is left to the smoke script.
+	if os.Getenv("DISPLAY") != "" {
+		t.Skip("needs a headless machine to check the read-only path without capturing")
+	}
 	rec, doc = doJSON(t, a.handleExec, http.MethodPost, `{"steps":[{"action":"screenshot"}]}`)
 	if rec.Code == http.StatusForbidden {
 		t.Errorf("a read-only batch was refused by deny_api_input: %s", rec.Body.String())
@@ -174,13 +178,21 @@ func TestHeadlessExecReportsNoDisplay(t *testing.T) {
 		t.Errorf("status = %d, want 503", rec.Code)
 	}
 
-	// The read endpoints must answer the same way rather than 500 out of XGB.
-	for _, path := range []string{"/automation/windows", "/automation/state", "/automation/window?id=1"} {
-		req := httptest.NewRequest(http.MethodGet, path, nil)
+	// The read endpoints must answer the same way rather than 500 out of XGB, and
+	// each has to be routed to its own handler for that to mean anything.
+	cases := []struct {
+		path string
+		h    http.HandlerFunc
+	}{
+		{"/automation/windows", a.handleWindows},
+		{"/automation/state", a.handleState},
+		{"/automation/window?id=1", a.handleWindow},
+	}
+	for _, c := range cases {
 		rec := httptest.NewRecorder()
-		a.handleWindows(rec, req)
-		if rec.Code != http.StatusServiceUnavailable && rec.Code != http.StatusBadRequest {
-			t.Errorf("%s: status %d", path, rec.Code)
+		c.h(rec, httptest.NewRequest(http.MethodGet, c.path, nil))
+		if rec.Code != http.StatusServiceUnavailable {
+			t.Errorf("%s: status %d, want 503 no_display (%s)", c.path, rec.Code, rec.Body.String())
 		}
 	}
 }
@@ -321,14 +333,23 @@ func TestTimeoutCeilingIsTheConfig(t *testing.T) {
 func TestSelectorValidation(t *testing.T) {
 	// window_id must parse; a name is only allowed in `window`.
 	sel := TargetSelector{WindowID: "not-a-window"}
-	_, apiErr := sel.resolve(nil)
+	_, apiErr := sel.lookup(nil)
 	if apiErr == nil || apiErr.Code != codeBadRequest {
 		t.Errorf("bad window_id: %#v", apiErr)
 	}
 	sel = TargetSelector{Window: "0xzz"}
-	_, apiErr = sel.resolve(nil)
+	_, apiErr = sel.lookup(nil)
 	if apiErr == nil || apiErr.Code != codeWindowNotFound {
 		t.Errorf("unfindable window name: %#v", apiErr)
+	}
+	// A window id of 0 is refused rather than silently meaning "whole screen".
+	sel = TargetSelector{WindowID: "0"}
+	if _, apiErr := sel.lookup(nil); apiErr == nil || apiErr.Code != codeWindowNotFound {
+		t.Errorf("window_id 0: %#v", apiErr)
+	}
+	// No selector at all is a legitimate screen-scoped request.
+	if id, apiErr := (TargetSelector{}).lookup(nil); apiErr != nil || id != 0 {
+		t.Errorf("empty selector: id=%d err=%v", id, apiErr)
 	}
 }
 
@@ -351,7 +372,7 @@ func TestRoutesAreRegisteredOnce(t *testing.T) {
 	}
 }
 
-// TestAbortNeedsNoGate is the deadlock guard: the request that kills a stuck run
+// TestAbortDoesNotQueueBehindTheGate is the deadlock guard: the request that kills a stuck run
 // must never queue behind it.
 func TestAbortDoesNotQueueBehindTheGate(t *testing.T) {
 	a := newAutomationAPI(testConfig())

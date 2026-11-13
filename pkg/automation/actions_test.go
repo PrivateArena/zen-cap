@@ -47,8 +47,6 @@ type mockTarget struct {
 	// screenshotErr, when set, makes every capture fail — which is how the
 	// bounded-polling tests simulate a window that died mid-run.
 	screenshotErr error
-	// typeErr, when set, fails the first Type call.
-	typeErr error
 	// afterType runs after each recorded Type, so a test can cancel a run in the
 	// middle of a chunked paste.
 	afterType func(calls int)
@@ -96,9 +94,6 @@ func (m *mockTarget) ButtonRelease(x, y int, btn string) error {
 	return nil
 }
 func (m *mockTarget) Type(text string, delay int64) error {
-	if m.typeErr != nil {
-		return m.typeErr
-	}
 	m.types = append(m.types, text)
 	if m.afterType != nil {
 		m.afterType(len(m.types))

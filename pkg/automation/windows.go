@@ -152,14 +152,19 @@ func MatchWindowTitleClass(w WindowInfo, t *WindowTarget) bool {
 	if t == nil {
 		return false
 	}
-	if t.Title != "" {
-		return strings.Contains(strings.ToLower(w.Title), strings.ToLower(t.Title))
-	}
+	// Class and title are alternatives, not a conjunction: a request that names one
+	// string for both ({"window":"firefox"}) must match either. ResolveWindow, which
+	// takes a YAML selector with one field set, keeps its title-then-class priority.
 	if t.Class != "" {
 		cl := strings.ToLower(w.Class)
 		in := strings.ToLower(w.Instance)
 		want := strings.ToLower(t.Class)
-		return strings.Contains(cl, want) || strings.Contains(in, want)
+		if strings.Contains(cl, want) || strings.Contains(in, want) {
+			return true
+		}
+	}
+	if t.Title != "" {
+		return strings.Contains(strings.ToLower(w.Title), strings.ToLower(t.Title))
 	}
 	return false
 }
@@ -234,9 +239,14 @@ func PointerState(xu *xgbutil.XUtil) (Point, []string, error) {
 	if err != nil {
 		return Point{}, nil, fmt.Errorf("query pointer: %w", err)
 	}
+	// The button bits start at 1<<8: the low bits of a pointer mask are the
+	// modifier locks (Shift, CapsLock, Control, Mod1, Mod2), and reading those as
+	// "buttons held down" would tell an agent the mouse is stuck whenever the user
+	// has NumLock on.
+	const button1Mask = 1 << 8
 	buttons := []string{}
-	for i, name := range []string{"1", "2", "3", "4", "5"} {
-		if rep.Mask&(1<<uint(i)) != 0 {
+	for i, name := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9"} {
+		if rep.Mask&(button1Mask<<uint(i)) != 0 {
 			buttons = append(buttons, name)
 		}
 	}

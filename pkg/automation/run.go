@@ -2,6 +2,7 @@ package automation
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"sync"
@@ -208,6 +209,11 @@ type RunOptions struct {
 
 	OnLog func(format string, args ...interface{})
 
+	// ActivateClicks raises and activates the run's window before the first click
+	// (see ExecContext.activateClicks). The HTTP API sets it; YAML callers do not,
+	// so a focusless script written before this existed still never touches focus.
+	ActivateClicks bool
+
 	Token *RunToken
 
 	// TargetOverride short-circuits OpenTarget. Tests use it to run a real
@@ -290,6 +296,11 @@ func RunSteps(opts RunOptions) (*RunResult, *RunError) {
 
 	// An aborted-before-start run must not open an X connection at all.
 	res := &RunResult{RunID: token.ID, Variables: map[string]interface{}{}}
+	select {
+	case <-token.Done():
+		return res, &RunError{Code: CodeAborted, StepIndex: -1, Cause: ErrAborted}
+	default:
+	}
 
 	// One log sink for the whole run: it feeds the caller's callback, the
 	// target-resolution chatter inside OpenTarget, and the response's `log`.
@@ -304,7 +315,10 @@ func RunSteps(opts RunOptions) (*RunResult, *RunError) {
 
 	tgt, winID, runErr := openRunTarget(opts, token, logf)
 	if runErr != nil {
-		return nil, runErr
+		// Still hand back the (empty) envelope: a caller reading .ok/.steps must get
+		// a well-formed answer even when the window was already gone.
+		res.OK = false
+		return res, runErr
 	}
 	defer func() { _ = tgt.Close() }()
 
@@ -322,15 +336,16 @@ func RunSteps(opts RunOptions) (*RunResult, *RunError) {
 	}
 
 	ctx := &ExecContext{
-		Target:      tgt,
-		AbortChan:   token.Abort,
-		Logger:      logf,
-		ScriptDir:   opts.ScriptDir,
-		Config:      cfg,
-		Variables:   vars,
-		Functions:   opts.Script.Functions,
-		tracker:     tracker,
-		stopOnError: opts.StopOnError,
+		Target:         tgt,
+		AbortChan:      token.Abort,
+		Logger:         logf,
+		ScriptDir:      opts.ScriptDir,
+		Config:         cfg,
+		Variables:      vars,
+		Functions:      opts.Script.Functions,
+		tracker:        tracker,
+		stopOnError:    opts.StopOnError,
+		activateClicks: opts.ActivateClicks,
 	}
 
 	ctx.logf("[Automation] Starting run %s: %q (%d steps)", token.ID, opts.Script.Name, len(opts.Script.Steps))
@@ -353,10 +368,11 @@ func RunSteps(opts RunOptions) (*RunResult, *RunError) {
 	res.Variables = vars
 	fillWindowReport(res, tgt, winID)
 
-	if runErr != nil {
-		// A step that injects pointer input can have died between a press and
-		// its release. Releasing buttons that are not held is a no-op, so do it
-		// unconditionally rather than trying to remember which step failed.
+	if runErr != nil && InjectsInput(opts.Script.Steps) {
+		// A step that injects pointer input can have died between a press and its
+		// release, leaving the desktop acting as if the mouse were held. The release
+		// is scoped to runs that *could* have pressed something: doing it for a
+		// read-only batch would cancel a drag the human is performing right now.
 		if ReleaseButtons(tgt) {
 			ctx.logf("[Automation] Force-released pointer buttons after failed run")
 		}
@@ -383,7 +399,6 @@ func openRunTarget(opts RunOptions, token *RunToken, logf func(string, ...interf
 	}
 	spec := TargetSpecFromScript(opts.Script, opts.Config)
 	spec.Logf = logf
-	spec.Config = opts.Config
 	// The HTTP layer names the window explicitly; a YAML script names it by
 	// title/class and lets OpenTarget resolve it.
 	if opts.WindowID != 0 {
@@ -478,7 +493,7 @@ func (e stepErr) Error() string {
 }
 
 func isAbortErr(err error) bool {
-	return err == ErrAborted || (err != nil && err.Error() == "execution aborted by user")
+	return errors.Is(err, ErrAborted)
 }
 
 // asRunError unwraps a *RunError from an error chain.
